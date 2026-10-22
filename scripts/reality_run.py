@@ -9,7 +9,8 @@ repo's .env. Every file under data/, logs/ and state/ of both the live repo and 
 code checkout, and the live iCloud sheet folder, is hashed before and after; any
 change fails the run (exit 2). The output is
 printed in full and scanned for failure markers: an exit code alone is not
-a certification (exit 3 on a marker).
+a certification (exit 3 on a marker). With --code other than the live
+checkout, the wrappers run that checkout too (docs/specs/reality_gate_spec.md).
 
 Exit codes: 0 pass, 1 the command failed, 2 the live data changed, 3 failure marker in output.
 """
@@ -53,6 +54,26 @@ def load_env(path):
     return env
 
 
+def code_env(code):
+    """Settings common.sh reads, so a wrapper runs --code's checkout instead of changing into the live one.
+    Worktrees have no venv/ or .env; the live .env is already in the environment."""
+    if code == LIVE:
+        return {}
+    return {"SPORTS_EDGE_PROJ": str(code), "SPORTS_EDGE_PYTHON": str(LIVE / "venv" / "bin" / "python"),
+            "SPORTS_EDGE_NO_ENV_FILE": "1"}
+
+
+def run_env(code, tmp):
+    """The command's environment: live credentials, every side effect pointed into tmp."""
+    env = {**os.environ, **load_env(LIVE / ".env")}
+    env.update({
+        "SPORTS_EDGE_DATA_DIR": str(tmp / "data"), "SPORTS_EDGE_LOG_DIR": str(tmp / "logs"),
+        "SPORTS_EDGE_STATE_DIR": str(tmp / "state"), "SPORTS_EDGE_NOTIFY": "log",
+        "SPORTS_EDGE_SHEET_DIR": str(tmp / "sheet"),
+        "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1", **code_env(code)})
+    return env
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--code", default=str(LIVE), help="checkout whose code runs")
@@ -73,12 +94,7 @@ def main():
     if args.with_live_data and (LIVE / "data").exists() and not args.tmp:
         shutil.copytree(LIVE / "data", tmp / "data", dirs_exist_ok=True)
 
-    env = {**os.environ, **load_env(LIVE / ".env")}
-    env.update({
-        "SPORTS_EDGE_DATA_DIR": str(tmp / "data"), "SPORTS_EDGE_LOG_DIR": str(tmp / "logs"),
-        "SPORTS_EDGE_STATE_DIR": str(tmp / "state"), "SPORTS_EDGE_NOTIFY": "log",
-        "SPORTS_EDGE_SHEET_DIR": str(tmp / "sheet"),
-        "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1"})
+    env = run_env(code, tmp)
 
     roots = sorted({LIVE, code})
     before = snapshot_hashes(roots)
@@ -87,6 +103,7 @@ def main():
 
     print(f"REALITY RUN code={code} tmp={tmp}")
     print(f"command: {' '.join(cmd)}")
+    print(f"code path: {code} (wrappers run {env.get('SPORTS_EDGE_PROJ', LIVE)})")
     print(f"exit: {proc.returncode}")
     print("----- stdout -----")
     print(proc.stdout.rstrip())
