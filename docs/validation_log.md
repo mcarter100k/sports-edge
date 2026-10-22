@@ -372,3 +372,43 @@ Entries are cleared with a date and the evidence that reality produced.
 - **VERIFIED (Gate 2):** real `run_snapshot.sh` (snapshot, then
   `slate alert`) and `run_morning.sh` under `/bin/bash`, against real
   Kalshi, in a temporary folder. 0 live files changed, no failure markers.
+
+## 2026-10-22: correction on mutation results, then owner review items 1–2
+
+- **Correction (leading, rule 10):** every mutation count reported earlier
+  this day (66 of 66, and the earlier sets) came from a harness that could
+  run stale bytecode, so those counts were not certified.
+  - **What happened:** a mutant written, run and then restored within the
+    same second, at the same file size (`min` → `max` in `bets.cheaper`),
+    left a `__pycache__` file that Python still trusted.
+  - **How it was found:** two tests failed on the committed code. The cached
+    `bets.cheaper` was confirmed to still call `max`. Clearing the caches
+    made them pass.
+  - **The risk:** a stale mutant could make a later mutant look killed.
+  - **The fix:** the harness now deletes every `__pycache__` before applying
+    and after restoring each mutant, and runs pytest with
+    `PYTHONDONTWRITEBYTECODE=1`.
+  - **Rerun from scratch:** **71 of 71 killed**, each restored
+    byte-identical. The sets: build 40, review 13, rulings 18. No cache was
+    left behind, and the suite passed right after.
+- **Item 1:** `checks.latest_starts` (now one `arg_max` per game within the
+  source) and `checks.checked_slots` read only the given odds source.
+  - **Test:** a second source with newer rows is ignored.
+  - **Mutants:** removing either filter is killed.
+- **Item 2:** confirmed in the code. `walk_book` charges `fee_for_order`
+  per level (each level's price × contracts), sums those fees, and returns
+  the average fill price. `evaluate` computes the gap on that average and
+  that summed fee per contract.
+  - **New test:** a two-level book, 10 at 0.42 then 13 at 0.44. Fees:
+    0.3949 per level, against 0.3922 as one order at the best price and
+    0.3950 as one order at the average. The row carries the per-level
+    figure and the average price.
+  - **Mutants, all killed:** fee at the best price; one fee at the average
+    price; gap on the best price.
+- **VERIFIED (Gate 1):** 320 passed, 1 skipped.
+- **VERIFIED, no behaviour change on real data, rerun from clean caches:**
+  the old code (`e0bb32d`) and the new code gave identical output, sheet
+  and bet log.
+- **VERIFIED (Gate 2):** real `run_snapshot.sh` and `run_morning.sh` under
+  `/bin/bash`, against real Kalshi, in a temporary folder. 0 live files
+  changed, no failure markers.
