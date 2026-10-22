@@ -675,3 +675,12 @@ above is unchanged. Only where the code lives changes:
 The test-only `JARGON` list moves to the tests. Tests and mutant patterns
 follow the moved functions by name only. No assertion or expected value
 changes.
+
+---
+
+## Amendment 2026-10-22: odds-source filter (owner review of checks.py)
+
+`checks.latest_starts` and `checks.checked_slots` now read only the rows of
+the given odds source (`reference_events.source`, `check_log.source`), like
+every other reader in `checks.py`. The output is unchanged while there is
+only one source. A test pins the behaviour with rows from a second source.
