@@ -38,25 +38,51 @@ def game_event(event_ticker, series_ticker, teams, start, *, tie=False, scope="G
 
 
 class FakeKalshi:
-    """Stands in for KalshiClient; pages are lists of events."""
+    """Stands in for KalshiClient. pages: lists of events for the daily scan.
+    by_ticker: {event_ticker: event} for matched fetches. by_series: {series: [events]}."""
 
-    def __init__(self, series_list, pages, fetched, settled=(), lookups=None, fail_on_page=None):
+    def __init__(self, series_list, pages, fetched, settled=(), lookups=None, fail_on_page=None,
+                 active=True, by_ticker=None, by_series=None):
         self.series_list, self.pages, self.fetched = series_list, pages, fetched
         self.settled, self.lookups = list(settled), dict(lookups or {})
-        self.fail_on_page = fail_on_page
+        self.fail_on_page, self.active = fail_on_page, active
+        self.by_ticker = dict(by_ticker or {})
+        for page in pages:
+            for ev in page:
+                self.by_ticker.setdefault(ev["event_ticker"], ev)
+        self.by_series = dict(by_series or {})
         self.requests = 0
-        self.settled_since = []
+        self.settled_since, self.ticker_requests, self.series_requests = [], [], []
+        self.scanned = False
+
+    def exchange_active(self):
+        self.requests += 1
+        return self.active
 
     def sports_series(self):
         self.requests += 1
         return self.series_list
 
     def open_events_with_markets(self):
+        self.scanned = True
         for i, page in enumerate(self.pages):
             self.requests += 1
             if self.fail_on_page == i:
                 raise RuntimeError("simulated failure mid-pagination")
             yield self.fetched, page
+
+    def events_by_tickers(self, tickers, batch):
+        tickers = sorted(set(tickers))
+        for i in range(0, len(tickers), batch):
+            chunk = tickers[i:i + batch]
+            self.requests += 1
+            self.ticker_requests.append(chunk)
+            yield self.fetched, [self.by_ticker[t] for t in chunk if t in self.by_ticker]
+
+    def open_events_for_series(self, series):
+        self.requests += 1
+        self.series_requests.append(series)
+        yield self.fetched, list(self.by_series.get(series, []))
 
     def settled_markets(self, since):
         self.requests += 1
@@ -95,6 +121,8 @@ class FakeOdds:
         self.priced_calls.append((key, list(ids)))
         out = []
         for eid in ids:
+            if eid not in self.priced:   # like the real API: no Pinnacle price, no event
+                continue
             stub = next(s for s in self.stubs[key] if s.source_event_id == eid)
             out.append(RefEvent(eid, key, stub.commence_utc, stub.home, stub.away, "pinnacle",
                                 now - timedelta(minutes=2), now, dict(self.priced[eid])))
@@ -107,3 +135,25 @@ def ref_sport(key="basketball_nba", group="Basketball"):
 
 def stub(eid, home, away, commence, key="basketball_nba"):
     return RefEventStub(eid, key, commence, home, away)
+
+
+def fee_table(tmp_path, series=None, unconfirmed=None, default=("1", "0")):
+    """Write a cited fee table plus a stand-in source file; point the env at it."""
+    import hashlib
+    import json
+    import os
+    src = tmp_path / "fee_source.pdf"
+    src.write_bytes(b"%PDF-1.4 stand-in for tests")
+    table = {
+        "source": {"file": str(src), "sha256": hashlib.sha256(src.read_bytes()).hexdigest(),
+                   "effective": "2026-07-07"},
+        "default": {"taker": default[0], "maker": default[1], "cite": "p.1 General"},
+        "settlement_fee": {"value": "0", "cite": "p.1 Settlement"},
+        "series": {k: {"taker": t, "maker": m, "cite": "p.2 Non-Standard Fees"}
+                   for k, (t, m) in (series or {}).items()},
+        "unconfirmed": dict(unconfirmed or {}),
+    }
+    path = tmp_path / "fee_schedule.json"
+    path.write_text(json.dumps(table))
+    os.environ["SPORTS_EDGE_FEE_TABLE"] = str(path)
+    return path

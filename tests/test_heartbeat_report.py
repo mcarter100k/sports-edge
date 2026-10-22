@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from helpers import fee_table
 from sports_edge import health
 from sports_edge.heartbeat import build_report
 from sports_edge.store import Store
@@ -19,14 +20,15 @@ def seed_healthy(s, sports=("Basketball", "Soccer", "Hockey"), runs=None):
                            "status": "running", "summary": "{}"}])
     s.upsert("markets", [{"ticker": f"T{i}", "sport": sp, "first_seen_utc": NOW, "last_seen_utc": NOW}
                          for i, sp in enumerate(sports)], "ticker")
-    s.append("price_snapshots", [{"run_id": "x", "ts_utc": NOW - timedelta(hours=1), "tier": "full",
+    s.append("price_snapshots", [{"run_id": "x", "ts_utc": NOW - timedelta(hours=1), "tier": "near",
                                   "ticker": f"T{i}", "status": "active"} for i in range(len(sports))])
     health.record_success("snapshot", NOW - timedelta(minutes=10))
     health.record_success("grader", NOW - timedelta(hours=12))
 
 
-def test_healthy(monkeypatch):
+def test_healthy(monkeypatch, tmp_path):
     monkeypatch.setenv("ODDS_API_KEY", "k")
+    fee_table(tmp_path)
     with Store.open() as s:
         seed_healthy(s)
     lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
@@ -34,12 +36,13 @@ def test_healthy(monkeypatch):
     assert attention is False
 
 
-def test_each_problem_is_flagged(monkeypatch):
+def test_each_problem_is_flagged(monkeypatch, tmp_path):
+    fee_table(tmp_path)
     checks = [
         (dict(), "odds NOT CONFIGURED"),
         (dict(tz="UTC"), "system time zone is UTC"),
         (dict(free=2 * 1024 ** 3), "under 5 GB"),
-        (dict(sports=("Basketball",)), "only 1 sport(s)"),
+        (dict(sports=("Basketball",)), "only 1 sport(s) with matched snapshots"),
         (dict(runs=500), "SHORTFALL"),
     ]
     for kw, expect in checks:
@@ -65,3 +68,35 @@ def test_failing_job_is_flagged(monkeypatch):
 def test_never_run_is_not_healthy():
     lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
     assert attention and "snapshot has never succeeded" in lines[0]
+
+
+def test_missing_fee_table_is_flagged(monkeypatch):
+    monkeypatch.setenv("ODDS_API_KEY", "k")
+    with Store.open() as s:
+        seed_healthy(s)
+    lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
+    assert attention and any("fee table MISSING" in ln for ln in lines)
+
+
+def test_daily_only_sports_do_not_count_as_matched(monkeypatch, tmp_path):
+    monkeypatch.setenv("ODDS_API_KEY", "k")
+    fee_table(tmp_path)
+    with Store.open() as s:
+        seed_healthy(s)
+        s.con.execute("UPDATE price_snapshots SET tier = 'daily'")
+    lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
+    assert attention and "only 0 sport(s) with matched snapshots" in lines[0]
+
+
+def test_exchange_closed_runs_count_as_completed_but_too_many_are_flagged(monkeypatch, tmp_path):
+    monkeypatch.setenv("ODDS_API_KEY", "k")
+    fee_table(tmp_path)
+    with Store.open() as s:
+        seed_healthy(s)
+        s.con.execute("UPDATE job_runs SET status = 'exchange_closed' WHERE run_id IN ('r1','r2','r3','r4','r5','r6','r7','r8')")
+    lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
+    assert not attention, lines                       # the weekly window: fine
+    with Store.open() as s:
+        s.con.execute("UPDATE job_runs SET status = 'exchange_closed' WHERE run_id IN ('r10','r11','r12','r13','r14')")
+    lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
+    assert attention and any("exchange reported closed on 13 runs" in ln for ln in lines)

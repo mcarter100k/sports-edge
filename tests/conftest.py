@@ -74,8 +74,10 @@ def isolated(tmp_path, monkeypatch, request):
     monkeypatch.setenv("SPORTS_EDGE_NOTIFY", "log")
     for var in ("ODDS_API_KEY", "KALSHI_BASE_URL", "SHADOW_EDGE_THRESHOLD", "SHADOW_CONTRACTS",
                 "FEE_PRECISION", "ODDS_MAX_AGE_MIN", "ODDS_DAILY_CREDITS", "ODDS_INTERVAL_MIN",
-                "ODDS_HORIZON_H", "SSL_CERT_FILE"):
+                "ODDS_HORIZON_H", "SSL_CERT_FILE", "KALSHI_TICKER_BATCH"):
         monkeypatch.delenv(var, raising=False)
+    # Fees fail closed unless a test builds its own table (helpers.fee_table).
+    monkeypatch.setenv("SPORTS_EDGE_FEE_TABLE", str(tmp_path / "no_fee_table.json"))
     monkeypatch.chdir(tmp_path)
     _network["allowed"] = request.node.get_closest_marker("integration") is not None
     yield tmp_path

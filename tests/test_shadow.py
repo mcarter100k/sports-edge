@@ -3,7 +3,8 @@ from decimal import Decimal as D
 
 import pytest
 
-from sports_edge import config, ledger
+from helpers import fee_table
+from sports_edge import config, ledger, shadow
 from sports_edge.shadow import HEADER, evaluate, run_shadow
 from sports_edge.store import Store
 from sports_edge.timeutil import parse_utc
@@ -11,7 +12,7 @@ from sports_edge.timeutil import parse_utc
 NOW = parse_utc("2026-10-22T18:00:00Z")
 COMMENCE = parse_utc("2026-10-22T23:00:00Z")
 SETTINGS = {"threshold": D("0.03"), "contracts": 100, "precision": D("0.01"), "max_age_min": 75}
-MARKET = {"fee_type": "quadratic", "fee_multiplier": 1}
+MARKET = {"m_taker": D("1")}
 
 
 def snap(yes_ask="0.42", no_ask="0.59", status="active", ts=NOW):
@@ -55,8 +56,8 @@ def test_skip_conditions(s, r, reason):
     assert evaluate(s, MARKET, {"ref_outcome": "A"}, r, SETTINGS) == ([], reason)
 
 
-def test_unknown_fee_type_skips():
-    assert evaluate(snap(), {"fee_type": "flat", "fee_multiplier": 1}, {"ref_outcome": "A"},
+def test_fee_error_skips():
+    assert evaluate(snap(), {"fee_error": "no fee table yet"}, {"ref_outcome": "A"},
                     ref(0.9), SETTINGS) == ([], "fee_unknown")
 
 
@@ -64,7 +65,8 @@ def seed(store, fair_a=0.60, fair_b=0.40, ref_outcomes=("Cleveland Cavaliers", "
     store.upsert("markets", [
         {"ticker": t, "event_ticker": "E1", "series_ticker": "S", "sport": "Basketball",
          "competition": "Pro Basketball (M)", "yes_sub_title": title, "status": "active",
-         "fee_type": "quadratic", "fee_multiplier": 1, "first_seen_utc": NOW, "last_seen_utc": NOW}
+         "fee_type": "quadratic", "fee_multiplier": 1, "fee_override": False,
+         "first_seen_utc": NOW, "last_seen_utc": NOW}
         for t, title in (("E1-CLE", "Cleveland"), ("E1-PHI", "Philadelphia"))], "ticker")
     store.record_matches([
         {"market_ticker": "E1-CLE", "event_ticker": "E1", "source": "the-odds-api",
@@ -79,7 +81,8 @@ def seed(store, fair_a=0.60, fair_b=0.40, ref_outcomes=("Cleveland Cavaliers", "
         for o, p in zip(ref_outcomes, (fair_a, fair_b))])
 
 
-def test_run_shadow_writes_complete_rows():
+def test_run_shadow_writes_complete_rows(tmp_path):
+    fee_table(tmp_path)
     with Store.open() as s:
         seed(s)
         snaps = {"E1-CLE": snap(yes_ask="0.42", no_ask="0.59"), "E1-PHI": snap(yes_ask="0.58", no_ask="0.43")}
@@ -94,7 +97,17 @@ def test_run_shadow_writes_complete_rows():
                                     "source_event_id", "bookmaker"))
 
 
-def test_outcome_set_mismatch_never_compared():
+def test_no_fee_table_writes_nothing_and_says_why():
+    out = []
+    with Store.open() as s:
+        seed(s)
+        res = run_shadow(s, "run-1", {"E1-CLE": snap(), "E1-PHI": snap()}, NOW, "the-odds-api", out.append)
+    assert res["shadow_rows"] == 0 and res["skip_fee_unknown"] == 2
+    assert any(m.startswith("FEE UNKNOWN (2 market checks): no fee table yet") for m in out)
+
+
+def test_outcome_set_mismatch_never_compared(tmp_path):
+    fee_table(tmp_path)
     with Store.open() as s:
         seed(s, ref_outcomes=("Cleveland Cavaliers", "Draw"))
         res = run_shadow(s, "run-1", {"E1-CLE": snap(), "E1-PHI": snap()}, NOW, "the-odds-api",
@@ -102,7 +115,8 @@ def test_outcome_set_mismatch_never_compared():
     assert res["shadow_rows"] == 0 and res["skip_outcome_count"] == 2
 
 
-def test_conflicted_event_never_compared():
+def test_conflicted_event_never_compared(tmp_path):
+    fee_table(tmp_path)
     with Store.open() as s:
         seed(s)
         s.record_matches([{"market_ticker": "E1-CLE", "event_ticker": "E1", "source": "the-odds-api",
@@ -114,6 +128,12 @@ def test_conflicted_event_never_compared():
 
 def test_rule_override_is_labelled(monkeypatch):
     monkeypatch.setenv("SHADOW_EDGE_THRESHOLD", "0.01")
-    assert config.rule_id() == "GAP_v1+custom(SHADOW_EDGE_THRESHOLD=0.01)"
+    assert shadow.rule_id() == "GAP_v1+custom(SHADOW_EDGE_THRESHOLD=0.01)"
     monkeypatch.setenv("SHADOW_EDGE_THRESHOLD", "0.03")
-    assert config.rule_id() == "GAP_v1"
+    assert shadow.rule_id() == "GAP_v1"
+
+
+def test_config_holds_no_signal_parameter():
+    src = (config.REPO_ROOT / "sports_edge" / "config.py").read_text()
+    for name in ("THRESHOLD", "SHADOW_CONTRACTS", "RULE_ID", "ODDS_MAX_AGE"):
+        assert name not in src
