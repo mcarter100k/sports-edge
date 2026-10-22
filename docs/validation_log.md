@@ -669,3 +669,25 @@ Spec `29504c7`, code `d7da9e1`, on `feat/notify-delivery`, merged before
     table, that is "Don't bet today: prices not checked (no fee table)." at
     the first check of the day;
   - the 8:00 AM PT morning banner on Fri Oct 23, from the installed job.
+
+## 2026-10-22: the reality gate runs the `--code` checkout in wrappers too (owner-approved fix)
+
+Spec `6138fbb` (new `docs/specs/reality_gate_spec.md`), code `eb6a198`.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 372 passed, 1 skipped (4 new tests).
+  - Mutants: 6 of 6 killed, from clean caches, each restored
+    byte-identical: never set, set for the live checkout too, not applied,
+    each of the three settings missing or wrong.
+- **VERIFIED, Gate 2, with a control that fails without the fix.** The same
+  command was run with no manual settings:
+  `--code <feat/board worktree> --with-live-data -- /bin/bash <worktree>/scripts/run_grader.sh`.
+  - **Fixed `reality_run.py`:** the report shows
+    `code path: …sports-edge-board (wrappers run …sports-edge-board)`. The
+    grader log has `markouts_measured=0` and
+    `markouts: 0 measured (no shadow rows logged yet)`, so `feat/board`'s
+    code ran.
+  - **Old `reality_run.py` (`main`):** no markouts field or line; `main`'s
+    code ran.
+  - **Both:** 0 live files changed, no failure markers, exit 0.
+- **NOT CHECKED:** which code earlier branches' wrapper gates ran.
