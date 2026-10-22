@@ -177,3 +177,43 @@ The same rejections apply to both. The grader scores both (see
   and never cross the cap.
 - **Return value.** The odds step returns `checked_events`, the reference
   ids priced this run. The shadow step evaluates only those games.
+
+---
+
+## Amendment 2026-10-22: two NHL aliases, "St." = "State", and a quieter unmatched log (owner-approved after the live odds run)
+
+**Found in the live odds run (2026-10-22).** Four of the day's games in
+followed leagues failed rule 5 on names alone:
+- Kalshi's `New York R` and `New York I` against `New York Rangers` and
+  `New York Islanders`;
+- Kalshi's `Appalachian St.` and `Kennesaw St.` against `Appalachian State
+  Mountaineers` and `Kennesaw State Owls`.
+
+**Aliases (`config/team_aliases.json`, Hockey only):**
+- `New York R` → `New York Rangers`
+- `New York I` → `New York Islanders`
+
+**Normalization, rule version `match_v2`:**
+- **The rule:** after the existing steps, the whole word `st` reads as
+  `state`, on both sides. So `Appalachian St.` becomes `appalachian state`,
+  which is a prefix of `appalachian state mountaineers`.
+- **Names like `St. Louis`** become `state louis` on both sides, so they
+  still match each other.
+- **Unchanged:** every other part of rules 1–6, including "each Kalshi team
+  must match exactly one reference team". A name that fits both teams of a
+  game, such as `Kansas` against `Kansas Jayhawks` and `Kansas State
+  Wildcats`, still refuses.
+- **Rule version:** matches recorded from now on carry `match_v2`. No match
+  was ever recorded live under `match_v1`.
+
+**The unmatched log.** Every unmatched game is still recorded in the
+`unmatched` table and counted. Only the printing changes.
+- **One `UNMATCHED …` line,** the first time, for a game that is both:
+  - in scope: its Kalshi series has matched games for a sport key in
+    `config/slate_sports.json`;
+  - within the odds window: it resolves by now + `ODDS_HORIZON_H` + 3 hours,
+    the time the reference listing covers.
+- **Everything else** is one line per run:
+  `UNMATCHED (not listed): <reason>=<n>, …`.
+- **`UNMATCHED-REFERENCE` lines** (in-scope reference games with no Kalshi
+  game) are unchanged.
