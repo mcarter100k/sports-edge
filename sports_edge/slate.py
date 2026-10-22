@@ -137,7 +137,8 @@ class Context:
         self.ledger = ledger.read_rows(config.shadow_ledger_path())
         self.replies = bets.ingest_replies(now, self.ledger, self.result_of) if ingest else \
             {"readable": False, "error": "not read by show", "logged": 0, "unclear": 0, "unclear_lines": []}
-        self.stage_line = grader.stage(ledger.read_rows(config.shadow_grades_path()))[1]
+        self.stage_line = grader.stage(ledger.read_rows(config.shadow_grades_path()),
+                                       closes_possible=config.odds_plan() == "paid")[1]
         self.fee_state = fees.table_state()
         self.snapshot_failing = bool(health.read_state().get("snapshot", {}).get("consecutive_failures"))
         self.taken = grader.taken_bets(store, self.ledger, ledger.read_rows(config.bet_log_path()))

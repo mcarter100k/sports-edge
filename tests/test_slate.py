@@ -120,15 +120,31 @@ def grades(n_games, clv="0.02", pnl="0.05", price="0.45", fee="0.017"):
 
 
 def test_stage_practice_until_a_hundred_games():
-    assert grader.stage([]) == ("Practice", "Practice · 0 of 100 games")
-    assert grader.stage(grades(99))[1] == "Practice · 99 of 100 games"
+    assert grader.stage([]) == ("Practice", "Practice · 0 of 100 games with a closing price")
+    assert grader.stage(grades(99))[1] == "Practice · 99 of 100 games with a closing price"
 
 
 def test_stage_early_signal_supported_and_confirmed():
-    assert grader.stage(grades(100)) == ("Early signal", "Early signal · 100 games · Supported needs 500")
+    assert grader.stage(grades(100)) == ("Early signal", "Early signal · 100 games with a closing price · Supported needs 500")
     assert grader.stage(grades(500))[0] == "Supported"
     assert grader.stage(grades(500, pnl="-0.05"))[0] == "Early signal"      # beating the close, no profit
-    assert grader.stage(grades(1000)) == ("Confirmed", "Confirmed · 1000 games")
+    assert grader.stage(grades(1000)) == ("Confirmed", "Confirmed · 1000 games with a closing price")
+
+
+def test_games_without_a_closing_price_never_promote():
+    """Owner review: single-pull games (blank clv) do not count toward beating the final price."""
+    rows = grades(150)
+    for r in rows:
+        r["clv"] = ""                                        # every game read once
+    assert grader.stage(rows)[1] == "Practice · 0 of 100 games with a closing price"
+    for r in rows[:2]:
+        r["clv"] = "0.05"
+    assert grader.stage(rows)[1] == "Practice · 2 of 100 games with a closing price"
+    assert grader.stage(rows, closes_possible=False)[1] == \
+        "Practice · 2 of 100 games with a closing price (free plan adds none)"
+    for r in rows[:2]:
+        r["clv"] = "-0.05"                                   # 2 losing closes among 150 graded games
+    assert grader.stage(rows)[1] == "Practice · 2 of 100 games with a closing price"   # not demoted
 
 
 def test_stage_demotes_when_not_beating_the_final_price():
@@ -142,7 +158,7 @@ def test_stage_demotes_on_a_twenty_bet_losing_stretch():
         r["pnl_per_contract"] = "-0.462"
     assert grader.stage(rows)[1] == "Practice (demoted: 20-bet losing stretch) · 30 games"
     assert grader.stage(rows[:20])[1] == "Practice (demoted: 20-bet losing stretch) · 20 games"   # exactly 20
-    assert grader.stage(rows[:19])[1] == "Practice · 19 of 100 games"
+    assert grader.stage(rows[:19])[1] == "Practice · 19 of 100 games with a closing price"
 
 
 def test_long_names_still_fit_in_one_message():
@@ -151,7 +167,8 @@ def test_long_names_still_fit_in_one_message():
            "fill_detail": "0.65x10;0.66x5", "snapshot_utc": iso_z(CHECK_AT), "commence_utc": iso_z(START),
            "kalshi_move_1h": "-0.035"}
     teams = {"titles": ["Wolverhampton Wanderers", "Brighton and Hove Albion"], "tie": True}
-    footer = "Practice (demoted: not beating the final price) · 1234 games\nBet log unreadable: cap not tracked"
+    # the longest stage line that can occur (69 characters), plus the unreadable bet log line
+    footer = "Practice · 99 of 100 games with a closing price (free plan adds none)\nBet log unreadable: cap not tracked"
     full = slate.pick_text(row, 12, True, teams, "Conference League", CHECK_AT, several=True)
     short = slate.pick_text(row, 12, True, teams, "Conference League", CHECK_AT, several=True, compact=True)
     assert len(f"{full}\n{footer}") > slate.MESSAGE_MAX >= len(f"{short}\n{footer}")
@@ -167,7 +184,7 @@ def test_check_sends_each_pick_once_with_the_stage_line(checked):
     assert msg.startswith("#1 Cleveland over Philadelphia (Yes on Cleveland) · NBA · 8:00 AM PT · Pay up to ")
     assert "now 20¢ · fair 37" in msg and "no earlier Kalshi price · price 2 min old" in msg
     assert '\nReply "took 20" or "skip"\n' in msg
-    assert msg.endswith("Practice · 0 of 100 games\nBet log unreadable: cap not tracked")
+    assert msg.endswith("Practice · 0 of 100 games with a closing price (free plan adds none)\nBet log unreadable: cap not tracked")
     assert len(msg) <= slate.MESSAGE_MAX and no_jargon(msg) == []
     assert alert(CHECK_AT + timedelta(minutes=4)) == []                       # never sent twice
     sheet = (config.sheet_dir() / "sheet.txt").read_text()
@@ -200,7 +217,7 @@ def test_picks_are_exactly_the_check_runs_ledger_rows(checked):
 def test_late_message_never_shows_old_picks(checked):
     sent = alert(CHECK_AT + timedelta(minutes=20))
     assert sent == ["Don't bet now: prices not checked (prices are 20 min old). 8:00 AM PT · NBA 1\n"
-                    "Practice · 0 of 100 games\nBet log unreadable: cap not tracked"]
+                    "Practice · 0 of 100 games with a closing price (free plan adds none)\nBet log unreadable: cap not tracked"]
 
 
 def test_nothing_is_sent_once_the_slot_has_started(checked):
@@ -289,7 +306,7 @@ def test_daily_cap_is_money_at_risk(checked, results, capped):
     sent = alert(CHECK_AT + timedelta(minutes=2))
     if capped:
         assert sent == ["Daily cap reached — no more bets today. (1 price gaps logged for the record.)\n"
-                        "Practice · 0 of 100 games"]
+                        "Practice · 0 of 100 games with a closing price (free plan adds none)"]
     else:
         assert sent[0].startswith("#")
     sheet = (config.sheet_dir() / "sheet.txt").read_text()
@@ -305,7 +322,7 @@ def test_morning_message(checked):
     text = slate.run_morning(next_morning, sent.append, quiet)
     assert sent == [text] and len(text) <= slate.MORNING_MAX and no_jargon(text) == []
     lines = text.split("\n")
-    assert lines[0] == "Kalshi slate · Fri Oct 23" and lines[1] == "Practice · 0 of 100 games"
+    assert lines[0] == "Kalshi slate · Fri Oct 23" and lines[1] == "Practice · 0 of 100 games with a closing price (free plan adds none)"
     assert lines[2] == "Today: no matched games (odds not set up)"
     assert lines[3] == "Yesterday: 1 checks, 1 price gaps in 1 games · results: 0 won, 0 lost, 1 open"
     assert lines[4] == "Your bets: bet log unreadable"

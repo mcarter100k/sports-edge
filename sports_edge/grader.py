@@ -92,16 +92,19 @@ def calibrate(store, source, now):
 
 
 def closing_line(store, r):
-    """Record-only CLV for one shadow row: the last reference before the start."""
+    """Record-only closing line for one shadow row: the last reference read strictly after both the
+    row's snapshot and its own reference read, and before the start. Blank if the game was read only
+    once. clv is after the fee: closing side fair - price paid - fee per contract."""
     blank = {"closing_fair_prob": "", "closing_ref_fetched_utc": "", "closing_side_fair": "",
              "clv": "", "fair_move": ""}
     if not r.get("ref_outcome") or not r.get("commence_utc"):
         return blank
+    entry = max(t for t in (parse_utc(r["snapshot_utc"]), parse_utc(r.get("odds_fetched_utc"))) if t)
     found = store.con.execute("""
         SELECT fetched_utc, fair_prob FROM reference_odds
-        WHERE source = ? AND source_event_id = ? AND outcome = ? AND fetched_utc < ?
+        WHERE source = ? AND source_event_id = ? AND outcome = ? AND fetched_utc > ? AND fetched_utc < ?
         ORDER BY fetched_utc DESC LIMIT 1""", [r["odds_source"], r["source_event_id"], r["ref_outcome"],
-                                               to_db_ts(parse_utc(r["commence_utc"]))]).fetchone()
+                                               to_db_ts(entry), to_db_ts(parse_utc(r["commence_utc"]))]).fetchone()
     if found is None:
         return blank
     closing = Decimal(str(found[1])).quantize(Decimal("0.000001"))
@@ -109,7 +112,8 @@ def closing_line(store, r):
     entry_fair = Decimal(r["fair_prob"])
     side_entry = entry_fair if r["side"] == "YES" else Decimal(1) - entry_fair
     return {"closing_fair_prob": closing, "closing_ref_fetched_utc": iso_z(from_db_ts(found[0])),
-            "closing_side_fair": side_close, "clv": side_close - Decimal(r["price_paid"]),
+            "closing_side_fair": side_close,
+            "clv": side_close - Decimal(r["price_paid"]) - Decimal(r["fee_per_contract"]),
             "fair_move": side_close - side_entry}
 
 
@@ -200,10 +204,10 @@ def shadow_report():
                      f"without the best event {statistics.fmean(rest):+.4f}")
     clvs = [float(r["clv"]) for r in first.values() if r.get("clv") not in (None, "")]
     if clvs:
-        lines.append(f"  first-fire CLV (closing side fair - price paid): mean {statistics.fmean(clvs):+.4f}, "
+        lines.append(f"  first-fire CLV (closing side fair - price paid - fee): mean {statistics.fmean(clvs):+.4f}, "
                      f"median {statistics.median(clvs):+.4f}, over {len(clvs)} rows (record only)")
     else:
-        lines.append("  first-fire CLV: none yet (no reference fetched before a start)")
+        lines.append("  first-fire CLV: none yet (no second reference read before a start)")
     lines.append("  Phase 1 claims nothing from these numbers; this is a record, not a verdict.")
     return lines
 
@@ -290,8 +294,13 @@ def _low(xs):
     return statistics.fmean(xs) - Z95 * statistics.stdev(xs) / math.sqrt(len(xs))
 
 
-def stage(graded):
-    """(stage name, line) from graded first-fire bets, by game (docs/specs/slate_alerts_spec.md)."""
+def stage(graded, closes_possible=True):
+    """(stage name, line) from graded first-fire bets, by game (docs/specs/slate_alerts_spec.md).
+
+    Only games with a closing price (a non-blank clv) count toward beating the final price
+    and toward the stage thresholds. closes_possible=False (the free plan reads each game once)
+    says so on the Practice line rather than showing a count that cannot grow.
+    """
     ids = set(bets.first_fire_ids(graded).values())
     first = sorted((r for r in graded if r["row_id"] in ids), key=lambda r: (r["snapshot_utc"], r["row_id"]))
     games = {}
@@ -309,18 +318,21 @@ def stage(graded):
     for r in first:
         cum += float(r["pnl_per_contract"]) / (float(r["price_paid"]) + float(r["fee_per_contract"]))
         peak = max(peak, cum)
-    if n >= PRACTICE_N and beat and statistics.fmean(beat) <= 0:
-        return "Practice", f"Practice (demoted: not beating the final price) · {n} games"
+    c = len(beat)                           # games with a closing price
+    if c >= PRACTICE_N and statistics.fmean(beat) <= 0:
+        return "Practice", f"Practice (demoted: not beating the final price) · {c} games"
     if peak - cum >= DRAWDOWN_UNITS:
         return "Practice", f"Practice (demoted: {DRAWDOWN_UNITS}-bet losing stretch) · {n} games"
     beat_low = _low(beat)
     for need, name in STAGES:
-        if n < need or beat_low is None or beat_low <= 0:
+        if c < need or beat_low is None or beat_low <= 0:
             continue
         if name == "Early signal" or (name == "Supported" and statistics.fmean(ret) > 0) or \
                 (name == "Confirmed" and (_low(ret) or 0) > 0):
-            return name, " · ".join([name, f"{n} games"] + ([NEXT_STAGE[name]] if name in NEXT_STAGE else []))
-    return "Practice", f"Practice · {n} of {PRACTICE_N} games"
+            return name, " · ".join([name, f"{c} games with a closing price"]
+                                    + ([NEXT_STAGE[name]] if name in NEXT_STAGE else []))
+    return "Practice", (f"Practice · {c} of {PRACTICE_N} games with a closing price"
+                        + ("" if closes_possible else " (free plan adds none)"))
 
 
 def paper_results(store, picks):

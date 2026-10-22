@@ -141,25 +141,66 @@ def test_power_fair_is_scored_alongside_proportional():
     assert any("power vs proportional on the same 2 markets" in m for m in out)
 
 
-def test_clv_per_row_from_last_reference_before_start():
+def closing_fetch(s, at, cle, phi):
+    s.append("reference_odds", [{"fetched_utc": at, "source": SRC, "source_event_id": "R1",
+                                 "commence_utc": COMMENCE, "outcome": o, "fair_prob": f, "fair_prob_power": f}
+                                for o, f in (("CLE", cle), ("PHI", phi))])
+
+
+def test_clv_from_the_last_later_read_before_start_after_fees():
     with Store.open() as s:
-        seed(s, result_cle="yes")
-        # a later in-play fetch must be ignored for the closing line
-        s.append("reference_odds", [{"fetched_utc": COMMENCE + timedelta(minutes=10), "source": SRC,
-                                     "source_event_id": "R1", "commence_utc": COMMENCE, "outcome": "CLE",
-                                     "fair_prob": 0.99, "fair_prob_power": 0.99}])
+        seed(s, result_cle="yes")                                   # the entry read, at PRE
+        closing_fetch(s, PRE + timedelta(minutes=15), 0.47, 0.53)   # a later read before the start: the close
+        closing_fetch(s, COMMENCE + timedelta(minutes=10), 0.99, 0.01)   # in play: ignored
     ledger.append_rows(config.shadow_ledger_path(), HEADER, [
         shadow_row("a", "E1-CLE", "YES", "0.42", "0.0171", PRE, fair="0.50"),
         shadow_row("c", "E1-PHI", "NO", "0.43", "0.0172", PRE, ref_outcome="PHI", fair="0.60")])
     out = []
     run_grader(kalshi(), now_fn=lambda: NOW, out=out.append)
     g = {r["row_id"]: r for r in ledger.read_rows(config.shadow_grades_path())}
-    assert D(g["a"]["closing_fair_prob"]) == D("0.45") and D(g["a"]["closing_side_fair"]) == D("0.45")
-    assert D(g["a"]["clv"]) == D("0.45") - D("0.42") and D(g["a"]["fair_move"]) == D("0.45") - D("0.50")
-    # NO on PHI: closing PHI fair 0.55 -> side fair 0.45; entry side fair 1 - 0.60 = 0.40
-    assert D(g["c"]["closing_side_fair"]) == D("0.45")
-    assert D(g["c"]["clv"]) == D("0.45") - D("0.43") and D(g["c"]["fair_move"]) == D("0.45") - D("0.40")
-    assert any("first-fire CLV" in m and "record only" in m for m in out)
+    assert D(g["a"]["closing_fair_prob"]) == D("0.47") and D(g["a"]["closing_side_fair"]) == D("0.47")
+    assert D(g["a"]["clv"]) == D("0.47") - D("0.42") - D("0.0171") and D(g["a"]["fair_move"]) == D("0.47") - D("0.50")
+    # NO on PHI: closing PHI fair 0.53 -> side fair 0.47; entry side fair 1 - 0.60 = 0.40
+    assert D(g["c"]["closing_side_fair"]) == D("0.47")
+    assert D(g["c"]["clv"]) == D("0.47") - D("0.43") - D("0.0172") and D(g["c"]["fair_move"]) == D("0.47") - D("0.40")
+    assert any("first-fire CLV (closing side fair - price paid - fee)" in m and "record only" in m for m in out)
+
+
+def test_a_game_read_once_has_no_closing_price():
+    """Owner review: a single pull (the close would be the entry read itself) leaves clv blank."""
+    with Store.open() as s:
+        seed(s, result_cle="yes")                                   # the only read, at PRE
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, [
+        shadow_row("a", "E1-CLE", "YES", "0.42", "0.0171", PRE, fair="0.50")])
+    run_grader(kalshi(), now_fn=lambda: NOW, out=lambda m: None)
+    (row,) = ledger.read_rows(config.shadow_grades_path())
+    assert row["clv"] == "" and row["closing_fair_prob"] == "" and row["pnl_per_contract"] != ""
+
+
+def test_a_read_after_the_snapshot_that_is_the_rows_own_read_is_not_a_close():
+    """The daily scan snapshots before the odds read: the entry read can come after snapshot_utc."""
+    with Store.open() as s:
+        seed(s, result_cle="yes", with_ref=False)
+        closing_fetch(s, PRE + timedelta(minutes=2), 0.47, 0.53)    # the row's own read, after its snapshot
+    row = shadow_row("a", "E1-CLE", "YES", "0.42", "0.0171", PRE, fair="0.50")
+    row["odds_fetched_utc"] = iso_z(PRE + timedelta(minutes=2))
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, [row])
+    run_grader(kalshi(), now_fn=lambda: NOW, out=lambda m: None)
+    (graded,) = ledger.read_rows(config.shadow_grades_path())
+    assert graded["clv"] == ""
+
+
+def test_a_one_cent_beat_turns_negative_after_the_fee():
+    """Owner review: clv is after fees. Paid 0.44, closing side fair 0.45: +1c on price, -0.72c after fee."""
+    with Store.open() as s:
+        seed(s, result_cle="yes")
+        closing_fetch(s, PRE + timedelta(minutes=15), 0.45, 0.55)
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, [
+        shadow_row("a", "E1-CLE", "YES", "0.44", "0.0172", PRE, fair="0.50")])
+    run_grader(kalshi(), now_fn=lambda: NOW, out=lambda m: None)
+    (row,) = ledger.read_rows(config.shadow_grades_path())
+    assert D(row["closing_side_fair"]) - D(row["price_paid"]) == D("0.01")
+    assert D(row["clv"]) == D("-0.0072") < 0
 
 
 def test_clv_blank_without_pre_start_reference():
