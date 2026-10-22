@@ -592,3 +592,31 @@ Entries are cleared with a date and the evidence that reality produced.
   - the 3:41 PM PT check (step 3), run against `main` after the merge;
   - the fee table, waiting on the owner's two source files in `docs/sources/`;
   - `install.sh`, held until step 3 passes and the owner says "install".
+
+## 2026-10-22: board and markouts specs (feat/board), and the live venv
+
+- **Specs committed before any code:** `c150e91` (the board, near misses,
+  older checks, record-only markouts, `data/shadow_markouts.csv`) and
+  `f148864` (board gaps under the daily cap are listed without numbers).
+  All other spec choices were approved by the owner.
+- **Accepted for now (owner ruling):** markouts use the game's latest listed
+  start (`checks.latest_starts`). The grader's closing-line value uses the
+  start stored on the row (`commence_utc`). The two differ only when a start
+  moves by under 60 minutes. A move of 60 minutes or more makes the row
+  postponed, and markouts skip it.
+- **The live checkout had no `venv/`** before the 3:41 PM PT check.
+  `scripts/common.sh` runs `$PROJ/venv/bin/python`, so every wrapper would
+  have failed to start.
+  - **Fix (owner-directed, ~2:00 PM PT):** created
+    `/Users/quis/sports-edge/venv` with Homebrew Python 3.14.7 (the same
+    interpreter as the phase1 worktree's venv) from `requirements-dev.txt`.
+    Packages match the phase1 venv: duckdb 1.5.6, pytest 9.1.1, iniconfig
+    2.3.1, packaging 26.3, pluggy 1.7.0, Pygments 2.21.0. `venv/` is
+    gitignored, and `main` stayed clean at `8220c82`.
+  - **OBSERVED:** the suite in the live checkout with the new venv: 362
+    passed, 1 skipped. No cache files were left.
+  - **OBSERVED:** `common.sh` sourced without `SPORTS_EDGE_PYTHON` resolves
+    `PY=/Users/quis/sports-edge/venv/bin/python`, which runs Python 3.14.7
+    with duckdb 1.5.6. Neither `.env` nor the shell sets
+    `SPORTS_EDGE_PYTHON`.
+  - **PENDING:** the 3:41 PM PT check itself, run with this venv.
