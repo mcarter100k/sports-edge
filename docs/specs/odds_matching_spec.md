@@ -68,7 +68,11 @@ holds:
    `yes_sub_title` is `Tie`.
 2. **Same sport:** R's group maps to a tag on E's series.
 3. **Same outcome count:** 2-way with 2-way, or 3-way (with `Draw`) with
-   3-way (with `Tie`).
+   3-way (with `Tie`). The free event listing does not say whether a draw is
+   priced, so this rule is enforced **when prices arrive**. The set of
+   reference outcomes the Kalshi markets map to must equal the set Pinnacle
+   priced. Otherwise the event is logged `UNMATCHED … reason=outcome_count`
+   and is never compared on those prices.
 4. **Time:** R.commence_utc falls within [E.resolve_by − 8 h, E.resolve_by].
    Observed on 2026-10-21 for NBA, NFL, NHL and EPL: `expected_expiration_time`
    ≈ start + 3 h.
@@ -81,7 +85,11 @@ holds:
 6. **Unique both ways:** exactly one R satisfies rules 2–5 for E, and that R
    satisfies them for no other E.
 
-`Tie` ↔ `Draw` is the only fixed outcome mapping.
+`Tie` ↔ `Draw` is the only fixed outcome mapping. `config/team_aliases.json`
+is keyed by Kalshi sport tag (`{"Basketball": {"Los Angeles L": "Los Angeles Lakers"}}`),
+so an alias never applies outside its sport. It starts empty, and every
+entry is added by hand after an `UNMATCHED name_mismatch` line has been
+inspected.
 
 ## Logging unmatched markets loudly
 
