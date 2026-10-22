@@ -609,3 +609,11 @@ the weekly heartbeat's shortfall check covers missed runs.
 ### 7. Protected list
 
 `sports_edge/checks.py` is added to AGENTS.md's protected list.
+
+### Correction (same day)
+
+The specs above call the wrappers, plists, `snapshot.py`, `odds_step.py`,
+`store.py` and `config.py` "protected". That came from `main`'s AGENTS.md. On
+feat/phase1 the protected list was narrowed (`a843253`). Of the files this work
+changes, only `shadow.py`, `fees.py` and `grader.py` are on it. The owner
+added `checks.py` to it on 2026-10-22.

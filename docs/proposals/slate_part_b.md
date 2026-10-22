@@ -1,4 +1,8 @@
-# Proposal: Part B of the slate and alerts (protected; owner review before build)
+# Proposal: Part B of the slate and alerts (owner review before build)
+
+**Owner ruling, 2026-10-22:** approved without the wake. §4 (`wake.sh`, `pmset`, sudoers) and `caffeinate` are dropped, and so is the Full Disk Access row in §5: replies come from `replies.txt` instead. §1–3 are built. See `docs/specs/slate_alerts_spec.md`, "Amendment 2026-10-22: owner rulings before merge".
+
+**Correction, 2026-10-22:** this proposal called these scripts "protected". That came from `main`'s AGENTS.md. On feat/phase1 the protected list was narrowed (commit `a843253`), and `scripts/` is not on it. They were held for owner review anyway.
 
 This document is for review only. Nothing under `scripts/` has been changed.
 Each item below is the exact text proposed, so a review can approve or reject

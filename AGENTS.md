@@ -27,6 +27,7 @@ config/fee_schedule.json     the fee table (every value cited to docs/sources/)
 sports_edge/grader.py        the grader
 sports_edge/shadow.py        the signal rule and its thresholds
 sports_edge/matching.py      odds matching
+sports_edge/checks.py        kickoff slots and check times (decide which games cost odds credits)
 config/team_aliases.json     team-name aliases (change which games pair)
 config/sport_groups.json     sport mapping (changes which games pair)
 ```
