@@ -187,6 +187,12 @@ Angeles time, with the zone shown.
 
 ## When something breaks
 
+**Quick check:** `venv/bin/python -m sports_edge.status` prints up to five
+lines: whether it is running fine, today's games, checks and picks, why
+there are no picks, and odds credits used. It writes nothing. Every
+`python -m sports_edge.…` command reads `.env` itself, so Terminal commands
+see the same settings as the scheduled jobs.
+
 A failing job sends a notification with a sound, and then at most one
 reminder an hour while it keeps failing. It sends a RECOVERED notice when
 it works again. Each run's full output is in that day's log.

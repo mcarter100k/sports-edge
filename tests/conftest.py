@@ -79,6 +79,8 @@ def isolated(tmp_path, monkeypatch, request):
         monkeypatch.delenv(var, raising=False)
     # The iCloud folder (the sheet and replies.txt) never resolves to the real one in a test.
     monkeypatch.setenv("SPORTS_EDGE_SHEET_DIR", str(tmp_path / "sheet"))
+    # A test never loads the real .env, even through a python -m entry point.
+    monkeypatch.setenv("SPORTS_EDGE_NO_ENV_FILE", "1")
     # Fees fail closed unless a test builds its own table (helpers.fee_table).
     monkeypatch.setenv("SPORTS_EDGE_FEE_TABLE", str(tmp_path / "no_fee_table.json"))
     monkeypatch.chdir(tmp_path)
