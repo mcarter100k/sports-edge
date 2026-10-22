@@ -21,7 +21,9 @@ from .timeutil import iso_z
 # GAP_v1 (frozen, never written live): threshold 0.03, 100 contracts, fee
 #   precision 0.01, reference fetch age <= 75 min, no depth check.
 # GAP_v2: threshold 0.03, 100 contracts, fee precision from the cited fee table,
-#   fetch age AND book-update age <= 15 min, depth >= contracts.
+#   reference fetch age <= 15 min, depth >= contracts. The book last-update age
+#   is recorded on every row but never gates (amended in place 2026-10-22,
+#   before any live run).
 RULE_ID = "GAP_v2"
 RULE_DEFAULTS = {
     "SHADOW_EDGE_THRESHOLD": "0.03",
@@ -110,8 +112,7 @@ def evaluate(snap, market, match, ref, settings):
     max_age = timedelta(minutes=settings["max_age_min"])
     if abs(ts - ref["fetched_utc"]) > max_age:
         return [], "reference_stale", 0
-    if ref.get("book_last_update_utc") is None or abs(ts - ref["book_last_update_utc"]) > max_age:
-        return [], "book_line_stale", 0
+    # The bookmaker's last-update age is record-only (record_fields), never a gate.
     if ts >= ref["commence_utc"]:
         return [], "not_pre_game", 0
     fair_f = ref["fair"].get(match["ref_outcome"])

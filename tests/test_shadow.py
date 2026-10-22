@@ -59,22 +59,22 @@ def test_threshold_is_strict():
     (snap(no_ask="1"), ref(0.9), "no_two_sided_quote"),
     (snap(), ref(0.9, fetched=NOW - timedelta(minutes=16)), "reference_stale"),
     (snap(), ref(0.9, fetched=NOW + timedelta(minutes=16)), "reference_stale"),
-    (snap(), ref(0.9, book=NOW - timedelta(minutes=16)), "book_line_stale"),
     (snap(ts=COMMENCE), ref(0.9, fetched=COMMENCE - timedelta(minutes=5)), "not_pre_game"),
 ])
 def test_skip_conditions(s, r, reason):
     assert ev(s, r) == ([], reason, 0)
 
 
-def test_both_clocks_at_exactly_fifteen_minutes_still_pass():
-    r = ref(0.9, fetched=NOW - timedelta(minutes=15), book=NOW - timedelta(minutes=15))
-    assert ev(snap(), r)[1] is None
+def test_fetch_age_at_exactly_fifteen_minutes_still_passes():
+    assert ev(snap(), ref(0.9, fetched=NOW - timedelta(minutes=15)))[1] is None
 
 
-def test_missing_book_update_time_is_stale():
-    r = ref(0.9)
-    r["book_last_update_utc"] = None
-    assert ev(snap(), r)[1] == "book_line_stale"
+@pytest.mark.parametrize("book", [NOW - timedelta(hours=6), NOW - timedelta(days=3), None])
+def test_book_last_update_age_never_gates(book):
+    r = ref(0.50)
+    r["book_last_update_utc"] = book
+    rows, reason, _ = ev(snap(), r)
+    assert reason is None and [x["side"] for x in rows] == ["YES"]
 
 
 def test_fee_error_skips():
@@ -166,6 +166,18 @@ def test_moves_blank_without_an_earlier_point(tmp_path):
         run_shadow(s, "run-1", both_snaps(), NOW, "the-odds-api", out=lambda m: None)
     r = next(r for r in ledger.read_rows(config.shadow_ledger_path()) if r["market_ticker"] == "E1-CLE")
     assert r["kalshi_move_1h"] == "" and r["ref_move_1h"] == "" and r["ref_fair_1h_ago"] == ""
+
+
+def test_old_book_line_still_writes_and_records_its_age(tmp_path):
+    fee_table(tmp_path)
+    with Store.open() as s:
+        seed(s)
+        s.con.execute("UPDATE reference_odds SET book_last_update_utc = ?",
+                      [(NOW - timedelta(hours=5)).replace(tzinfo=None)])
+        res = run_shadow(s, "run-1", both_snaps(), NOW, "the-odds-api", out=lambda m: None)
+    rows = ledger.read_rows(config.shadow_ledger_path())
+    assert res["shadow_rows"] == 2 and "skip_book_line_stale" not in res
+    assert {r["book_update_age_s"] for r in rows} == {str(5 * 3600)}
 
 
 def test_record_only_fields_never_gate(tmp_path, monkeypatch):
