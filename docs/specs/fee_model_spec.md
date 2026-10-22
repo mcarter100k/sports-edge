@@ -106,3 +106,29 @@ validation without it. A test checks the value and requires the cite to
 name a page. The shadow check takes the precision from the table and
 records it on every row. The cite is filled in from the saved PDF when the
 table is built. Until then there is no table, and every fee fails closed.
+
+---
+
+## Amendment 2026-10-22: the schedule changed after July 7 (owner note)
+
+**The July 7 schedule is no longer the current one.** Per Kalshi's online
+fee table, as read by the owner, a **combo maker fee takes effect
+2026-08-20**. `config/fee_schedule.json` must therefore be built from the
+schedule in force for the dates it prices, cited to that document. A table
+whose `source.effective` is 2026-07-07 does not describe combo maker fees
+after 2026-08-20.
+
+The source of truth is unchanged: a PDF the owner saves in `docs/sources/`,
+never an automated fetch. The Aug 20 date was **not** read by any automated
+step; it is recorded here as the owner reported it.
+
+**The API cross-check stays fail-closed (point 4 above), unchanged.**
+- A market whose API `fee_type` is `quadratic_with_combo_maker_fees` is
+  priced only if the table gives that series a maker multiplier above 0
+  **and** the API multiplier equals the table's taker multiplier.
+- Against the default entry (maker 0) it raises `FeeScheduleUnknown` and
+  is counted as `fee_unknown`.
+- A test pins this case (`test_combo_maker_fee_type_fails_closed_against_default_table`).
+
+Combo (`KXMVE*`) markets are still outside Phase 1 (see the 2026-10-22
+amendment above, and the PARKED `phase3_combo_logger_spec.md`).
