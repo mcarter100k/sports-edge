@@ -74,7 +74,7 @@ def test_full_digest_wording(healthy):
         grade_row("r2", "NBA1-B", "NBA1", "no", Y0, "-0.42", clv="-0.01"),
         grade_row("r3", "EPL1-A", "EPL1", "yes", Y0, "0.58", clv="0.02"),
     ])
-    line, report = digest.build_digest(NOW)
+    line, report, _ = digest.build_digest(NOW)
     assert line == (
         "Games watched yesterday: 3 (Basketball 2, Soccer 1) · Underpriced bets spotted: 2 · "
         "Finished games scored: 2 · If you'd bet all of them: up 58.7¢ per $1 "
@@ -94,7 +94,7 @@ def test_only_first_fire_counts_toward_money_and_closing_price(healthy):
         grade_row("r1", "NBA1-A", "NBA1", "yes", Y0, "-0.42", clv="-0.02"),
         grade_row("r9", "NBA1-A", "NBA1", "yes", Y0 + timedelta(hours=2), "0.90", clv="0.30"),
     ])
-    line, _ = digest.build_digest(NOW)
+    line, _, _ = digest.build_digest(NOW)
     assert "down 100¢ per $1 (1 game — too early" in line
     assert "Beat the final pre-game market price: 0 of 1 times" in line
 
@@ -112,7 +112,7 @@ def test_first_fire_parity_with_the_grader(healthy):
 def test_caveat_drops_at_twenty_games(healthy):
     rows = [grade_row(f"r{i}", f"M{i}", f"E{i}", "yes", Y0, "0.10") for i in range(20)]
     ledger.append_rows(config.shadow_grades_path(), grader.SHADOW_GRADE_HEADER, rows)
-    line, _ = digest.build_digest(NOW)
+    line, _, _ = digest.build_digest(NOW)
     assert "(20 games) ·" in line and "too early" not in line
     rows19 = digest.first_fire(rows[:19], "snapshot_utc")
     assert "too early to trust under 20" in digest.money_line(rows19)[0]
@@ -131,7 +131,7 @@ def test_a_zero_from_a_path_that_cannot_produce_one_is_named(monkeypatch, tmp_pa
     monkeypatch.delenv("SPORTS_EDGE_FEE_TABLE", raising=False)
     monkeypatch.setenv("SPORTS_EDGE_FEE_TABLE", str(tmp_path / "absent.json"))
     monkeypatch.delenv("ODDS_API_KEY", raising=False)
-    line, _ = digest.build_digest(NOW)
+    line, _, _ = digest.build_digest(NOW)
     assert "Games watched yesterday: no snapshot run finished yesterday" in line
     assert "Underpriced bets spotted: none possible — no fee table" in line
     assert "Finished games scored: grader has never run" in line
@@ -145,7 +145,7 @@ def test_failing_job_is_a_problem(healthy):
     with Store.open() as s:
         seed_day(s)
     health.record_failure("grader", "boom", NOW - timedelta(hours=3))
-    line, _ = digest.build_digest(NOW)
+    line, _, _ = digest.build_digest(NOW)
     assert "System: problems — grader failing (1 in a row)" in line
 
 
@@ -164,7 +164,7 @@ def test_window_edges_are_pacific_midnight(healthy):
     ledger.append_rows(config.shadow_grades_path(), grader.SHADOW_GRADE_HEADER, [
         grade_row("g1", "A", "EA", "yes", Y0, "0.1", graded=T0 - timedelta(seconds=1)),   # yesterday's run
         grade_row("g2", "B", "EB", "yes", Y0, "0.1", graded=T0 + timedelta(hours=3))])
-    line, _ = digest.build_digest(NOW)
+    line, _, _ = digest.build_digest(NOW)
     assert "Games watched yesterday: 1 (Tennis 1)" in line
     assert "Underpriced bets spotted: 2" in line
     assert "Finished games scored: 1" in line
@@ -183,8 +183,9 @@ def test_report_file_is_never_overwritten(healthy):
 def test_main_prints_line_then_report_path(healthy, capsys):
     assert digest.main() == 0
     out = capsys.readouterr().out.splitlines()
-    assert out[0].startswith("Games watched yesterday: ")
+    assert out[0].startswith("Sports-edge: ")
     assert out[1].startswith("report: ") and out[1].endswith(".txt")
+    assert out[2].startswith("Games watched yesterday: ")
 
 
 def test_full_scan_is_not_watched_and_nothing_checked_is_named(healthy):
@@ -192,7 +193,63 @@ def test_full_scan_is_not_watched_and_nothing_checked_is_named(healthy):
         run(s, Y0 + timedelta(hours=1), {"odds": "not_configured"})   # no shadow step ran
         snap(s, "CHESS1", "CH1", "Chess", Y0 + timedelta(hours=1), tier="daily")
         snap(s, "NBA9", "NBA9", "Basketball", Y0 + timedelta(hours=1), tier="daily")
-    line, report = digest.build_digest(NOW)
+    line, report, _ = digest.build_digest(NOW)
     assert "Games watched yesterday: none matched to reference odds" in line
     assert "Skipped: nothing checked (no games with reference odds)" in line
     assert any(r.startswith("full scan yesterday: 2 open games seen across 2 categories") for r in report)
+
+
+# Banner (spec amendment: banner format) ---------------------------------------
+
+def full_fixture():
+    with Store.open() as s:
+        seed_day(s)
+    ledger.append_rows(config.shadow_ledger_path(), shadow.HEADER, [
+        shadow_row("r1", "NBA1-A", "NBA1", "yes", Y0 + timedelta(hours=1)),
+        shadow_row("r2", "NBA1-B", "NBA1", "no", Y0 + timedelta(hours=1)),
+        shadow_row("r3", "EPL1-A", "EPL1", "yes", Y0 + timedelta(hours=5))])
+    ledger.append_rows(config.shadow_grades_path(), grader.SHADOW_GRADE_HEADER, [
+        grade_row("r1", "NBA1-A", "NBA1", "yes", Y0, "0.58"),
+        grade_row("r2", "NBA1-B", "NBA1", "no", Y0, "-0.42"),
+        grade_row("r3", "EPL1-A", "EPL1", "yes", Y0, "0.58")])
+
+
+def test_banner_wording(healthy):
+    full_fixture()
+    _, _, text = digest.build_digest(NOW)
+    assert text == "Sports-edge: 3 games · 2 underpriced · 2 scored · up 58.7¢ per $1 (too early) · system OK"
+
+
+def test_banner_when_nothing_is_scored_yet(healthy):
+    with Store.open() as s:
+        seed_day(s)
+    _, _, text = digest.build_digest(NOW)
+    assert text == "Sports-edge: no games scored yet · system OK"
+
+
+def test_banner_names_paths_that_cannot_produce_a_number(monkeypatch, tmp_path):
+    monkeypatch.setenv("SPORTS_EDGE_FEE_TABLE", str(tmp_path / "absent.json"))
+    ledger.append_rows(config.shadow_grades_path(), grader.SHADOW_GRADE_HEADER, [
+        grade_row("r1", "M", "E", "yes", Y0, "-0.42")])
+    _, _, text = digest.build_digest(NOW)
+    assert text == ("Sports-edge: no snapshot run · no fee table · grader never ran · "
+                    "down 100¢ per $1 (too early) · system problems")
+
+
+def test_banner_counts_games_from_twenty_and_singular_forms():
+    rows = [grade_row(f"r{i}", f"M{i}", f"E{i}", "yes", Y0, "0.10") for i in range(20)]
+    assert digest.banner("1 game", "1 underpriced", "1 scored", rows, []).endswith(
+        "up 23.8¢ per $1 (20 games) · system OK")
+    assert digest.plural(1, "game") == "1 game" and digest.plural(0, "game") == "0 games"
+    assert "(too early)" in digest.banner("x", "y", "z", rows[:19], [])
+
+
+def test_banner_worst_case_survives_notify_whole():
+    suffix = " → digest_2026-10-23_999.txt"          # what notify.sh appends
+    worst_rows = [grade_row(f"r{i}", f"M{i}", f"E{i}", "yes", Y0, "-0.4237") for i in range(19)]
+    for games in ("99999 games", "no snapshot run", "no matched games"):
+        for under in ("99999 underpriced", "fee table invalid", "no fee table"):
+            for scored in ("99999 scored", "grader never ran"):
+                text = digest.banner(games, under, scored, worst_rows, ["p"])
+                assert len(text) <= digest.BANNER_MAX
+                assert len(text + suffix) <= 220, text      # the osascript fallback's cut

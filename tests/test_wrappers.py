@@ -20,6 +20,18 @@ if [ "$2" = "sports_edge.heartbeat" ]; then
     hb_crash) printf 'Traceback (most recent call last):\\n  File "x"\\nKeyError: y\\n' >&2; exit 1;;
   esac
 fi
+if [ "$2" = "sports_edge.digest" ]; then
+  case "$FAKE_MODE" in
+    dg_ok) f="$SPORTS_EDGE_LOG_DIR/digest_2026-10-23.txt"; echo "full report" > "$f"
+           printf 'Sports-edge: 3 games · 2 underpriced · 2 scored · up 4.2¢ per $1 (too early) · system OK\nreport: %s\nGames watched yesterday: 3\n' "$f"; exit 0;;
+    dg_crash) printf 'Traceback (most recent call last):\n  File "x"\nStoreLocked: busy\n' >&2; exit 1;;
+    dg_tb0) f="$SPORTS_EDGE_LOG_DIR/digest_x.txt"; echo r > "$f"
+            printf 'Sports-edge: no games scored yet · system OK\nreport: %s\n' "$f"
+            printf 'Traceback (most recent call last):\n  File "x"\nValueError: hidden\n' >&2; exit 0;;
+    dg_nobanner) printf 'something else\nreport: /tmp/x\n'; exit 0;;
+    dg_noreport) printf 'Sports-edge: no games scored yet · system OK\nreport: /no/such/digest.txt\n'; exit 0;;
+  esac
+fi
 case "$FAKE_MODE" in
   ok) echo "SNAPSHOT OK fake"; exit 0;;
   ok_with_unmatched) echo "SNAPSHOT OK fake"; echo "UNMATCHED E1 sport=Soccer reason=no_candidate" >&2; exit 0;;
@@ -195,3 +207,54 @@ def test_heartbeat_crash_still_notifies(proj, tmp_path):
     r = run("weekly_heartbeat.sh", proj, tmp_path, "hb_crash")
     assert r.returncode == 1
     assert "heartbeat report failed: KeyError: y" in alerts()[0]
+
+
+# Daily digest wrapper (docs/specs/daily_digest_spec.md, Part B) -----------------
+
+def test_digest_success_notifies_the_banner_and_opens_the_report(proj, tmp_path):
+    r = run("run_digest.sh", proj, tmp_path, "dg_ok")
+    assert r.returncode == 0, r.stderr
+    line = alerts()[0]
+    assert "DIGEST logged-only: Sports-edge: 3 games · 2 underpriced" in line
+    assert "→ digest_2026-10-23.txt" in line
+    assert "Games watched yesterday: 3" in day_log("digest_job")
+
+
+def test_digest_click_opens_the_report_quietly(proj, tmp_path):
+    calls = tmp_path / "tn_calls"
+    make_exe(tmp_path / "bin" / "terminal-notifier", f'#!/bin/bash\necho "$@" >> {calls}\nexit 0\n')
+    r = run("run_digest.sh", proj, tmp_path, "dg_ok", notify="on")
+    assert r.returncode == 0
+    text = calls.read_text()
+    assert "-open file://" in text and text.rstrip().endswith("digest_2026-10-23.txt")
+    assert "-sound" not in text
+
+
+@pytest.mark.parametrize("mode,reason", [
+    ("dg_crash", "DIGEST FAILED | exit 1: StoreLocked: busy"),
+    ("dg_tb0", "DIGEST FAILED | traceback with exit 0: ValueError: hidden"),
+    ("dg_nobanner", "DIGEST FAILED | no banner in the output"),
+    ("dg_noreport", "DIGEST FAILED | report file missing: /no/such/digest.txt"),
+])
+def test_digest_failures_are_loud_and_nonzero(proj, tmp_path, mode, reason):
+    calls = tmp_path / "tn_calls"
+    make_exe(tmp_path / "bin" / "terminal-notifier", f'#!/bin/bash\necho "$@" >> {calls}\nexit 0\n')
+    r = run("run_digest.sh", proj, tmp_path, mode, notify="on")
+    assert r.returncode == 1
+    text = calls.read_text()
+    assert reason in text and "-sound Basso" in text and "-subtitle ALERT" in text
+    assert reason in day_log("digest_job")
+
+
+def test_digest_missing_env_file_is_a_failure(proj, tmp_path):
+    r = run("run_digest.sh", proj, tmp_path, "dg_ok", env_file=True)
+    assert r.returncode == 1
+    assert "DIGEST FAILED | exit 1: .env missing at" in alerts()[0]
+
+
+def test_digest_undeliverable_banner_is_a_failure(proj, tmp_path):
+    make_exe(tmp_path / "bin" / "terminal-notifier", "#!/bin/bash\nexit 1\n")
+    make_exe(tmp_path / "bin" / "osascript", "#!/bin/bash\nexit 1\n")
+    r = run("run_digest.sh", proj, tmp_path, "dg_ok", notify="on")
+    assert r.returncode == 1
+    assert any("ALERT DELIVERY FAILED DIGEST" in a for a in alerts())

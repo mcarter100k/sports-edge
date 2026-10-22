@@ -14,6 +14,7 @@ from .store import Store, from_db_ts, to_db_ts
 from .timeutil import DISPLAY_TZ, display, display_date, parse_utc, utcnow
 
 TRUST_N = 20
+BANNER_MAX = 190   # notify.sh adds " → <file>" and cuts at 300 (220 on osascript)
 SKIP_KEYS = ("skip_reference_stale", "skip_insufficient_depth")
 
 
@@ -38,15 +39,19 @@ def fee_table_state():
         return "invalid"
 
 
-def money_line(graded_first):
-    if not graded_first:
-        return "If you'd bet all of them: no finished bets yet", {}
+def _money(graded_first):
+    """(word, amount text, games) over graded first-fire bets: cents per $1 staked."""
     pnl = sum(float(r["pnl_per_contract"]) for r in graded_first)
     cost = sum(float(r["price_paid"]) + float(r["fee_per_contract"]) for r in graded_first)
     cents = round(100 * pnl / cost, 1) if cost else 0.0
-    n = len({r["event_ticker"] for r in graded_first})
     word = "up" if cents > 0 else "down" if cents < 0 else "even"
-    amount = f" {abs(cents):g}¢" if cents else ""
+    return word, (f" {abs(cents):g}¢" if cents else ""), len({r["event_ticker"] for r in graded_first}), cents
+
+
+def money_line(graded_first):
+    if not graded_first:
+        return "If you'd bet all of them: no finished bets yet", {}
+    word, amount, n, cents = _money(graded_first)
     caveat = f" — too early to trust under {TRUST_N}" if n < TRUST_N else ""
     return (f"If you'd bet all of them: {word}{amount} per $1 ({n} game{'s' if n != 1 else ''}{caveat})",
             {"bets": len(graded_first), "events": n, "cents_per_dollar": cents})
@@ -60,8 +65,24 @@ def clv_line(graded_first):
     return f"Beat the final pre-game market price: {beat} of {len(have)} times"
 
 
+def plural(n, word):
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def banner(games, underpriced, scored, graded_first, problems):
+    """The notification text (spec amendment: banner format). Words, never a
+    zero, for a field whose path cannot produce a number."""
+    system = "system OK" if not problems else "system problems"
+    if not graded_first:
+        return f"Sports-edge: no games scored yet · {system}"
+    word, amount, n, _ = _money(graded_first)
+    trust = "too early" if n < TRUST_N else plural(n, "game")
+    return "Sports-edge: " + " · ".join(
+        [games, underpriced, scored, f"{word}{amount} per $1 ({trust})", system])
+
+
 def build_digest(now=None):
-    """Return (digest_line, report_lines)."""
+    """Return (digest_line, report_lines, banner)."""
     now = now or utcnow()
     y0, t0 = windows(now)
     in_yesterday = lambda ts: ts is not None and y0 <= ts < t0
@@ -96,14 +117,17 @@ def build_digest(now=None):
     if not ok_runs:
         problems.append("no snapshot run finished yesterday")
         watched = "Games watched yesterday: no snapshot run finished yesterday"
+        b_games = "no snapshot run"
         skipped = "Skipped: no snapshot run finished yesterday"
     else:
         total = sum(n for _, n in by_sport)
         sports = ", ".join(f"{s} {n}" for s, n in by_sport)
         if by_sport:
             watched = f"Games watched yesterday: {total} ({sports})"
+            b_games = plural(total, "game")
         else:
             watched = "Games watched yesterday: none matched to reference odds"
+            b_games = "no matched games"
         detail.append(f"full scan yesterday: {sum(n for _, n in scanned)} open games seen across "
                       f"{len(scanned)} categories (not compared unless matched): "
                       + ", ".join(f"{c} {n}" for c, n in scanned))
@@ -126,17 +150,21 @@ def build_digest(now=None):
     if fee_state != "ok":
         problems.append(f"fee table {fee_state}")
         spotted = f"Underpriced bets spotted: none possible — {'no' if fee_state == 'missing' else 'invalid'} fee table"
+        b_under = "no fee table" if fee_state == "missing" else "fee table invalid"
     else:
         events = {r["event_ticker"] for r in new_first}
         spotted = f"Underpriced bets spotted: {len(events)}"
+        b_under = f"{len(events)} underpriced"
         detail.append(f"new bets yesterday: {len(new_first)} across {len(events)} games")
 
     graded = ledger.read_rows(config.shadow_grades_path())
     if not grader_ran:
         scored = "Finished games scored: grader has never run"
+        b_scored = "grader never ran"
     else:
         today_grades = [r for r in graded if t0 <= parse_utc(r["graded_utc"]) <= now]
         scored = f"Finished games scored: {len({r['event_ticker'] for r in today_grades})}"
+        b_scored = f"{len({r['event_ticker'] for r in today_grades})} scored"
         detail.append(f"grades written since {display(t0)}: {len(today_grades)} rows")
     graded_first = first_fire(graded, "snapshot_utc")
     money, money_detail = money_line(graded_first)
@@ -161,7 +189,10 @@ def build_digest(now=None):
         "Nothing here is an edge claim.",
         "",
     ] + detail
-    return line, report
+    text = banner(b_games, b_under, b_scored, graded_first, problems)
+    if len(text) > BANNER_MAX:
+        raise ValueError(f"banner is {len(text)} characters, over {BANNER_MAX}: {text}")
+    return line, report, text
 
 
 def write_report(lines, now):
@@ -181,10 +212,11 @@ def write_report(lines, now):
 
 def main():
     now = utcnow()
-    line, report = build_digest(now)
+    line, report, text = build_digest(now)
     path = write_report(report, now)
-    print(line)
+    print(text)
     print(f"report: {path}")
+    print(line)
     return 0
 
 

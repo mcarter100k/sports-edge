@@ -7,7 +7,9 @@ rewritten. Statuses: VERIFIED, OBSERVED, INFERRED, PENDING, NOT CHECKED.
 
 Entries are cleared with a date and the evidence that reality produced.
 
-- (none yet)
+- **Daily digest at 7:30 AM Pacific** (added 2026-10-22): the first scheduled
+  notification after `install.sh` loads `com.quis.sportsedge.digest` at merge.
+  Until then the wrapper has run only under `scripts/reality_run.py`.
 
 ---
 
@@ -71,3 +73,42 @@ Entries are cleared with a date and the evidence that reality produced.
 - **NOT CHECKED in reality:** the populated money, closing-price and
   bets-spotted lines. They need an odds key, a fee table and graded rows,
   none of which exist yet. Only Gate 1 covers them.
+
+## 2026-10-22: digest banner and 7:30 AM schedule built (owner-approved Part B); not installed
+
+- **Owner rulings applied:**
+  - Banner format with `notify.sh` unchanged.
+  - Part B approved, to be installed with the other jobs at merge.
+  - The August 20 combo fee date is news reporting, UNCONFIRMED until the
+    owner checks kalshi.com/fee-schedule. Recorded as a correction in
+    `fee_model_spec.md`, and in the Phase 3 spec, in commits made before
+    this code.
+- **Built:**
+  - The banner in `sports_edge/digest.py`. Line 1 of its output is the
+    banner, held to 190 characters and enforced.
+  - `scripts/run_digest.sh`: always notifies, is loud on any failure, and
+    exits 1.
+  - `scripts/launchd/com.quis.sportsedge.digest.plist`, firing at 7:30.
+  - The new label in `install.sh` and `uninstall.sh`.
+- **Gate 1:**
+  - 5 banner tests, including the worst-case length plus notify's suffix
+    within the 220-character fallback cut.
+  - 8 wrapper tests under `/bin/bash` 3.2.
+  - 3 new launchd configuration tests.
+  - **14 mutants each killed and reverted byte-identical:** 7 in the
+    wrapper, 3 in the plist and installer, 4 in the banner. The config test
+    first missed a plist pointing at the wrong wrapper (it checked only that
+    the script existed); it was tightened before the mutation run.
+  - **Suite:** 215 passed, 1 skipped.
+- **Gate 2 (reality):** the real wrapper under `/bin/bash`, on the real
+  snapshot data, through `reality_run.py`:
+  - **Without `.env`:** exit 1 and a loud alert, "DIGEST FAILED | exit 1:
+    .env missing …".
+  - **With the test-only `SPORTS_EDGE_NO_ENV_FILE`:** exit 0, posting
+    "Sports-edge: no games scored yet · system problems →
+    digest_2026-10-22_2.txt".
+  - 0 live files changed.
+- **Not installed** (owner ruling): `install.sh` was not run.
+- **PENDING:** the first 7:30 AM firing (top of this log).
+- **NOT CHECKED in reality:** a banner with real numbers. It needs odds, a
+  fee table and graded bets.
