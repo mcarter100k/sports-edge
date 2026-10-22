@@ -4,8 +4,7 @@ message and the iCloud sheet (docs/specs/slate_alerts_spec.md).
 python -m sports_edge.slate show|alert|morning
 
 A read-only view over what the jobs collect. It writes only replies to the
-bet log, its sent-message state, logs/imessage.log, the digest report
-(morning) and the sheet. Picks are exactly the ledger rows written at a check;
+bet log, its sent-message state, logs/imessage.log and the sheet. Picks are exactly the ledger rows written at a check;
 a two-team game's "Yes on A" and "No on B" are one result, shown once (the
 cheaper), and both stay in the ledger.
 """
@@ -17,7 +16,7 @@ import sys
 from datetime import timedelta
 from decimal import Decimal
 
-from . import bets, checks, config, digest, fees, health, imessage, ledger
+from . import bets, checks, config, fees, health, imessage, ledger
 from .grader import latest_replies, taken_bets
 from .store import Store, from_db_ts, to_db_ts
 from .timeutil import (display, display_clock, display_date, display_day, iso_z, pacific_midnight,
@@ -71,7 +70,8 @@ def _low(xs):
 
 def stage(graded):
     """(stage name, line) from graded first-fire bets, by game (docs/specs/slate_alerts_spec.md)."""
-    first = digest.first_fire(graded, "snapshot_utc")
+    ids = set(bets.first_fire_ids(graded).values())
+    first = sorted((r for r in graded if r["row_id"] in ids), key=lambda r: (r["snapshot_utc"], r["row_id"]))
     games = {}
     for r in first:
         games.setdefault(r["event_ticker"], []).append(r)
@@ -176,32 +176,14 @@ def pick_text(row, number, again, teams, league, now, several=False, compact=Fal
     return f"{head}\n{reply}"
 
 
-def combo_line(picks, table):
-    """picks: [(number, row)] from one check. None unless 2+ different games."""
-    legs, seen = [], set()
-    for n, r in sorted(picks, key=lambda p: p[0]):
-        if r["event_ticker"] not in seen:
-            seen.add(r["event_ticker"])
-            legs.append((n, r))
-    if len(legs) < 2:
-        return None
-    label = "Combo " + "+".join(f"#{n}" for n, _ in legs)
-    try:
-        mult, precision = fees.combo_taker_multiplier(table), fees.table_precision(table)
-    except fees.FeeScheduleUnknown:
-        return f"{label}: fee unconfirmed — no price."
-    fair = math.prod(side_fair(r) for _, r in legs)
-    best = None
-    for c in range(1, 100):
-        p = Decimal(c) / 100
-        if p + fees.fee_per_contract(p, int(bets.STAKE // p), mult, "taker", precision) <= fair:
-            best = c
-    if best is None:
-        return f"{label}: no price works — let any quote expire."
-    return f"{label}: accept a quote at {best}¢ or less, else let it expire."
-
-
 # Context ----------------------------------------------------------------------------
+
+def fee_table_state():
+    try:
+        return "ok" if fees.load_table() is not None else "missing"
+    except fees.FeeTableInvalid:
+        return "invalid"
+
 
 class Context:
     """Everything one invocation reads, read once."""
@@ -215,7 +197,7 @@ class Context:
             {"readable": False, "error": "not read by show", "logged": 0, "unclear": 0, "unclear_lines": []}
         self.graded = ledger.read_rows(config.shadow_grades_path())
         self.stage_name, self.stage_line = stage(self.graded)
-        self.fee_state = digest.fee_table_state()
+        self.fee_state = fee_table_state()
         self.table = fees.load_table() if self.fee_state == "ok" else None
         snap = health.read_state().get("snapshot", {})
         self.snapshot_failing = bool(snap.get("consecutive_failures"))
@@ -352,9 +334,6 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
                     if len(f"{text}\n{ctx.footer()}") > MESSAGE_MAX:
                         text = pick_text(*args, compact=True, earlier=earlier)
                     texts.append(text)
-                combo = combo_line([(n, r) for n, _, r in picks], ctx.table)
-                if combo:
-                    texts.append(combo)
             elif compared:
                 texts.append(f"{slot(ctx, cstart, [r['sport_key'] for r in by['checked'] if r['source_event_id'] in compared])}"
                              f": checked, no price gaps · prices {age} min old")
@@ -572,7 +551,7 @@ def morning_text(ctx, now):
 
 # Sheet ------------------------------------------------------------------------------
 
-def sheet_lines(ctx, now, digest_lines):
+def sheet_lines(ctx, now):
     store = ctx.store
     status, last = ctx.last_snapshot()
     newest = from_db_ts(store.con.execute("SELECT max(ts_utc) FROM price_snapshots").fetchone()[0])
@@ -616,24 +595,12 @@ def sheet_lines(ctx, now, digest_lines):
     lines += ["", "OPEN PICKS (games not started; prices as of each pick's latest check)"]
     lines += [f"  {pick_text(r, n, False, ctx.teams(r['event_ticker']), ctx.league(sport_of(store, r)), now, earlier=ctx.earlier_fair(r))}"
               .replace("\n", " · ") for n, r in open_picks] or ["  none"]
-    combo = combo_line(open_picks, ctx.table)
-    if combo:
-        lines.append(f"  {combo}")
     if postponed:
         lines += ["", "POSTPONED"] + postponed
     lines += ["", "YOUR REPLIES TODAY"]
     replies = [r for r in ledger.read_rows(config.bet_log_path()) if r["pick_date"] == today]
     lines += [f"  #{r['pick_no'] or '?'} {r['action']}" + (f" at {cents(r['price'])}" if r["price"] else "")
               + f" ({r['raw_text']!r})" for r in replies] or ["  none"]
-    lines += ["", "YESTERDAY"] + [f"  {ln}" for ln in yesterday_lines(ctx, now)]
-    lines += ["", "DAILY REPORT"] + [f"  {ln}" for ln in digest_lines]
-    lines += ["", "HOW TO READ THIS",
-              "  A pick is a price gap of at least 3¢ after Kalshi's fee, against the sharp book's fair price,",
-              "  logged by the system. Pay up to = the highest price that still leaves 3¢. Practice stake $10.",
-              "  Kalshi price rising/falling/steady = Kalshi's price for the pick over the last hour (2¢ either way).",
-              "  Line moved = the sharp book's price for the pick between its two reads (paid plan only).",
-              "  Two ways to back one team in a two-team game show once, the cheaper; both are logged.",
-              "  Nothing here places a bet."]
     return lines
 
 
@@ -661,14 +628,6 @@ def write_sheet(lines):
     return _replace_atomically(config.sheet_dir() / "sheet.txt", "\n".join(lines) + "\n")
 
 
-def digest_section(now):
-    try:
-        line, report, _ = digest.build_digest(now)
-        return line, report, report
-    except Exception as exc:  # noqa: BLE001 - shown in the sheet, never hidden
-        return None, None, [f"daily report unavailable: {type(exc).__name__}: {exc}"]
-
-
 # Sent state -------------------------------------------------------------------------
 
 def _sent_path():
@@ -689,13 +648,12 @@ def save_sent(sent, now):
 
 def run_alert(now=None, send=imessage.send, out=print):
     now = now or utcnow()
-    _, _, digest_lines = digest_section(now)
     sent = load_sent()
     with Store.open(lock_wait_s=120) as store:
         ctx = Context(store, now)
         replies = ctx.replies
         msgs = alert_messages(ctx, sent)
-        sheet = sheet_lines(ctx, now, digest_lines)
+        sheet = sheet_lines(ctx, now)
     count = 0
     for key, texts in msgs:
         for i, text in enumerate(texts):
@@ -719,25 +677,22 @@ def run_alert(now=None, send=imessage.send, out=print):
 
 def run_morning(now=None, send=imessage.send, out=print):
     now = now or utcnow()
-    _, report, digest_lines = digest_section(now)
     with Store.open(lock_wait_s=120) as store:
         ctx = Context(store, now)
-        text = f"{morning_text(ctx, now)}"
-        sheet = sheet_lines(ctx, now, digest_lines)
-    report_path = digest.write_report(report, now) if report else None
+        text = morning_text(ctx, now)
+        sheet = sheet_lines(ctx, now)
     send(text)
     path = write_sheet(sheet)
     out(text)
-    out(f"SLATE MORNING OK report={report_path} sheet={path}")
+    out(f"SLATE MORNING OK sheet={path}")
     return text
 
 
 def run_show(now=None, out=print):
     now = now or utcnow()
-    _, _, digest_lines = digest_section(now)
     with Store.open(lock_wait_s=120) as store:
         ctx = Context(store, now, ingest=False)
-        for line in sheet_lines(ctx, now, digest_lines):
+        for line in sheet_lines(ctx, now):
             out(line)
 
 

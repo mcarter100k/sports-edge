@@ -1,4 +1,3 @@
-import json
 from datetime import timedelta
 from decimal import Decimal as D
 
@@ -110,28 +109,10 @@ def test_two_reads_describe_the_sportsbook_line(fair, side, earlier, label):
     assert slate.line_label(row, "Cleveland", D(earlier)) == label
 
 
-def leg(event, fair, side="YES"):
-    return {"event_ticker": event, "fair_prob": fair, "side": side}
-
-
-def test_combo_needs_two_different_games_and_a_confirmed_fee(tmp_path):
-    assert slate.combo_line([(1, leg("E1", "0.6")), (2, leg("E1", "0.3", "NO"))], None) is None
-    assert slate.combo_line([(1, leg("E1", "0.6")), (3, leg("E2", "0.5"))], None) == \
-        "Combo #1+#3: fee unconfirmed — no price."
-    path = fee_table(tmp_path)
-    table = json.loads(path.read_text())
-    table["combo"] = {"taker": "1", "cite": "p.4 Combos"}
-    path.write_text(json.dumps(table))
-    from sports_edge import fees
-    # fair 0.6 x 0.5 = 0.30; at 28c, 35 contracts, fee 0.4999/35 = 0.01428 -> 0.2943 <= 0.30; 29c -> 0.3044
-    assert slate.combo_line([(1, leg("E1", "0.6")), (3, leg("E2", "0.5"))], fees.load_table()) == \
-        "Combo #1+#3: accept a quote at 28¢ or less, else let it expire."
-
-
 # Stage line -------------------------------------------------------------------------------
 
 def grades(n_games, clv="0.02", pnl="0.05", price="0.45", fee="0.017"):
-    return [{"market_ticker": f"M{i}", "side": "YES", "rule_id": "GAP_v2", "event_ticker": f"E{i}",
+    return [{"row_id": f"r{i}", "market_ticker": f"M{i}", "side": "YES", "rule_id": "GAP_v2", "event_ticker": f"E{i}",
              "snapshot_utc": f"2026-10-{1 + i // 100:02d}T00:00:{i % 60:02d}.{i:03d}Z", "clv": clv if i % 2 else
              str(D(clv) * 2), "pnl_per_contract": pnl if i % 3 else str(-D(pnl)), "price_paid": price,
              "fee_per_contract": fee} for i in range(n_games)]
@@ -329,8 +310,8 @@ def test_morning_message(checked):
     assert lines[4] == "Your bets: bet log unreadable"
     assert lines[5] == "Unchecked yesterday: none (all 1 games checked)"
     assert lines[6].startswith("System: ") and "bet log unreadable" in lines[6]
-    assert list(config.logs_dir().glob("digest_2026-10-23*.txt"))
-    assert "DAILY REPORT" in (config.sheet_dir() / "sheet.txt").read_text()
+    assert not list(config.logs_dir().glob("digest_*.txt"))           # cut A: no digest report
+    assert "OPEN PICKS" in (config.sheet_dir() / "sheet.txt").read_text()
 
 
 def test_unchecked_games_are_counted_by_reason(tmp_path, monkeypatch):
@@ -420,7 +401,7 @@ def test_a_failed_send_partway_never_resends_what_already_went_out(tmp_path):
     with pytest.raises(slate.imessage.SendFailed):
         slate.run_alert(CHECK_AT + timedelta(minutes=1), flaky, quiet)
     rest = alert(CHECK_AT + timedelta(minutes=2))
-    assert [m[:2] for m in got] == ["#1"] and [m[:5] for m in rest] == ["#2 Bo", "Combo"]
+    assert [m[:2] for m in got] == ["#1"] and [m[:5] for m in rest] == ["#2 Bo"]       # combo line parked
 
 
 def test_hint_asks_for_the_number_when_one_run_checks_two_slots(tmp_path, monkeypatch):
