@@ -412,3 +412,46 @@ Entries are cleared with a date and the evidence that reality produced.
 - **VERIFIED (Gate 2):** real `run_snapshot.sh` and `run_morning.sh` under
   `/bin/bash`, against real Kalshi, in a temporary folder. 0 live files
   changed, no failure markers.
+
+## 2026-10-22: grader fixes from owner review (closing line, clv after fees)
+
+- **Spec `13f6537` (before the code):**
+  - The closing reference must be strictly after the row's `snapshot_utc`
+    **and** its own `odds_fetched_utc`, and before the start; otherwise
+    `clv` is blank.
+    - **Why both:** on a daily run the snapshot comes from the scan that
+      precedes the odds read, so "after the snapshot" alone would let the
+      entry read serve as its own close.
+  - `clv` = closing side fair − price paid − fee per contract.
+  - The stage counts only games with a closing price.
+  - **The free plan reads each game once,** so it never produces a closing
+    price. Its Practice line says "(free plan adds none)", per rule 8.
+  - **Accepted note:** a walked fill may cost over $10, while the cap counts
+    the nominal $10.
+- **VERIFIED (Gate 1):** 324 passed, 1 skipped. New tests:
+  - a game read once has a blank `clv`;
+  - the row's own read, coming after its snapshot, is not a close;
+  - a 1¢ price beat is −0.72¢ after the fee;
+  - 150 graded games with no closes stay in Practice (2 positive closes do
+    not promote, and 2 negative closes do not demote);
+  - the free-plan wording.
+  - The alert-length worst case now uses the longest possible stage line
+    (69 characters), and the compact form still fits.
+- **Mutants, from clean caches: 77 of 77 killed** (build 46, review 13,
+  rulings 18), each restored byte-identical, with no caches left behind. Six
+  new ones:
+  - the entry read allowed as the close (`>` → `>=`);
+  - the close measured from the snapshot only;
+  - `clv` without the fee;
+  - promotion counting all graded games;
+  - demotion counting all graded games;
+  - the free-plan note dropped.
+- **VERIFIED (Gate 2):** real `run_grader.sh`, `run_snapshot.sh` and
+  `run_morning.sh` under `/bin/bash`, against real Kalshi, in a temporary
+  folder. 0 live files changed, no failure markers.
+  - The grader swept 2,297 settlements and printed the taken and not-taken
+    lines.
+  - The morning showed "Practice · 0 of 100 games with a closing price
+    (free plan adds none)".
+- **NOT CHECKED in reality:** the closing line on real reads. That needs an
+  odds key and two reads of one game, which the free plan never makes.
