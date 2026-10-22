@@ -620,3 +620,45 @@ Entries are cleared with a date and the evidence that reality produced.
     with duckdb 1.5.6. Neither `.env` nor the shell sets
     `SPORTS_EDGE_PYTHON`.
   - **PENDING:** the 3:41 PM PT check itself, run with this venv.
+
+## 2026-10-22: the board and markouts built (feat/board); grader.py held for owner review
+
+**Owner waiver:** Step 2 started after the install, before the 3:41 PM PT
+check. Code `6405d61` (the board) and `b0c3d16` (markouts, `grader.py`),
+built to specs `c150e91` and `f148864`. Who-moved-first was dropped by the
+review and is not built.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 389 passed, 1 skipped (27 new tests).
+  - New mutants: 35 of 35 killed, from clean caches, each restored
+    byte-identical.
+  - Standing set rerun on this branch: 98 of 98 killed (65 + 13 + 20).
+- **OBSERVED, Gate 2** (`scripts/reality_run.py --code <worktree>`, live
+  Kalshi API; 0 live files changed and no failure markers in every run):
+  - `slate board` on a copy of the live data printed
+    `BOARD (price gaps as of each game's check, 2:19 PM PT)` and
+    `none (no fee table)`.
+  - `run_grader.sh` on a copy of the live data: `GRADER OK … markouts_measured=0`
+    and `markouts: 0 measured (no shadow rows logged yet)`.
+  - `run_snapshot.sh` on an empty folder: `SNAPSHOT OK` (99,653 markets, 21
+    games matched), then `SLATE ALERT OK messages=0`. The sheet opens with
+    the BOARD, reading `none (no fee table)`.
+- **Finding: `--code` alone does not change the code a wrapper runs.**
+  `common.sh` changes into `/Users/quis/sports-edge` before `python -m`, and
+  Python puts the current folder ahead of `PYTHONPATH`. The first grader
+  gate run therefore ran `main`'s code: its output had no markouts line.
+  The runs above set `SPORTS_EDGE_PROJ=<worktree>`,
+  `SPORTS_EDGE_PYTHON=/Users/quis/sports-edge/venv/bin/python` and
+  `SPORTS_EDGE_NO_ENV_FILE=1`; the markouts line then appeared. Wrapper
+  gates on earlier branches may have run `main`'s code (NOT CHECKED).
+- **Finding: a first daily run stores no prices for markets it matches.**
+  The empty-folder run above matched 44 markets and wrote 0
+  `price_snapshots` rows. The live 2:15 PM PT run matched the same 44. The
+  snapshot spec says a game matched in a run is snapshotted in that run.
+  PENDING: the 2:30 PM PT live run's price rows for these markets.
+- **PENDING:**
+  - the first real board gap (needs the fee table);
+  - the first real near miss on the board;
+  - the first markout row in `data/shadow_markouts.csv` (needs a logged
+    row whose game has started);
+  - owner review of `grader.py` before merge.
