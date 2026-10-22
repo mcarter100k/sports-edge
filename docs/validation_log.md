@@ -25,3 +25,15 @@ Entries are cleared with a date and the evidence that reality produced.
 - NOT READ: the Kalshi fee schedule PDF (HTTP 429 to every automated
   fetch). The 0.07 taker coefficient is pinned by the docs' fee-rounding
   worked example. See `docs/specs/fee_model_spec.md` open items.
+
+## 2026-10-22: GAP_v2 amended in place before any live run
+
+- Change: the book last-update age is no longer a gate. It remains a
+  record-only field (`book_update_age_s`) on every row. The only staleness
+  gate is the reference fetch age ≤ 15 min. The `book_line_stale` skip is
+  removed.
+- Why amended in place: GAP_v2 has written no live rows (no live ledger
+  exists; launchd is not installed), so no evidence carries the earlier
+  definition. Owner-directed.
+- Evidence for this change: see the run report of 2026-10-22 (suite result
+  and the mutation test that re-adds the gate).

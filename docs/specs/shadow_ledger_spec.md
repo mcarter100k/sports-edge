@@ -115,3 +115,14 @@ labels rows `GAP_v2+custom(...)`.
 `yes_bid_size`, `yes_ask_size`, `minutes_to_start`, `kalshi_mid`,
 `kalshi_move_1h`, `ref_fair_1h_ago`, `ref_move_1h`, `fair_prob_power`
 and `fee_precision`. No version-1 ledger was ever written live.
+
+### Amendment to GAP_v2, 2026-10-22, before any live run (owner direction)
+
+GAP_v2 is amended in place, not versioned to GAP_v3, because it has never
+written a live row. **The only staleness gate is the reference fetch age**
+(|snapshot − fetch| ≤ `ODDS_MAX_AGE_MIN`, default 15). The bookmaker's
+last-update age (`book_update_age_s`) stays on every row, in seconds, and
+is **record-only**: it never decides whether a row is written. The
+`book_line_stale` skip is removed. Why: `last_update` may mark when
+Pinnacle last *changed* the line, so a steady, current line would read as
+stale. The measured odds cycle will report how these ages are distributed.
