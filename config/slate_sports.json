@@ -1,0 +1,18 @@
+{
+  "_doc": "The owner's sports: Odds API sport key -> league label shown in messages. Keys not listed here are never listed, matched or priced. Keys read from the-odds-api.com/sports-odds-data/sports-apis.html on 2026-10-22. MLB is in scope but spends no credits while its fee is unconfirmed (fee gate). See docs/specs/slate_alerts_spec.md.",
+  "americanfootball_nfl": "NFL",
+  "americanfootball_ncaaf": "College football",
+  "basketball_nba": "NBA",
+  "icehockey_nhl": "NHL",
+  "baseball_mlb": "MLB",
+  "soccer_epl": "Premier League",
+  "soccer_spain_la_liga": "La Liga",
+  "soccer_germany_bundesliga": "Bundesliga",
+  "soccer_italy_serie_a": "Serie A",
+  "soccer_france_ligue_one": "Ligue 1",
+  "soccer_netherlands_eredivisie": "Eredivisie",
+  "soccer_portugal_primeira_liga": "Primeira Liga",
+  "soccer_uefa_champs_league": "Champions League",
+  "soccer_uefa_europa_league": "Europa League",
+  "soccer_uefa_europa_conference_league": "Conference League"
+}

@@ -93,6 +93,11 @@ class FakeKalshi:
         self.requests += 1
         return self.lookups.get(ticker)
 
+    def orderbook(self, ticker, depth=10):
+        self.requests += 1
+        self.book_requests = getattr(self, "book_requests", []) + [ticker]
+        return (getattr(self, "books", {}) or {}).get(ticker, {"yes": [], "no": []})
+
 
 class FakeOdds:
     name = "the-odds-api"

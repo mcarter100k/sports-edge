@@ -50,3 +50,25 @@ def display(dt) -> str:
 def display_date(dt) -> str:
     """The Los Angeles calendar date, used for day-log file names."""
     return dt.astimezone(DISPLAY_TZ).strftime("%Y-%m-%d")
+
+
+def display_clock(dt) -> str:
+    """Pacific clock time for messages: '4:10 PM PT'."""
+    la = dt.astimezone(DISPLAY_TZ)
+    return la.strftime("%I:%M %p").lstrip("0") + " PT"
+
+
+def display_day(dt) -> str:
+    """Pacific weekday and date for messages: 'Thu Oct 22'."""
+    la = dt.astimezone(DISPLAY_TZ)
+    return la.strftime("%a %b ") + str(la.day)
+
+
+def pacific_midnight(dt):
+    """Start of the Pacific calendar day containing dt, as an aware datetime."""
+    return dt.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def pmset_time(dt) -> str:
+    """Local (Pacific) time in the form `pmset schedule` expects: MM/dd/yy HH:mm:ss."""
+    return dt.astimezone(DISPLAY_TZ).strftime("%m/%d/%y %H:%M:%S")

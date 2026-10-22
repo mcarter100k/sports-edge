@@ -184,3 +184,29 @@ def test_combo_maker_fee_type_fails_closed_against_default_table(tmp_path):
     assert resolve_multipliers(t2, "KXMVECOMBO", "quadratic_with_combo_maker_fees", 1, False) == (D("1"), D("1"))
     with pytest.raises(FeeScheduleUnknown, match="API multiplier"):
         resolve_multipliers(t2, "KXMVECOMBO", "quadratic_with_combo_maker_fees", 2, False)
+
+
+def test_combo_fee_fails_closed_until_the_table_confirms_it(tmp_path):
+    with pytest.raises(FeeScheduleUnknown, match="no fee table"):
+        fees.combo_taker_multiplier(None)
+    fee_table(tmp_path)
+    with pytest.raises(FeeScheduleUnknown, match="no confirmed entry"):
+        fees.combo_taker_multiplier(fees.load_table())
+    path = fee_table(tmp_path, unconfirmed={"combo": "news reporting only"})
+    t = json.loads(path.read_text())
+    t["combo"] = {"taker": "1", "cite": "p.4 Combos"}
+    path.write_text(json.dumps(t))
+    with pytest.raises(FeeScheduleUnknown, match="unconfirmed"):
+        fees.combo_taker_multiplier(fees.load_table())
+    t["unconfirmed"] = {}
+    path.write_text(json.dumps(t))
+    assert fees.combo_taker_multiplier(fees.load_table()) == D("1")
+
+
+def test_combo_entry_needs_a_cite(tmp_path):
+    path = fee_table(tmp_path)
+    t = json.loads(path.read_text())
+    t["combo"] = {"taker": "1"}
+    path.write_text(json.dumps(t))
+    with pytest.raises(FeeTableInvalid, match="combo"):
+        fees.load_table()

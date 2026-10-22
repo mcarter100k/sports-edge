@@ -2,7 +2,7 @@
 
 python -m sports_edge.snapshot
 
-daily  (03:00 LA, or catch-up): full scan of open sports events, every market
+daily  (03:00 LA, or catch-up): full scan of open sports events; price rows for matched markets
 hourly (other :00 runs):        matched events only, every market
 near   (:15, :30, :45):         matched events only, markets resolving within 48 h
 """
@@ -157,10 +157,10 @@ def sweep_settlements(store, client, now, open_tickers):
     pending = store.con.execute("""
         SELECT m.ticker FROM markets m
         LEFT JOIN settlements s ON s.ticker = m.ticker
-        LEFT JOIN (SELECT DISTINCT market_ticker FROM odds_matches) o ON o.market_ticker = m.ticker
+        JOIN (SELECT DISTINCT market_ticker FROM odds_matches) o ON o.market_ticker = m.ticker
         WHERE s.ticker IS NULL AND m.resolve_by < ? AND m.resolve_by > ?
           AND (m.status <> 'active' OR m.last_seen_utc < ?)
-        ORDER BY (o.market_ticker IS NOT NULL) DESC, m.resolve_by DESC
+        ORDER BY m.resolve_by DESC
         LIMIT ?""", [to_db_ts(now - LOOKUP_AFTER), to_db_ts(now - LOOKUP_MAX_AGE),
                      to_db_ts(now - STILL_OPEN_WINDOW), LOOKUP_LIMIT + len(open_tickers)]).fetchall()
     lookups = [t for (t,) in pending if t not in open_tickers][:LOOKUP_LIMIT]
@@ -184,6 +184,13 @@ def matched_event_tickers(store, now, kind):
         WHERE s.ticker IS NULL AND m.resolve_by > ? {near}
           AND o.event_ticker NOT IN (SELECT event_ticker FROM match_conflicts)
         ORDER BY 1""", params).fetchall()]
+
+
+def matched_tickers(store):
+    """Markets with a reference match, excluding events with a match conflict."""
+    return {t for (t,) in store.con.execute(
+        "SELECT market_ticker FROM odds_matches "
+        "WHERE event_ticker NOT IN (SELECT event_ticker FROM match_conflicts)").fetchall()}
 
 
 def matched_by_sport(store, now):
@@ -227,8 +234,9 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
                 n_markets = sum(len(ev.get("markets") or []) for _, ev in events)
                 if not events or not n_markets:
                     raise ScanEmpty(f"SCAN EMPTY: {len(events)} sports events, {n_markets} markets")
+                matched = matched_tickers(store)
                 _, added, conflicts = write_events(store, run_id, "daily", events, sports, started,
-                                                   lambda row: True, snaps)
+                                                   lambda row: row["ticker"] in matched, snaps)
                 open_tickers = {m["ticker"] for _, ev in events for m in ev.get("markets") or []
                                 if m["status"] != "finalized"}
                 summary.update({"events": len(events), "markets": n_markets,
@@ -236,11 +244,14 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
                 summary.update(sweep_settlements(store, client, started, open_tickers))
 
             source = odds_source_factory(store)
+            checked = []
             if source is None:
                 out("ODDS NOT CONFIGURED: ODDS_API_KEY is not set; no reference comparison this run")
                 summary["odds"] = "not_configured"
             else:
                 summary.update(odds_step(store, source, client, upsert_events, run_id, now_fn(), out, err))
+                checked = summary.pop("checked_events", [])
+                summary["checked_games"] = len(checked)
 
             if kind != "daily":
                 tickers = matched_event_tickers(store, started, kind)
@@ -258,7 +269,8 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
             summary["snapshot_rows"] = len(snaps)
             summary["sports"] = len({s["_sport"] for s in snaps.values()})
             if source is not None:
-                summary.update(run_shadow(store, run_id, snaps, now_fn(), source.name, out))
+                summary.update(run_shadow(store, run_id, snaps, now_fn(), source.name, out,
+                                          set(checked), client.orderbook))
             summary["matched_by_sport"] = matched_by_sport(store, started)
             summary["kalshi_requests"] = client.requests
         except BaseException as exc:

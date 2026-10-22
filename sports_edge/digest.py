@@ -186,7 +186,7 @@ def build_digest(now=None):
         f"Yesterday = {display(y0)} to {display(t0)}; scores counted from {display(t0)} to {display(now)}.",
         "Money and closing-price lines cover every graded bet so far. A bet is the first logged price "
         "per market, side and rule; a game counts once however many bets it has.",
-        "Nothing here is an edge claim.",
+        "Nothing here claims that a price gap is real.",
         "",
     ] + detail
     text = banner(b_games, b_under, b_scored, graded_first, problems)

@@ -99,6 +99,9 @@ def validate_table(table, repo_root=None):
         Decimal(str(table["default"][k]))
     if Decimal(str(table["settlement_fee"]["value"])) != 0:
         raise FeeTableInvalid("a nonzero settlement fee is not implemented")
+    if "combo" in table:
+        _need_cite(table["combo"], "combo")
+        Decimal(str(table["combo"]["taker"]))
     for ticker, reason in (table.get("unconfirmed") or {}).items():
         if not str(reason).strip():
             raise FeeTableInvalid(f"unconfirmed.{ticker} needs a reason")
@@ -140,3 +143,14 @@ def resolve_multipliers(table, series_ticker, api_fee_type, api_multiplier, has_
         raise FeeScheduleUnknown(
             f"{series_ticker}: API fee type {api_fee_type} disagrees with table maker multiplier {m_maker}")
     return m_taker, m_maker
+
+
+def combo_taker_multiplier(table):
+    """Taker multiplier for combos (alerts only), or FeeScheduleUnknown. Never guessed."""
+    if table is None:
+        raise FeeScheduleUnknown("no fee table yet (config/fee_schedule.json)")
+    if "combo" in (table.get("unconfirmed") or {}):
+        raise FeeScheduleUnknown(f"combo: unconfirmed ({table['unconfirmed']['combo']})")
+    if "combo" not in table:
+        raise FeeScheduleUnknown("combo: no confirmed entry in the fee table")
+    return Decimal(str(table["combo"]["taker"]))

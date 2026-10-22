@@ -12,7 +12,8 @@ from datetime import timedelta
 from decimal import Decimal
 
 from . import config, ledger
-from .fees import FeeScheduleUnknown, fee_per_contract, load_table, resolve_multipliers, table_precision
+from .fees import (FeeScheduleUnknown, fee_for_order, fee_per_contract, load_table, resolve_multipliers,
+                   table_precision)
 from .matching import check_outcomes
 from .store import from_db_ts, to_db_ts
 from .timeutil import iso_z
@@ -20,25 +21,28 @@ from .timeutil import iso_z
 # The signal rule. Changing any constant is a new rule_id, never an edit in place.
 # GAP_v1 (frozen, never written live): threshold 0.03, 100 contracts, fee
 #   precision 0.01, reference fetch age <= 75 min, no depth check.
-# GAP_v2: threshold 0.03, 100 contracts, fee precision from the cited fee table,
-#   reference fetch age <= 15 min, depth >= contracts. The book last-update age
-#   is recorded on every row but never gates (amended in place 2026-10-22,
-#   before any live run).
+# GAP_v2: gap >= 0.03 after the taker fee, contracts = floor($10 / best ask), the
+#   book must cover them (walked level by level when the best level is short),
+#   fee precision from the cited fee table, reference fetch age <= 15 min, rows
+#   only for games checked in the same run. The book last-update age is
+#   recorded but never gates. Amended in place 2026-10-22, before any live run.
 RULE_ID = "GAP_v2"
 RULE_DEFAULTS = {
     "SHADOW_EDGE_THRESHOLD": "0.03",
-    "SHADOW_CONTRACTS": "100",
+    "SHADOW_STAKE_DOLLARS": "10",
     "ODDS_MAX_AGE_MIN": "15",
 }
+BOOK_DEPTH = 10
 MOVE_WINDOW = (timedelta(minutes=60), timedelta(minutes=120))
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 HEADER = [
     "row_id", "schema_version", "rule_id", "logged_utc", "run_id", "snapshot_utc",
     "odds_fetched_utc", "book_last_update_utc", "commence_utc", "sport", "competition",
     "event_ticker", "market_ticker", "outcome", "ref_outcome", "side", "yes_bid", "yes_ask", "no_bid",
     "no_ask", "yes_bid_size", "yes_ask_size", "depth_contracts", "price_paid", "kalshi_implied_prob",
-    "fair_prob", "fee_per_contract", "fee_precision", "contracts_assumed", "edge", "threshold",
+    "fair_prob", "fee_per_contract", "fee_precision", "stake_dollars", "contracts_assumed",
+    "fill_detail", "edge", "threshold",
     "fee_type", "fee_multiplier", "fee_waiver_expiration_utc", "odds_source", "bookmaker",
     "source_event_id", "overround", "devig_method",
     # record-only from here on: never gate a row
@@ -54,7 +58,7 @@ def _rule_value(name):
 
 def rule_settings():
     return {"threshold": Decimal(_rule_value("SHADOW_EDGE_THRESHOLD")),
-            "contracts": int(_rule_value("SHADOW_CONTRACTS")),
+            "stake": Decimal(_rule_value("SHADOW_STAKE_DOLLARS")),
             "max_age_min": int(_rule_value("ODDS_MAX_AGE_MIN"))}
 
 
@@ -98,10 +102,46 @@ def depth_for(side, snap):
     return snap.get("yes_ask_size") if side == "YES" else snap.get("yes_bid_size")
 
 
-def evaluate(snap, market, match, ref, settings):
+def contracts_for(stake, price):
+    """Contracts a stake buys at one price: floor(stake / price)."""
+    return int(Decimal(stake) // Decimal(price))
+
+
+def asks_from_book(book, side):
+    """[(ask, count)] best first. A Yes ask is 1 - a No bid; a No ask is 1 - a Yes bid."""
+    bids = book.get("no" if side == "YES" else "yes") or []
+    return sorted(((Decimal(1) - p, n) for p, n in bids if p is not None and n), key=lambda lv: lv[0])
+
+
+def _num(d):
+    """Plain decimal text: 10 stays '10', never '1E+1'."""
+    return f"{Decimal(d).normalize():f}"
+
+
+def walk_book(levels, contracts, m_taker, precision):
+    """Fill `contracts` across ask levels, best first. (avg price, fee per contract, detail) or None."""
+    left, cost, fee, parts = Decimal(contracts), Decimal(0), Decimal(0), []
+    for price, count in levels:
+        if left <= 0:
+            break
+        if not (Decimal(0) < price < Decimal(1)):
+            continue
+        take = min(left, Decimal(count))
+        cost += price * take
+        fee += fee_for_order(price, take, m_taker, "taker", precision)
+        parts.append(f"{_num(price)}x{_num(take)}")
+        left -= take
+    if left > 0:
+        return None
+    return cost / contracts, fee / contracts, ";".join(parts)
+
+
+def evaluate(snap, market, match, ref, settings, book=None):
     """The signal rule for one market at one snapshot.
 
-    Returns (rows, skip_reason, depth_skips). Only the inputs here may gate a row.
+    book: None, or a callable side -> [(ask, count)] best first, used only when
+    the best level cannot fill the stake. Returns (rows, skip_reason,
+    depth_skips). Only the inputs here may gate a row.
     """
     if snap["status"] != "active":
         return [], "not_active", 0
@@ -124,18 +164,29 @@ def evaluate(snap, market, match, ref, settings):
     rows, depth_skips = [], 0
     for side, price, win_prob in (("YES", snap["yes_ask"], fair),
                                   ("NO", snap["no_ask"], Decimal(1) - fair)):
-        fee = fee_per_contract(price, settings["contracts"], market["m_taker"], "taker",
-                               market["precision"])
+        contracts = contracts_for(settings["stake"], price)
+        if contracts < 1:
+            continue
+        fee = fee_per_contract(price, contracts, market["m_taker"], "taker", market["precision"])
         edge = (win_prob - price - fee).quantize(Q6)
-        if edge <= settings["threshold"]:
-            continue
+        if edge < settings["threshold"]:
+            continue     # a walk can only raise the average price, so it is never tried
         depth = depth_for(side, snap)
-        if depth is None or depth < settings["contracts"]:
-            depth_skips += 1
-            continue
+        paid, detail = price, f"{_num(price)}x{contracts}"
+        if depth is None or depth < contracts:
+            walked = walk_book(book(side), contracts, market["m_taker"], market["precision"]) if book else None
+            if walked is None:
+                depth_skips += 1
+                continue
+            paid, fee, detail = walked
+            edge = (win_prob - paid - fee).quantize(Q6)
+            if edge < settings["threshold"]:
+                depth_skips += 1
+                continue
         rows.append({
-            "side": side, "price_paid": price, "kalshi_implied_prob": price, "fair_prob": fair,
-            "fee_per_contract": fee.quantize(Q6), "edge": edge, "depth_contracts": depth})
+            "side": side, "price_paid": paid.quantize(Q6), "kalshi_implied_prob": paid.quantize(Q6),
+            "fair_prob": fair, "fee_per_contract": fee.quantize(Q6), "edge": edge,
+            "depth_contracts": depth, "contracts_assumed": contracts, "fill_detail": detail})
     return rows, None, depth_skips
 
 
@@ -176,8 +227,11 @@ def record_fields(store, source, ticker, eid, ref_outcome, snap, ref):
     return fields
 
 
-def run_shadow(store, run_id, snapshots, now, source_name, out):
-    """snapshots: {ticker: snapshot dict} from this run. Appends qualifying rows; returns counts."""
+def run_shadow(store, run_id, snapshots, now, source_name, out, checked_events=(), book_fn=None):
+    """snapshots: {ticker: snapshot dict} from this run. checked_events: reference ids whose
+    odds were fetched in this run (a check); only their markets are compared. book_fn:
+    ticker -> order book, read only when the best level cannot fill the stake.
+    Appends qualifying rows; returns counts."""
     settings = rule_settings()
     table = load_table()
     matches = store.con.execute("""
@@ -194,6 +248,9 @@ def run_shadow(store, run_id, snapshots, now, source_name, out):
         by_event.setdefault(row[2], []).append(row)
     skips, rows = Counter(), []
     for eid, event_matches in by_event.items():
+        if eid not in checked_events:
+            skips["not_checked_this_run"] += len(event_matches)
+            continue
         ref = refs.get(eid)
         if ref is None:
             skips["no_reference"] += len(event_matches)
@@ -217,7 +274,16 @@ def run_shadow(store, run_id, snapshots, now, source_name, out):
             except FeeScheduleUnknown as exc:
                 market = {"fee_error": str(exc)}
                 fee_reasons[str(exc)] += 1
-            found, reason, depth_skips = evaluate(snap, market, {"ref_outcome": ref_outcome}, ref, settings)
+            book = None
+            if book_fn is not None:
+                cache = {}
+
+                def book(side, ticker=ticker, cache=cache):
+                    if "b" not in cache:
+                        cache["b"] = book_fn(ticker, BOOK_DEPTH)
+                    return asks_from_book(cache["b"], side)
+            found, reason, depth_skips = evaluate(snap, market, {"ref_outcome": ref_outcome}, ref, settings,
+                                                  book)
             if reason:
                 skips[reason] += 1
             if depth_skips:
@@ -235,7 +301,7 @@ def run_shadow(store, run_id, snapshots, now, source_name, out):
                     "yes_bid": snap.get("yes_bid"), "yes_ask": snap.get("yes_ask"),
                     "no_bid": snap.get("no_bid"), "no_ask": snap.get("no_ask"),
                     "yes_bid_size": snap.get("yes_bid_size"), "yes_ask_size": snap.get("yes_ask_size"),
-                    "contracts_assumed": settings["contracts"], "threshold": settings["threshold"],
+                    "stake_dollars": settings["stake"], "threshold": settings["threshold"],
                     "fee_type": fee_type, "fee_multiplier": market["m_taker"],
                     "fee_precision": market["precision"],
                     "fee_waiver_expiration_utc": iso_z(from_db_ts(waiver)) if waiver else "",

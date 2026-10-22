@@ -3,10 +3,11 @@
     venv/bin/python scripts/reality_run.py [--code DIR] [--keep] [--with-live-data] -- <command...>
 
 The command runs from a temporary directory with SPORTS_EDGE_DATA_DIR,
-SPORTS_EDGE_LOG_DIR and SPORTS_EDGE_STATE_DIR pointing inside it, and
-SPORTS_EDGE_NOTIFY=log (nothing is posted). Credentials come from the live
+SPORTS_EDGE_LOG_DIR, SPORTS_EDGE_STATE_DIR and SPORTS_EDGE_SHEET_DIR pointing inside it,
+and SPORTS_EDGE_NOTIFY=log (no notification or iMessage is sent). Credentials come from the live
 repo's .env. Every file under data/, logs/ and state/ of both the live repo and the
-code checkout is hashed before and after; any change fails the run (exit 2). The output is
+code checkout, and the live iCloud sheet folder, is hashed before and after; any
+change fails the run (exit 2). The output is
 printed in full and scanned for failure markers: an exit code alone is not
 a certification (exit 3 on a marker).
 
@@ -23,16 +24,16 @@ from pathlib import Path
 
 LIVE = Path("/Users/quis/sports-edge")
 WATCHED = ("data", "logs", "state")
+SHEET = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "sports-edge"
 MARKERS = ("Traceback (most recent call last)", "SCAN EMPTY", "KalshiError", "OddsError",
-           "StoreLocked", "LedgerSchemaMismatch", "ALERT DELIVERY FAILED")
+           "StoreLocked", "LedgerSchemaMismatch", "ALERT DELIVERY FAILED", "SLATE FAILED")
 
 
 def snapshot_hashes(roots):
-    """sha256 of every file under data/, logs/ and state/ of each root."""
+    """sha256 of every file under data/, logs/ and state/ of each root, and the live sheet folder."""
     hashes = {}
     for root in roots:
-        for sub in WATCHED:
-            base = root / sub
+        for base in [root / sub for sub in WATCHED] + ([SHEET] if root == LIVE else []):
             if not base.exists():
                 continue
             for path in sorted(base.rglob("*")):
@@ -67,7 +68,7 @@ def main():
 
     code = Path(args.code).resolve()
     tmp = Path(args.tmp) if args.tmp else Path(tempfile.mkdtemp(prefix="sports-edge-reality-"))
-    for sub in ("data", "logs", "state"):
+    for sub in ("data", "logs", "state", "sheet"):
         (tmp / sub).mkdir(parents=True, exist_ok=True)
     if args.with_live_data and (LIVE / "data").exists() and not args.tmp:
         shutil.copytree(LIVE / "data", tmp / "data", dirs_exist_ok=True)
@@ -76,6 +77,7 @@ def main():
     env.update({
         "SPORTS_EDGE_DATA_DIR": str(tmp / "data"), "SPORTS_EDGE_LOG_DIR": str(tmp / "logs"),
         "SPORTS_EDGE_STATE_DIR": str(tmp / "state"), "SPORTS_EDGE_NOTIFY": "log",
+        "SPORTS_EDGE_SHEET_DIR": str(tmp / "sheet"),
         "PYTHONPATH": str(code), "PYTHONDONTWRITEBYTECODE": "1"})
 
     roots = sorted({LIVE, code})

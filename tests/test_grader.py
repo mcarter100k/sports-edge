@@ -170,3 +170,39 @@ def test_clv_blank_without_pre_start_reference():
     run_grader(kalshi(), now_fn=lambda: NOW, out=lambda m: None)
     (row,) = ledger.read_rows(config.shadow_grades_path())
     assert row["clv"] == "" and row["pnl_per_contract"] != ""
+
+
+def bet(guid, row_id, action, price="", contracts="", when=NOW, day="2026-10-22", no=1):
+    return {"logged_utc": iso_z(when), "message_guid": guid, "message_utc": iso_z(when), "pick_date": day,
+            "pick_no": no, "row_id": row_id, "market_ticker": "", "event_ticker": "", "side": "",
+            "action": action, "price": price, "contracts": contracts, "raw_text": ""}
+
+
+def test_taken_and_not_taken_are_both_reported_at_their_own_prices():
+    from sports_edge.bets import BET_LOG_HEADER
+    with Store.open() as s:
+        seed(s, result_cle="yes")
+    rows = [shadow_row("a", "E1-CLE", "YES", "0.42", "0.0171", PRE - timedelta(minutes=15)),
+            shadow_row("c", "E1-PHI", "NO", "0.43", "0.0172", PRE, ref_outcome="PHI", fair="0.40")]
+    for r in rows:
+        r.update({"fee_multiplier": "1", "fee_precision": "0.0001", "contracts_assumed": "23"})
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, rows)
+    ledger.append_rows(config.bet_log_path(), BET_LOG_HEADER, [
+        bet("g1", "a", "skip", when=NOW - timedelta(hours=2)),
+        bet("g2", "a", "took", "0.44", "22", when=NOW - timedelta(hours=1)),    # the later reply counts
+    ])
+    out = []
+    run_grader(kalshi(), now_fn=lambda: NOW, out=out.append)
+    report = "\n".join(out)
+    # took 22 at 0.44 and CLE won: 22 - 9.68 - fee(0.44 x 22 = 0.07*22*.44*.56 = 0.379456 -> debit 10.0595)
+    assert "bets you took: 1 in 1 games; settled 1: +$11.94 at your prices; open 0" in report
+    # not taken: c (NO on PHI, PHI settled no) 23 x (1 - 0.43 - 0.0172) = 12.7144
+    assert "picks not taken: 1 in 1 games; settled 1: +$12.71 on paper at the logged price; open 0" in report
+
+
+def test_bet_lines_say_so_when_nothing_is_logged():
+    with Store.open() as s:
+        seed(s)
+    out = []
+    run_grader(kalshi(), now_fn=lambda: NOW, out=out.append)
+    assert "  bets you took: no replies logged yet" in out and "  picks not taken: no replies logged yet" in out

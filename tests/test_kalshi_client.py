@@ -161,3 +161,19 @@ def test_ssl_context_uses_fallback_bundle_when_none_configured(monkeypatch, tmp_
     monkeypatch.setattr(ssl, "create_default_context", lambda cafile=None: used.setdefault("cafile", cafile))
     net.ssl_context()
     assert used["cafile"] == str(bundle)
+
+
+def test_orderbook_parses_both_sides_best_first():
+    body = {"orderbook_fp": {"yes_dollars": [["0.3900", "9632.89"], ["0.4100", "178.61"]],
+                             "no_dollars": [["0.5400", "500.00"], ["0.5800", "570333.51"]]}}
+    c, t, _ = client([(200, body)])
+    book = c.orderbook("KXNBAGAME-26OCT22CLEPHI-CLE", depth=5)
+    assert book["yes"] == [(Decimal("0.41"), Decimal("178.61")), (Decimal("0.39"), Decimal("9632.89"))]
+    assert book["no"][0] == (Decimal("0.58"), Decimal("570333.51"))
+    assert t.urls == ["https://example.test/v2/markets/KXNBAGAME-26OCT22CLEPHI-CLE/orderbook?depth=5"]
+
+
+def test_orderbook_without_its_field_raises():
+    c, _, _ = client([(200, {"orderbook": {}})])
+    with pytest.raises(KalshiSchemaError):
+        c.orderbook("T")

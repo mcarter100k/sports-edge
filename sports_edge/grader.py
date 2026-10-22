@@ -8,6 +8,7 @@ import sys
 from decimal import Decimal
 
 from . import config, ledger
+from .fees import fee_for_order
 from .kalshi import KalshiClient
 from .snapshot import new_run_id, record_failure, sweep_settlements
 from .store import Store, from_db_ts, to_db_ts
@@ -203,7 +204,74 @@ def shadow_report():
                      f"median {statistics.median(clvs):+.4f}, over {len(clvs)} rows (record only)")
     else:
         lines.append("  first-fire CLV: none yet (no reference fetched before a start)")
-    lines.append("  Phase 1 makes no edge claim; this is a record, not a verdict.")
+    lines.append("  Phase 1 claims nothing from these numbers; this is a record, not a verdict.")
+    return lines
+
+
+def latest_replies(bet_rows):
+    """{shadow row_id: latest took/skip reply}. A later reply for the same pick replaces an earlier one."""
+    out = {}
+    for r in sorted(bet_rows, key=lambda r: (r["message_utc"], r["logged_utc"])):
+        if r["action"] in ("took", "skip") and r.get("row_id"):
+            out[r["row_id"]] = r
+    return out
+
+
+def taken_bets(store, ledger_rows=None, bet_rows=None):
+    """Bets the owner took, each with its settled result in dollars at the price taken.
+
+    dollars is None while the market is unsettled or settled other than yes/no.
+    """
+    ledger_rows = ledger.read_rows(config.shadow_ledger_path()) if ledger_rows is None else ledger_rows
+    bet_rows = ledger.read_rows(config.bet_log_path()) if bet_rows is None else bet_rows
+    by_id = {r["row_id"]: r for r in ledger_rows}
+    taken = [(reply, by_id[rid]) for rid, reply in latest_replies(bet_rows).items()
+             if reply["action"] == "took" and rid in by_id]
+    results = dict(store.con.execute(
+        "SELECT ticker, result FROM settlements WHERE ticker IN (SELECT unnest(?))",
+        [sorted({row["market_ticker"] for _, row in taken})]).fetchall()) if taken else {}
+    out = []
+    for reply, row in taken:
+        price, n = Decimal(reply["price"]), int(reply["contracts"])
+        fee = fee_for_order(price, n, Decimal(row["fee_multiplier"]), "taker", Decimal(row["fee_precision"]))
+        result = results.get(row["market_ticker"])
+        dollars = None
+        if result in ("yes", "no"):
+            won = (row["side"] == "YES") == (result == "yes")
+            dollars = (Decimal(n) if won else Decimal(0)) - price * n - fee
+        out.append({"row_id": row["row_id"], "pick_date": reply["pick_date"], "pick_no": reply["pick_no"],
+                    "event_ticker": row["event_ticker"], "market_ticker": row["market_ticker"],
+                    "side": row["side"], "price": price, "contracts": n, "fee": fee,
+                    "result": result, "dollars": dollars})
+    return out
+
+
+def _dollars(x):
+    return f"{'+' if x >= 0 else '-'}${abs(x):.2f}"
+
+
+def bets_report(store):
+    """Taken and not-taken picks, both always reported (docs/specs/grader_spec.md amendment)."""
+    bet_rows = ledger.read_rows(config.bet_log_path())
+    if not bet_rows:
+        return ["  bets you took: no replies logged yet", "  picks not taken: no replies logged yet"]
+    ledger_rows = ledger.read_rows(config.shadow_ledger_path())
+    taken = taken_bets(store, ledger_rows, bet_rows)
+    settled = [b for b in taken if b["dollars"] is not None]
+    lines = [f"  bets you took: {len(taken)} in {len({b['event_ticker'] for b in taken})} games; "
+             f"settled {len(settled)}: {_dollars(sum((b['dollars'] for b in settled), Decimal(0)))} "
+             f"at your prices; open {len(taken) - len(settled)}"]
+    taken_ids = {b["row_id"] for b in taken}
+    first = {}
+    for r in sorted(ledger_rows, key=lambda r: r["snapshot_utc"]):
+        first.setdefault((r["market_ticker"], r["side"], r["rule_id"]), r)
+    not_taken = [r for r in first.values() if r["row_id"] not in taken_ids]
+    grades = {g["row_id"]: g for g in ledger.read_rows(config.shadow_grades_path())}
+    graded = [(r, grades[r["row_id"]]) for r in not_taken if r["row_id"] in grades]
+    paper = sum((Decimal(g["pnl_per_contract"]) * int(r["contracts_assumed"]) for r, g in graded), Decimal(0))
+    lines.append(f"  picks not taken: {len(not_taken)} in {len({r['event_ticker'] for r in not_taken})} games; "
+                 f"settled {len(graded)}: {_dollars(paper)} on paper at the logged price; "
+                 f"open {len(not_taken) - len(graded)}")
     return lines
 
 
@@ -227,6 +295,7 @@ def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
             lines = [f"GRADER OK run={run_id} " + " ".join(f"{k}={v}" for k, v in summary.items())]
             lines += calibration_report(matched, settled_matched)
             lines += shadow_report()
+            lines += bets_report(store)
         except BaseException as exc:
             summary["error"] = f"{type(exc).__name__}: {exc}"
             record_failure(store, run_id, JOB, now_fn(), summary)

@@ -62,8 +62,20 @@ def odds_api_key():
     return os.environ.get("ODDS_API_KEY") or None
 
 
+ODDS_PLANS = {"free": 15, "paid": 600}   # plan -> default daily credit budget
+
+
+def odds_plan() -> str:
+    """free (one check ~30 min before each kickoff cluster, within the credit
+    planner) or paid (checks 60 and 15 min before). Anything else is an error."""
+    plan = (os.environ.get("ODDS_PLAN") or "free").strip().lower()
+    if plan not in ODDS_PLANS:
+        raise ValueError(f"ODDS_PLAN must be free or paid, got {plan!r}")
+    return plan
+
+
 def odds_daily_credits() -> int:
-    return int(os.environ.get("ODDS_DAILY_CREDITS", "15"))
+    return int(os.environ.get("ODDS_DAILY_CREDITS") or ODDS_PLANS[odds_plan()])
 
 
 def odds_interval_min() -> int:
@@ -76,6 +88,26 @@ def kalshi_ticker_batch() -> int:
 
 def odds_horizon_h() -> int:
     return int(os.environ.get("ODDS_HORIZON_H", "24"))
+
+
+def bet_log_path() -> Path:
+    return data_dir() / "bet_log.csv"
+
+
+def sheet_dir() -> Path:
+    """Where the slate sheet is written (iCloud Drive by default; a view, not evidence)."""
+    value = os.environ.get("SPORTS_EDGE_SHEET_DIR")
+    return Path(value) if value else \
+        Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "sports-edge"
+
+
+def messages_db() -> Path:
+    value = os.environ.get("SPORTS_EDGE_MESSAGES_DB")
+    return Path(value) if value else Path.home() / "Library" / "Messages" / "chat.db"
+
+
+def imessage_to():
+    return os.environ.get("IMESSAGE_TO") or None
 
 
 def load_json_config(name):

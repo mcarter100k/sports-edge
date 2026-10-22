@@ -14,6 +14,7 @@ DAILY_AT = parse_utc("2026-10-22T10:00:00Z")
 HOURLY_AT = parse_utc("2026-10-22T11:00:00Z")
 NEAR_AT = parse_utc("2026-10-22T11:15:00Z")
 START = DAILY_AT + timedelta(hours=5)
+CHECK_AT = START - timedelta(minutes=25)     # 07:35 PDT, a near run inside the free plan's 30-minute check
 
 
 def world(now=DAILY_AT):
@@ -69,15 +70,15 @@ def daily_with_odds(client, **kw):
 
 # Kinds ------------------------------------------------------------------------
 
-def test_first_run_is_daily_and_snapshots_every_sports_market():
+def test_first_run_is_daily_and_records_every_sports_market_but_prices_only_matched():
     sers, pages = world()
     out, err, o, e = lines()
     summary = run_cycle(FakeKalshi(sers, pages, NEAR_AT), lambda st: None, lambda: NEAR_AT, o, e)
     assert summary["tier"] == "daily"
     with Store.open() as s:
-        tickers = {t for (t,) in s.con.execute("SELECT ticker FROM price_snapshots").fetchall()}
-        assert "POL-1-A" not in tickers
-        assert len(tickers) == 2 + 2 + 3 + 1 + 2
+        markets = {t for (t,) in s.con.execute("SELECT ticker FROM markets").fetchall()}
+        assert "POL-1-A" not in markets and len(markets) == 2 + 2 + 3 + 1 + 2
+        assert counts(s, "SELECT count(*) FROM price_snapshots") == 0      # nothing matched yet
         assert counts(s, "SELECT count(*) FROM settlements") == 2
     assert any(m.startswith("ODDS NOT CONFIGURED") for m in out)
     assert any(m.startswith("SNAPSHOT OK") for m in out)
@@ -191,47 +192,200 @@ def test_settlement_sweep_only_for_known_markets():
     assert summary["settlements_swept"] == 1
 
 
-def test_lookups_skip_markets_still_open():
+def test_lookups_skip_markets_still_open_and_markets_never_matched():
     now = DAILY_AT
     past = now - timedelta(hours=12)
     rows = [{"ticker": t, "status": st, "resolve_by": past, "last_seen_utc": seen, "first_seen_utc": seen}
             for t, st, seen in (("OPEN-1", "active", now - timedelta(minutes=10)),
                                 ("GONE-1", "active", now - timedelta(hours=5)),
-                                ("CLOSED-1", "closed", now - timedelta(minutes=10)))]
+                                ("CLOSED-1", "closed", now - timedelta(minutes=10)),
+                                ("UNMATCHED-1", "closed", now - timedelta(minutes=10)))]
     fake = FakeKalshi([], [], now, lookups={"GONE-1": {"ticker": "GONE-1", "status": "finalized",
                                                       "result": "no", "settlement_value_dollars": "0"}})
     with Store.open() as s:
         s.upsert("markets", rows, "ticker")
+        s.record_matches([{"market_ticker": t, "event_ticker": "E", "source": "the-odds-api",
+                           "source_event_id": "R", "ref_outcome": t, "rule_version": "v"}
+                          for t in ("OPEN-1", "GONE-1", "CLOSED-1")], now)
         res = sweep_settlements(s, fake, now, set())
         assert res["settlement_lookups"] == 2 and res["settlements_swept"] == 1
+    assert fake.requests == 2 + 1          # the two lookups and the bulk sweep; UNMATCHED-1 never
 
 
 # Odds step -----------------------------------------------------------------------
 
-def test_odds_step_matches_prices_and_logs_shadow_rows(tmp_path):
-    fee_table(tmp_path)
-    sers, pages = world()
+def at_check(client_pages, *, now=CHECK_AT, **kw):
+    """Daily run (matches at DAILY_AT), then the run inside the check window."""
+    sers, pages = client_pages
+    daily_with_odds(FakeKalshi(sers, pages, DAILY_AT), **kw)
+    made = {}
+
+    def factory(store):
+        made["src"] = odds_world(store, now, **kw)
+        return made["src"]
+
+    out, err, o, e = lines()
+    summary = run_cycle(FakeKalshi(sers, pages, now), factory, lambda: now, o, e)
+    return summary, made["src"], out, err
+
+
+def cheap_cle(pages):
     pages[0][0]["markets"][0].update({"yes_ask_dollars": "0.2000", "yes_bid_dollars": "0.1900"})
     pages[0][0]["markets"][1].update({"yes_ask_dollars": "0.6300", "no_ask_dollars": "0.3800"})
+
+
+def test_daily_run_matches_but_spends_no_credit_before_the_check_window(tmp_path):
+    fee_table(tmp_path)
+    sers, pages = world()
     summary, src, out, err = daily_with_odds(FakeKalshi(sers, pages, DAILY_AT))
-    assert summary["events_matched"] == 1 and summary["events_priced"] == 1
+    assert summary["events_matched"] == 1 and src.priced_calls == [] and summary["checks_due"] == 0
+    with Store.open() as s:
+        assert s.con.execute("SELECT source_event_id, commence_utc FROM reference_events").fetchall() == [
+            ("R1", START.replace(tzinfo=None))]
+        assert counts(s, "SELECT count(*) FROM odds_matches WHERE sport_key = 'basketball_nba'") == 2
+
+
+def test_check_prices_only_the_due_game_and_logs_shadow_rows(tmp_path):
+    fee_table(tmp_path)
+    sers, pages = world()
+    cheap_cle(pages)
+    summary, src, out, err = at_check((sers, pages))
+    assert summary["tier"] == "near" and summary["checks_due"] == 1 and summary["check_checked"] == 1
     assert src.priced_calls == [("basketball_nba", ["R1"])]
-    assert any("UNMAPPED GROUP Esports" in m for m in out)
     rows = ledger.read_rows(config.shadow_ledger_path())
     assert [(r["market_ticker"], r["side"]) for r in rows] == [("KXNBAGAME-E1-CLE", "YES")]
     with Store.open() as s:
-        assert counts(s, "SELECT count(*) FROM odds_matches WHERE sport_key = 'basketball_nba'") == 2
+        assert s.con.execute("SELECT source_event_id, offset_min, status, cluster_start_utc FROM check_log"
+                             ).fetchall() == [("R1", 30, "checked", START.replace(tzinfo=None))]
+        (check_run,) = s.con.execute("SELECT DISTINCT run_id FROM check_log").fetchone()
         prop, power = s.con.execute("SELECT fair_prob, fair_prob_power FROM reference_odds "
                                     "WHERE outcome = 'Philadelphia 76ers'").fetchone()
         assert power > prop          # favourite: power de-vig gives it more than proportional
+    assert {r["run_id"] for r in rows} == {check_run}         # the picks are the rows of the check run
 
 
-def test_without_fee_table_no_shadow_rows():
+def test_a_check_runs_once_per_game_and_offset(tmp_path):
+    fee_table(tmp_path)
     sers, pages = world()
-    pages[0][0]["markets"][0].update({"yes_ask_dollars": "0.2000", "yes_bid_dollars": "0.1900"})
-    summary, src, out, err = daily_with_odds(FakeKalshi(sers, pages, DAILY_AT))
-    assert summary["shadow_rows"] == 0 and summary["skip_fee_unknown"] == 2
-    assert any(m.startswith("FEE UNKNOWN") for m in out)
+    at_check((sers, pages))
+    later = CHECK_AT + timedelta(minutes=15)
+    made = {}
+
+    def factory(store):
+        made["src"] = odds_world(store, later)
+        return made["src"]
+
+    summary = run_cycle(FakeKalshi(sers, pages, later), factory, lambda: later, quiet, quiet)
+    assert made["src"].priced_calls == [] and summary["checks_due"] == 0
+    assert summary["shadow_rows"] == 0 and summary["skip_not_checked_this_run"] == 2
+
+
+def test_paid_plan_checks_at_60_and_15_and_a_missed_60_is_superseded(tmp_path, monkeypatch):
+    fee_table(tmp_path)
+    monkeypatch.setenv("ODDS_PLAN", "paid")
+    sers, pages = world()
+    s1, src1, _, _ = at_check((sers, pages), now=START - timedelta(minutes=55))
+    assert src1.priced_calls == [("basketball_nba", ["R1"])]
+    t15 = START - timedelta(minutes=10)
+    made = {}
+
+    def factory(store):
+        made["src"] = odds_world(store, t15)
+        return made["src"]
+
+    run_cycle(FakeKalshi(sers, pages, t15), factory, lambda: t15, quiet, quiet)
+    assert made["src"].priced_calls == [("basketball_nba", ["R1"])]
+    with Store.open() as s:
+        assert s.con.execute("SELECT offset_min, status FROM check_log ORDER BY ts_utc").fetchall() == [
+            (60, "checked"), (15, "checked")]
+        s.con.execute("DELETE FROM check_log")
+    later = START - timedelta(minutes=5)       # both offsets due again: only 15 runs
+    made2 = {}
+
+    def factory2(store):
+        made2["src"] = odds_world(store, later)
+        return made2["src"]
+
+    run_cycle(FakeKalshi(sers, pages, later), factory2, lambda: later, quiet, quiet)
+    with Store.open() as s:
+        assert sorted(s.con.execute("SELECT offset_min, status FROM check_log").fetchall()) == [
+            (15, "checked"), (60, "superseded")]
+    assert len(made2["src"].priced_calls) == 1
+
+
+def test_without_fee_table_no_credit_is_spent_and_nothing_is_compared():
+    sers, pages = world()
+    cheap_cle(pages)
+    summary, src, out, err = at_check((sers, pages))
+    assert src.priced_calls == [] and summary["check_fee_unknown"] == 1
+    assert summary["shadow_rows"] == 0 and summary["skip_not_checked_this_run"] == 2
+    with Store.open() as s:
+        assert counts(s, "SELECT count(*) FROM odds_calls WHERE endpoint = 'odds'") == 0
+
+
+def test_unconfirmed_series_spends_no_credit(tmp_path):
+    fee_table(tmp_path, unconfirmed={"KXNBAGAME": "multiplier 0.5 in the API"})
+    sers, pages = world()
+    summary, src, out, err = at_check((sers, pages))
+    assert src.priced_calls == [] and summary["check_fee_unknown"] == 1
+
+
+def test_budget_stops_paid_calls(monkeypatch, tmp_path):
+    fee_table(tmp_path)
+    monkeypatch.setenv("ODDS_DAILY_CREDITS", "0")
+    sers, pages = world()
+    summary, src, out, err = at_check((sers, pages))
+    assert summary["budget_reached"] is True and src.priced_calls == [] and summary["check_no_credits"] == 1
+    assert any(m.startswith("ODDS BUDGET REACHED") for m in out)
+
+
+def test_priced_outcome_set_mismatch_is_unmatched(tmp_path):
+    fee_table(tmp_path)
+    sers, pages = world()
+    priced = {"R1": {"Philadelphia 76ers": D("1.6"), "Cleveland Cavaliers": D("3.0"), "Draw": D("15")}}
+    summary, src, out, err = at_check((sers, pages), priced=priced)
+    assert any("reason=outcome_count" in m for m in err)
+    assert ledger.read_rows(config.shadow_ledger_path()) == []
+
+
+def test_no_pinnacle_price_is_logged_no_price(tmp_path):
+    fee_table(tmp_path)
+    sers, pages = world()
+    summary, src, out, err = at_check((sers, pages), priced={"R9": {}})
+    assert src.priced_calls == [("basketball_nba", ["R1"])] and summary["check_no_price"] == 1
+
+
+def test_sports_outside_the_owner_list_are_never_listed(tmp_path):
+    fee_table(tmp_path)
+    sers, pages = world()
+    sports = [ref_sport(), ref_sport("tennis_atp_paris", "Tennis")]
+    extra = {"tennis_atp_paris": [stub("T1", "A", "B", START, "tennis_atp_paris")]}
+    made = {}
+
+    def factory(store):
+        made["src"] = odds_world(store, DAILY_AT, sports=sports, extra_stubs=extra)
+        made["listed"] = []
+        orig = made["src"].list_events
+        made["src"].list_events = lambda key: (made["listed"].append(key), orig(key))[1]
+        return made["src"]
+
+    out, err, o, e = lines()
+    run_cycle(FakeKalshi(sers, pages, DAILY_AT), factory, lambda: DAILY_AT, o, e)
+    assert made["listed"] == ["basketball_nba"]
+    assert any(m.startswith("SLATE SPORT NOT LISTED americanfootball_nfl") for m in out)
+
+
+def test_daily_scan_prices_matched_markets_only(tmp_path):
+    fee_table(tmp_path)
+    sers, pages = world()
+    daily_with_odds(FakeKalshi(sers, pages, DAILY_AT))          # matches E1
+    next_daily = DAILY_AT + timedelta(days=1)
+    run_cycle(FakeKalshi(sers, pages, next_daily), lambda st: None, lambda: next_daily, quiet, quiet)
+    with Store.open() as s:
+        tickers = {t for (t,) in s.con.execute(
+            "SELECT ticker FROM price_snapshots WHERE tier = 'daily'").fetchall()}
+        assert tickers == {"KXNBAGAME-E1-CLE", "KXNBAGAME-E1-PHI"}
+        assert counts(s, "SELECT count(*) FROM markets") == 10        # every market still recorded
 
 
 def test_unmatched_printed_once_per_event_and_reason():
@@ -247,23 +401,6 @@ def test_unmatched_printed_once_per_event_and_reason():
     assert len(first) == 1 and "reason=name_mismatch markets=2" in first[0]
     assert not any(m.startswith("UNMATCHED KXNBAGAME-E1 ") for m in err2)
     assert summary2["unmatched"] >= 1
-
-
-def test_budget_stops_paid_calls(monkeypatch):
-    monkeypatch.setenv("ODDS_DAILY_CREDITS", "0")
-    sers, pages = world()
-    summary, src, out, err = daily_with_odds(FakeKalshi(sers, pages, DAILY_AT))
-    assert summary["budget_reached"] is True and src.priced_calls == []
-    assert any(m.startswith("ODDS BUDGET REACHED") for m in out)
-
-
-def test_priced_outcome_set_mismatch_is_unmatched(tmp_path):
-    fee_table(tmp_path)
-    sers, pages = world()
-    priced = {"R1": {"Philadelphia 76ers": D("1.6"), "Cleveland Cavaliers": D("3.0"), "Draw": D("15")}}
-    summary, src, out, err = daily_with_odds(FakeKalshi(sers, pages, DAILY_AT), priced=priced)
-    assert any("reason=outcome_count" in m for m in err)
-    assert ledger.read_rows(config.shadow_ledger_path()) == []
 
 
 def test_odds_interval_not_due_skips_calls():
@@ -343,26 +480,27 @@ def test_unknown_sport_key_is_unmatched_reference_once():
     assert not any(m.startswith("UNMATCHED-REFERENCE H1 ") for m in err2)
 
 
-def test_budget_assumes_the_dearest_call_seen(monkeypatch):
-    # cap 3; one earlier paid call cost 3 -> the next call (worst case 3) must not be made
+def test_budget_assumes_the_dearest_call_seen(monkeypatch, tmp_path):
+    # cap 3; an earlier paid call cost 3 -> the first check (0 + 3 <= 3) runs, a second the same day does not
+    fee_table(tmp_path)
     monkeypatch.setenv("ODDS_DAILY_CREDITS", "3")
     sers, pages = world()
+    late = START + timedelta(hours=2)
+    pages[0].append(game_event("KXNBAGAME-E6", "KXNBAGAME", ["Boston", "Miami"], late))
+    extra = {"basketball_nba": [stub("R6", "Miami Heat", "Boston Celtics", late)]}
+    priced = {"R1": {"Philadelphia 76ers": D("1.55"), "Cleveland Cavaliers": D("2.60")},
+              "R6": {"Miami Heat": D("1.9"), "Boston Celtics": D("2.0")}}
+    with Store.open() as s:
+        s.append("odds_calls", [{"ts_utc": DAILY_AT - timedelta(days=2), "sport_key": "x",
+                                 "endpoint": "odds", "http_status": 200, "credits_last": 3}])
+    summary, src, _, _ = at_check((sers, pages), extra_stubs=extra, priced=priced)
+    assert src.priced_calls == [("basketball_nba", ["R1"])]                 # 0 + 3 <= 3: allowed
+    second = late - timedelta(minutes=25)
     made = {}
 
     def factory(store):
-        store.append("odds_calls", [{"ts_utc": DAILY_AT - timedelta(days=2), "sport_key": "x",
-                                     "endpoint": "odds", "http_status": 200, "credits_last": 3}])
-        made["src"] = odds_world(store, DAILY_AT)
+        made["src"] = odds_world(store, second, extra_stubs=extra, priced=priced)
         return made["src"]
 
-    run_cycle(FakeKalshi(sers, pages, DAILY_AT), factory, lambda: DAILY_AT, quiet, quiet)
-    assert made["src"].priced_calls == [("basketball_nba", ["R1"])]       # 0 + 3 <= 3: allowed
-    later = DAILY_AT + timedelta(hours=1, minutes=5)
-    made2 = {}
-
-    def factory2(store):
-        made2["src"] = odds_world(store, later)
-        return made2["src"]
-
-    run_cycle(FakeKalshi(sers, pages, later), factory2, lambda: later, quiet, quiet)
-    assert made2["src"].priced_calls == []                                  # 1 + 3 > 3: refused
+    summary2 = run_cycle(FakeKalshi(sers, pages, second), factory, lambda: second, quiet, quiet)
+    assert made["src"].priced_calls == [] and summary2["check_no_credits"] == 1   # 1 + 3 > 3: refused

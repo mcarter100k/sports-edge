@@ -15,15 +15,25 @@ Every 15 minutes it:
    resolve within 48 hours. Every run prints how many paired markets each
    sport has. On Thursdays during Kalshi's maintenance (03:00–05:00 ET) runs
    are recorded as "exchange closed" and do not alert.
-2. **Compares with sharp odds.** Once an hour it reads Pinnacle moneylines
-   from The Odds API, strips out the bookmaker's margin to get a fair
-   probability, and pairs each Kalshi game with the same game on Pinnacle.
-   A pairing is used only if both teams, the sport and the start time all
-   agree, and only one game fits. Anything else is logged as `UNMATCHED` and
-   never compared.
-3. **Logs gaps, without trading.** When Kalshi's price, after Kalshi's
-   trading fee, is more than 3 cents per $1 contract away from the fair
-   probability, before the game starts, it writes a row to
+2. **Compares with sharp odds, only before each kickoff.** Once an hour it
+   pairs each Kalshi game with the same game on Pinnacle, using The Odds
+   API's free listings. It covers only the owner's sports
+   (`config/slate_sports.json`: NFL, college football, NBA, NHL, MLB and
+   European soccer). A pairing is used only if both teams, the sport and the
+   start time all agree, and only one game fits. Anything else is logged as
+   `UNMATCHED` and never compared. Games starting within 30 minutes of each
+   other form a time slot.
+   - **When prices are pulled:** Pinnacle prices for a slot are pulled
+     only shortly before it starts. With `ODDS_PLAN=free` that is once,
+     about 30 minutes before, with the earliest slots first until the
+     day's credits run out. With `ODDS_PLAN=paid` it is 60 and 15 minutes
+     before.
+   - **No credit on unconfirmed fees:** a game whose fee is not confirmed
+     (MLB, today) never costs a credit.
+3. **Logs price gaps, without trading.** At each of those checks, it
+   assumes a $10 stake at Kalshi's best ask, walking the order book if the
+   best price is too thin. If the price after Kalshi's fee is at least 3
+   cents below the fair chance, it writes a row to
    `data/shadow_ledger.csv`. Fees come only from `config/fee_schedule.json`,
    which is built from Kalshi's fee schedule PDF in `docs/sources/`, with
    every value cited. If a series' fee is not confirmed, or Kalshi's API
@@ -41,6 +51,19 @@ shadow row would have made or lost after fees.
 
 Every Sunday at 09:00 it sends a **proof-of-life** notification, healthy or
 not. If that notification doesn't arrive, something is wrong.
+
+**Messages** (`python -m sports_edge.slate`; scheduling is proposed in
+`docs/specs/slate_alerts_spec.md` Part B, awaiting owner review):
+- **A morning iMessage:** today's games, yesterday's results and the track
+  record.
+- **One iMessage per pick at each check.** The picks are exactly the ledger
+  rows that check wrote.
+- **"Don't bet now"** when prices weren't checked.
+- **A full sheet** in iCloud Drive at `sports-edge/sheet.txt`.
+
+Reply "took 42" or "skip" to log a bet; replies go to `data/bet_log.csv`.
+Every message ends with the stage: Practice, Early signal, Supported or
+Confirmed. The bar for each is fixed in the spec.
 
 ## What it does not do
 
@@ -60,8 +83,9 @@ venv/bin/python -m pytest -q
 scripts/launchd/install.sh  # loads the three scheduled jobs
 ```
 
-`.env` holds `ODDS_API_KEY` (from the-odds-api.com). The free plan has
-500 credits a month, and the default budget of 15 a day stays inside it.
+`.env` holds `ODDS_API_KEY` (from the-odds-api.com) and `IMESSAGE_TO` (your
+own number). The free plan has 500 credits a month; `ODDS_PLAN=free` (the
+default) keeps to 15 a day, and `ODDS_PLAN=paid` switches the schedule.
 Without a key, prices are still recorded, but nothing is compared, and the
 weekly heartbeat says so.
 
@@ -72,6 +96,8 @@ weekly heartbeat says so.
 | `data/sports_edge.duckdb` | prices, markets, settlements, reference odds, matches, run log |
 | `data/shadow_ledger.csv` | gaps logged (append-only) |
 | `data/calibration_grades.csv`, `data/shadow_grades.csv` | grading results (append-only) |
+| `data/bet_log.csv` | your "took" and "skip" replies (append-only) |
+| iCloud Drive `sports-edge/sheet.txt` | today's slate, open picks and results (rewritten; a view) |
 | `logs/<job>_<date>.log` | everything each run printed; dates are Los Angeles dates |
 | `logs/alerts.log` | every notification sent |
 | `docs/specs/` | how each piece is supposed to behave |

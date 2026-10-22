@@ -73,9 +73,13 @@ def isolated(tmp_path, monkeypatch, request):
     monkeypatch.setenv("SPORTS_EDGE_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("SPORTS_EDGE_NOTIFY", "log")
     for var in ("ODDS_API_KEY", "KALSHI_BASE_URL", "SHADOW_EDGE_THRESHOLD", "SHADOW_CONTRACTS",
-                "FEE_PRECISION", "ODDS_MAX_AGE_MIN", "ODDS_DAILY_CREDITS", "ODDS_INTERVAL_MIN",
-                "ODDS_HORIZON_H", "SSL_CERT_FILE", "KALSHI_TICKER_BATCH"):
+                "SHADOW_STAKE_DOLLARS", "FEE_PRECISION", "ODDS_MAX_AGE_MIN", "ODDS_DAILY_CREDITS",
+                "ODDS_INTERVAL_MIN", "ODDS_HORIZON_H", "ODDS_PLAN", "SSL_CERT_FILE", "KALSHI_TICKER_BATCH",
+                "IMESSAGE_TO"):
         monkeypatch.delenv(var, raising=False)
+    # The sheet (iCloud Drive) and Messages' chat.db never resolve to the real ones in a test.
+    monkeypatch.setenv("SPORTS_EDGE_SHEET_DIR", str(tmp_path / "sheet"))
+    monkeypatch.setenv("SPORTS_EDGE_MESSAGES_DB", str(tmp_path / "no_chat.db"))
     # Fees fail closed unless a test builds its own table (helpers.fee_table).
     monkeypatch.setenv("SPORTS_EDGE_FEE_TABLE", str(tmp_path / "no_fee_table.json"))
     monkeypatch.chdir(tmp_path)

@@ -1,12 +1,13 @@
-"""The hourly odds step: match Kalshi games to reference games, look up
-missing Kalshi games, and price the matched ones
-(docs/specs/odds_matching_spec.md).
+"""The odds step: match Kalshi games to reference games (hourly, free calls),
+look up missing Kalshi games, and price only the games whose pre-game check is
+due (docs/specs/odds_matching_spec.md, docs/specs/slate_alerts_spec.md).
 """
 import json
 from collections import Counter
 from datetime import timedelta
 
-from . import config
+from . import checks, config
+from .fees import FeeScheduleUnknown, load_table, resolve_multipliers
 from .matching import RULE_VERSION, check_outcomes, kalshi_game, match
 from .odds import DevigRejected, TheOddsApi, devig_power, devig_proportional
 from .store import from_db_ts, to_db_ts
@@ -16,6 +17,7 @@ MATCH_WINDOW_AFTER_HORIZON = timedelta(hours=8)
 LIVE_LOOKBACK = timedelta(hours=8)
 LOOKUP_HORIZON = timedelta(hours=24)
 LOOKUP_SERIES_CAP = 20
+CHECK_LOOKBACK = timedelta(days=2)
 
 
 def build_odds_source(store):
@@ -99,11 +101,26 @@ def targeted_lookups(store, client, orphans, upsert_events, now):
 
 
 def odds_step(store, source, client, upsert_events, run_id, now, out, err):
-    """Match Kalshi games to reference events and price the matched ones."""
+    """Match (at most once per ODDS_INTERVAL_MIN), then price the games whose check is due."""
     last = store.con.execute(
         "SELECT max(ts_utc) FROM odds_calls WHERE endpoint = 'sports' AND http_status = 200").fetchone()[0]
     if last and now - from_db_ts(last) < timedelta(minutes=config.odds_interval_min()):
-        return {"odds": "interval_not_due"}
+        summary = {"odds": "interval_not_due"}
+    else:
+        summary = match_step(store, source, client, upsert_events, run_id, now, out, err)
+    summary.update(price_due_checks(store, source, run_id, now, out, err))
+    return summary
+
+
+def reference_event_rows(source, stubs, fetched):
+    return [{"fetched_utc": fetched, "source": source.name, "sport_key": s.sport_key,
+             "source_event_id": s.source_event_id, "commence_utc": s.commence_utc,
+             "home": s.home, "away": s.away} for s in stubs]
+
+
+def match_step(store, source, client, upsert_events, run_id, now, out, err):
+    """Match Kalshi games to the in-scope reference games. Free calls only."""
+    scope = checks.slate_sports()
     group_map = {k: v for k, v in config.load_json_config("sport_groups.json").items()
                  if not k.startswith("_")}
     aliases = {k: v for k, v in config.load_json_config("team_aliases.json").items()
@@ -111,11 +128,14 @@ def odds_step(store, source, client, upsert_events, run_id, now, out, err):
     horizon_end = now + timedelta(hours=config.odds_horizon_h())
     window = (now, horizon_end + MATCH_WINDOW_AFTER_HORIZON)
     relevant = games_from_db(store, *window)
-    sports = source.list_sports()
+    sports = [sp for sp in source.list_sports() if sp.key in scope]
+    listed = {sp.key for sp in sports if sp.active}
+    for key in sorted(set(scope) - listed):
+        out(f"SLATE SPORT NOT LISTED {key} (not active at the reference source)")
     unmapped = sorted({s.group for s in sports if s.active and s.group not in group_map})
     if unmapped:
         out(f"UNMAPPED GROUP {', '.join(unmapped)}")
-    # Every mapped sport is polled (free calls), so games Kalshi has not listed
+    # Every in-scope sport is listed (free calls), so games Kalshi has not listed
     # yet can trigger a targeted lookup.
     stubs_by_tag, stub_by_id = {}, {}
     for sp in sports:
@@ -161,34 +181,88 @@ def odds_step(store, source, client, upsert_events, run_id, now, out, err):
         err(f"MATCH CONFLICT {c[0]} now fits {c[1]}; never compared again")
     markets_per_event = {g.event_ticker: len(g.teams) + (1 if g.tie_market else 0) for g, _ in relevant}
     report_unmatched(store, result.unmatched, markets_per_event, run_id, now, err)
+    matched_ids = sorted({m["source_event_id"] for m in result.matches})
+    store.append("reference_events", reference_event_rows(source, [stub_by_id[i] for i in matched_ids], now))
+    return {"odds": "ran", "games_considered": len(relevant), "matches_added": added,
+            "match_conflicts": conflicts, "events_matched": len(matched_ids),
+            "unmatched": len(result.unmatched),
+            "unmatched_by_sport": dict(Counter(u["sport"] for u in result.unmatched)),
+            "reference_orphans": len(orphans), "lookup_series": len(looked_up)}
 
-    # Price matched games that have not started, soonest first, within the daily budget.
-    outcomes_by_event = {}
-    for m in result.matches:
-        outcomes_by_event.setdefault(m["source_event_id"], []).append(m["ref_outcome"])
-    by_key = {}
-    for eid in outcomes_by_event:
-        stub = stub_by_id[eid]
-        if now < stub.commence_utc <= horizon_end:
-            by_key.setdefault(stub.sport_key, []).append(stub)
+
+def priceable_events(store, source, table, event_ids):
+    """Reference ids with at least one matched market whose fee the table confirms."""
+    ok = set()
+    for eid, series, fee_type, mult, override in store.con.execute("""
+            SELECT o.source_event_id, m.series_ticker, m.fee_type, m.fee_multiplier, m.fee_override
+            FROM odds_matches o JOIN markets m ON m.ticker = o.market_ticker
+            WHERE o.source = ? AND o.source_event_id IN (SELECT unnest(?))""",
+                                                       [source, sorted(event_ids)]).fetchall():
+        try:
+            resolve_multipliers(table, series, fee_type, mult, bool(override))
+            ok.add(eid)
+        except FeeScheduleUnknown:
+            pass
+    return ok
+
+
+def price_due_checks(store, source, run_id, now, out, err):
+    """Pull odds only for games whose check is due, within the daily credit budget.
+
+    Every due game gets one check_log row. Returns counts plus checked_events:
+    the reference ids priced this run (the shadow step compares only those).
+    """
+    games = checks.slate_games(store, source.name, now, now + timedelta(hours=config.odds_horizon_h()))
+    due = checks.due_checks(checks.clusters(games), checks.logged_checks(store, source.name,
+                                                                        now - CHECK_LOOKBACK),
+                            now, checks.offsets())
+    log, status = [], {}
+
+    def record(c, g, offset, st):
+        status[(g.source_event_id, offset)] = st
+        log.append({"run_id": run_id, "ts_utc": now, "source": source.name,
+                    "source_event_id": g.source_event_id, "sport_key": g.sport_key,
+                    "cluster_start_utc": c.start_utc, "offset_min": offset, "status": st})
+
+    for c, g, _offset, superseded in due:
+        for o in superseded:
+            record(c, g, o, "superseded")
+    priceable = priceable_events(store, source.name, load_table(), {g.source_event_id for _, g, _, _ in due})
+    groups = {}
+    for c, g, offset, _ in due:
+        if g.source_event_id not in priceable:
+            record(c, g, offset, "fee_unknown")
+        else:
+            groups.setdefault((c.start_utc, g.sport_key), []).append((c, g, offset))
+
     day_start = now.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
     budget = config.odds_daily_credits()
-    priced, rejected, budget_hit, mismatched = 0, 0, False, []
-    for key, stubs in sorted(by_key.items(), key=lambda kv: min(s.commence_utc for s in kv[1])):
+    checked, rejected, budget_hit, mismatched = set(), 0, False, []
+    for (_start, key), members in sorted(groups.items()):
         # Assume the dearest paid call seen so far, so the cap is never crossed.
         worst = store.con.execute(
             "SELECT coalesce(max(credits_last), 1) FROM odds_calls WHERE endpoint = 'odds'").fetchone()[0]
         if store.credits_used_since(day_start) + max(1, worst) > budget:
-            out(f"ODDS BUDGET REACHED ({budget} credits/day); {key} and later sports not priced")
+            if not budget_hit:
+                out(f"ODDS BUDGET REACHED ({budget} credits/day); {key} and later checks not priced")
             budget_hit = True
-            break
-        ids = [s.source_event_id for s in sorted(stubs, key=lambda s: s.commence_utc)]
-        ref_rows = []
-        for ref in source.fetch_moneylines(key, ids, now):
-            problem = check_outcomes(outcomes_by_event.get(ref.source_event_id, []), ref.outcomes)
+            for c, g, offset in members:
+                record(c, g, offset, "no_credits")
+            continue
+        ids = [g.source_event_id for _, g, _ in members]
+        outcomes = {}
+        for eid, ev, outcome in store.con.execute(
+                "SELECT source_event_id, event_ticker, ref_outcome FROM odds_matches "
+                "WHERE source = ? AND source_event_id IN (SELECT unnest(?))", [source.name, ids]).fetchall():
+            outcomes.setdefault(eid, {"events": set(), "names": []})
+            outcomes[eid]["events"].add(ev)
+            outcomes[eid]["names"].append(outcome)
+        ref_rows, priced = [], set()
+        refs = source.fetch_moneylines(key, ids, now)
+        for ref in refs:
+            problem = check_outcomes(outcomes.get(ref.source_event_id, {}).get("names", []), ref.outcomes)
             if problem:
-                for ev in sorted({m["event_ticker"] for m in result.matches
-                                  if m["source_event_id"] == ref.source_event_id}):
+                for ev in sorted(outcomes.get(ref.source_event_id, {}).get("events", ())):
                     mismatched.append({"event_ticker": ev, "sport": key, "reason": "outcome_count",
                                        "detail": problem})
             try:
@@ -207,12 +281,19 @@ def odds_step(store, source, client, upsert_events, run_id, now, out, err):
                     "fair_prob_power": fair_power[name],
                     "overround": overround, "devig_method": "proportional",
                     "book_last_update_utc": ref.book_last_update_utc})
-            priced += 1
+            priced.add(ref.source_event_id)
         store.append("reference_odds", ref_rows)
-    report_unmatched(store, mismatched, markets_per_event, run_id, now, err)
-    return {"odds": "ran", "games_considered": len(relevant), "matches_added": added,
-            "match_conflicts": conflicts, "events_matched": len(outcomes_by_event),
-            "unmatched": len(result.unmatched) + len(mismatched),
-            "unmatched_by_sport": dict(Counter(u["sport"] for u in result.unmatched)),
-            "reference_orphans": len(orphans), "lookup_series": len(looked_up),
-            "events_priced": priced, "devig_rejected": rejected, "budget_reached": budget_hit}
+        store.append("reference_events", reference_event_rows(
+            source, [r for r in refs if r.source_event_id in priced], now))
+        for c, g, offset in members:
+            record(c, g, offset, "checked" if g.source_event_id in priced else "no_price")
+        checked |= priced
+    store.append("check_log", log)
+    if mismatched:
+        report_unmatched(store, mismatched, {}, run_id, now, err)
+    counts = Counter(st for (_, o), st in status.items())
+    if due:
+        out("checks due: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    return {"checks_due": len(due), "events_priced": len(checked), "devig_rejected": rejected,
+            "budget_reached": budget_hit, "unmatched_outcome_count": len(mismatched),
+            **{f"check_{k}": v for k, v in counts.items()}, "checked_events": sorted(checked)}

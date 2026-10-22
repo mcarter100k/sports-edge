@@ -166,6 +166,21 @@ class KalshiClient:
                 require(m, "ticker", "status", "result", where="settled market")
                 yield m
 
+    def orderbook(self, ticker, depth=10):
+        """Resting bids per side: {"yes": [(price, count)], "no": [...]}, best (highest) first.
+
+        A Yes ask at p is a No bid at 1 - p, and the reverse.
+        """
+        quoted = urllib.parse.quote(ticker, safe="")
+        data = self.get(f"/markets/{quoted}/orderbook", {"depth": depth})
+        require(data, "orderbook_fp", where=f"GET /markets/{ticker}/orderbook")
+        book = data["orderbook_fp"] or {}
+        out = {}
+        for side in ("yes", "no"):
+            levels = [(dec(p), dec(n)) for p, n in (book.get(f"{side}_dollars") or [])]
+            out[side] = sorted(levels, key=lambda lv: lv[0], reverse=True)
+        return out
+
     def market(self, ticker):
         """One market from the live set, then the historical set. None if neither has it."""
         quoted = urllib.parse.quote(ticker, safe="")

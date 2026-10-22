@@ -77,6 +77,16 @@ TABLES = {
         ("http_status", "INTEGER"), ("credits_last", "INTEGER"), ("credits_used", "INTEGER"),
         ("credits_remaining", "INTEGER"),
     ],
+    "reference_events": [
+        ("fetched_utc", "TIMESTAMP"), ("source", "VARCHAR"), ("sport_key", "VARCHAR"),
+        ("source_event_id", "VARCHAR"), ("commence_utc", "TIMESTAMP"), ("home", "VARCHAR"),
+        ("away", "VARCHAR"),
+    ],
+    "check_log": [
+        ("run_id", "VARCHAR"), ("ts_utc", "TIMESTAMP"), ("source", "VARCHAR"),
+        ("source_event_id", "VARCHAR"), ("sport_key", "VARCHAR"), ("cluster_start_utc", "TIMESTAMP"),
+        ("offset_min", "INTEGER"), ("status", "VARCHAR"),
+    ],
     "job_runs": [
         ("run_id", "VARCHAR"), ("job", "VARCHAR"), ("phase", "VARCHAR"), ("ts_utc", "TIMESTAMP"),
         ("status", "VARCHAR"), ("summary", "VARCHAR"),
