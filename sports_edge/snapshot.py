@@ -266,6 +266,14 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
                                 "settlements_from_matched": added, "settlement_conflicts": conflicts})
                 if not tickers:
                     out("matched events: 0 (no odds matches yet); unmatched markets are snapshotted daily")
+            else:     # price what this run matched: matched events the scan wrote no price row for
+                priced = {ev["event_ticker"] for _, ev in events if any(m["ticker"] in snaps for m in ev.get("markets") or [])}
+                tickers = [t for t in matched_event_tickers(store, started, "hourly") if t not in priced]
+                if tickers:
+                    write_events(store, run_id, kind, [(fetched, ev) for fetched, page in client.events_by_tickers(
+                        tickers, config.kalshi_ticker_batch()) for ev in page], series_index(store), started,
+                                 lambda row: True, snaps)
+                summary["matched_after_scan"] = len(tickers)
             summary["snapshot_rows"] = len(snaps)
             summary["sports"] = len({s["_sport"] for s in snaps.values()})
             if source is not None:

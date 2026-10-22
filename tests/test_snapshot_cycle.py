@@ -577,3 +577,37 @@ def test_unmatched_games_outside_scope_or_the_odds_window_are_only_counted():
     with Store.open() as s:                                                        # still all recorded
         assert {e for (e,) in s.con.execute("SELECT event_ticker FROM unmatched").fetchall()} >= {
             "KXNBAGAME-E1", "KXALLSVENSKANGAME-E9", "KXNBAGAME-E8"}
+
+
+# A daily run prices what it matches (snapshot_job_spec.md, 2026-10-22 amendment) ------------
+
+def test_a_daily_run_prices_the_games_it_matches():
+    sers, pages = world()
+    summary, _, _, _ = daily_with_odds(FakeKalshi(sers, pages, DAILY_AT))       # E1 is matched in this run
+    assert summary["matched_after_scan"] == 1 and summary["snapshot_rows"] == 2
+    with Store.open() as s:
+        rows = s.con.execute("SELECT ticker, tier, run_id FROM price_snapshots ORDER BY 1").fetchall()
+    assert [(t, tier) for t, tier, _ in rows] == [("KXNBAGAME-E1-CLE", "daily"), ("KXNBAGAME-E1-PHI", "daily")]
+    assert len({r for _, _, r in rows}) == 1 and rows[0][2].startswith("snapshot-20261022T100000Z-")   # this run
+
+
+def test_games_the_scan_already_priced_are_not_fetched_again():
+    sers, pages = world()
+    daily_with_odds(FakeKalshi(sers, pages, DAILY_AT))
+    next_daily = DAILY_AT + timedelta(days=1)
+    fake = FakeKalshi(sers, pages, next_daily)
+    summary = run_cycle(fake, lambda st: None, lambda: next_daily, quiet, quiet)
+    assert summary["matched_after_scan"] == 0 and fake.ticker_requests == []
+
+
+def test_a_check_on_a_daily_run_compares_with_this_runs_price(tmp_path):
+    fee_table(tmp_path)
+    sers, pages = world(CHECK_AT)
+    pages[0][0]["markets"][0].update({"yes_ask_dollars": "0.2000", "yes_bid_dollars": "0.1900"})   # Cleveland
+    summary = run_cycle(FakeKalshi(sers, pages, CHECK_AT), lambda st: odds_world(st, CHECK_AT), lambda: CHECK_AT,
+                        quiet, quiet)
+    assert summary["tier"] == "daily" and summary["checked_games"] == 1
+    rows = ledger.read_rows(config.shadow_ledger_path())
+    assert sorted((r["market_ticker"], r["side"]) for r in rows) == [("KXNBAGAME-E1-CLE", "YES"),
+                                                                     ("KXNBAGAME-E1-PHI", "YES")]
+    assert {r["snapshot_utc"] for r in rows} == {"2026-10-22T14:35:00.000Z"}      # this run's price
