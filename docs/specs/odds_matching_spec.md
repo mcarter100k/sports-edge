@@ -94,12 +94,23 @@ inspected.
 ## Logging unmatched markets loudly
 
 Every Kalshi game event in a polled sport that resolves within
-`ODDS_HORIZON_H` + 8 h and has no match gets a line on stderr (and so in
-the day log):
+`ODDS_HORIZON_H` + 8 h, and has no match, is unmatched. **The first time**
+an event is unmatched for a given reason, it gets a line on stderr (and so
+in the day log):
 
-`UNMATCHED <event_ticker> sport=<tag> reason=<no_candidate|ambiguous|name_mismatch|outcome_count|not_moneyline> detail=<…>`
+`UNMATCHED <event_ticker> sport=<tag> reason=<no_candidate|ambiguous|name_mismatch|outcome_count> markets=<n> detail=<…>`
 
-It also gets a row in `unmatched`. The run summary prints the unmatched
-count per sport, and the heartbeat reports the weekly total. A match that
+It also gets a row in `unmatched`. Later runs do not repeat the line. They
+count it instead: every run's summary prints `unmatched=<total currently
+unmatched>` and the count per sport, and the heartbeat reports the weekly
+total. Why only once: hourly matching of about 1,000 soccer and tennis games
+would otherwise print thousands of identical lines a day, and a line that
+always appears stops being read. If the reason changes, it is a new line.
+
+Reference events that started up to 8 hours ago are still listed for
+matching, so a game already under way is not reported as unmatched. Only
+games that have not started are priced.
+
+A match that
 later changes is a conflict: it is logged as `MATCH CONFLICT`, and that
 event is never compared again.
