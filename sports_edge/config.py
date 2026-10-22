@@ -101,11 +101,6 @@ def sheet_dir() -> Path:
         Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "sports-edge"
 
 
-def messages_db() -> Path:
-    value = os.environ.get("SPORTS_EDGE_MESSAGES_DB")
-    return Path(value) if value else Path.home() / "Library" / "Messages" / "chat.db"
-
-
 def imessage_to():
     return os.environ.get("IMESSAGE_TO") or None
 

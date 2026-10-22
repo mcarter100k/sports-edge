@@ -32,8 +32,11 @@ class Cluster:
 
 
 def slate_sports():
-    """{odds sport key: league label} for the owner's sports."""
-    return {k: v for k, v in config.load_json_config("slate_sports.json").items() if not k.startswith("_")}
+    """{odds sport key: league label} for the owner's sports on the current plan.
+    Keys in _paid_only are off on the free plan."""
+    data = config.load_json_config("slate_sports.json")
+    off = set(data.get("_paid_only", [])) if config.odds_plan() == "free" else set()
+    return {k: v for k, v in data.items() if not k.startswith("_") and k not in off}
 
 
 def offsets():

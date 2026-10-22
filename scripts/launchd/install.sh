@@ -5,7 +5,7 @@ set -e
 SRC="/Users/quis/sports-edge/scripts/launchd"
 DST="$HOME/Library/LaunchAgents"
 mkdir -p "$DST" /Users/quis/sports-edge/logs
-for label in com.quis.sportsedge.snapshot com.quis.sportsedge.grader com.quis.sportsedge.heartbeat com.quis.sportsedge.digest; do
+for label in com.quis.sportsedge.snapshot com.quis.sportsedge.grader com.quis.sportsedge.heartbeat com.quis.sportsedge.morning; do
     launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
     cp "$SRC/$label.plist" "$DST/$label.plist"
     launchctl bootstrap "gui/$(id -u)" "$DST/$label.plist"

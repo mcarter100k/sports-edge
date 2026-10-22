@@ -1,5 +1,8 @@
 {
-  "_doc": "The owner's sports: Odds API sport key -> league label shown in messages. Keys not listed here are never listed, matched or priced. Keys read from the-odds-api.com/sports-odds-data/sports-apis.html on 2026-10-22. MLB is in scope but spends no credits while its fee is unconfirmed (fee gate). See docs/specs/slate_alerts_spec.md.",
+  "_doc": "The owner's sports: Odds API sport key -> league label shown in messages. Keys not listed here are never listed, matched or priced. Keys read from the-odds-api.com/sports-odds-data/sports-apis.html on 2026-10-22. MLB is in scope but spends no credits while its fee is unconfirmed (fee gate). Keys in _paid_only are off on the free plan (ODDS_PLAN=free). See docs/specs/slate_alerts_spec.md.",
+  "_paid_only": ["soccer_germany_bundesliga", "soccer_italy_serie_a", "soccer_france_ligue_one",
+                 "soccer_netherlands_eredivisie", "soccer_portugal_primeira_liga",
+                 "soccer_uefa_europa_league", "soccer_uefa_europa_conference_league"],
   "americanfootball_nfl": "NFL",
   "americanfootball_ncaaf": "College football",
   "basketball_nba": "NBA",

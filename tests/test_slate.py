@@ -91,12 +91,23 @@ def test_pick_wording_by_side(outcome, side, teams, who):
 
 
 @pytest.mark.parametrize("move,side,label", [
-    ("", "YES", "no earlier price"), ("0.019", "YES", "line steady"), ("-0.019", "NO", "line steady"),
-    ("0.02", "YES", "moved toward Cleveland, check news"), ("-0.02", "YES", "moved against, skip"),
-    ("-0.03", "NO", "moved toward Cleveland, check news"),     # Yes price falling = No price rising
+    ("", "YES", "no earlier Kalshi price"), ("0.019", "YES", "Kalshi price steady"),
+    ("-0.019", "NO", "Kalshi price steady"), ("0.02", "YES", "Kalshi price rising"),
+    ("-0.02", "YES", "Kalshi price falling"),
+    ("-0.03", "NO", "Kalshi price rising"),                    # Yes price falling = No price rising
 ])
-def test_line_label(move, side, label):
-    assert slate.line_label({"kalshi_move_1h": move, "side": side}, "Cleveland") == label
+def test_one_read_of_the_sharp_book_only_describes_the_kalshi_price(move, side, label):
+    assert slate.line_label({"kalshi_move_1h": move, "side": side, "fair_prob": "0.5"}, "Cleveland") == label
+    assert "news" not in label and "skip" not in label
+
+
+@pytest.mark.parametrize("fair,side,earlier,label", [
+    ("0.50", "YES", "0.481", "line steady"), ("0.50", "YES", "0.48", "line moved toward Cleveland, check news"),
+    ("0.50", "YES", "0.52", "line moved against, skip"), ("0.40", "NO", "0.58", "line moved toward Cleveland, check news"),
+])
+def test_two_reads_describe_the_sportsbook_line(fair, side, earlier, label):
+    row = {"kalshi_move_1h": "0.10", "side": side, "fair_prob": fair}
+    assert slate.line_label(row, "Cleveland", D(earlier)) == label
 
 
 def leg(event, fair, side="YES"):
@@ -172,7 +183,7 @@ def test_check_sends_each_pick_once_with_the_stage_line(checked):
     assert len(sent) == 1
     msg = sent[0]
     assert msg.startswith("#1 Cleveland over Philadelphia (Yes on Cleveland) · NBA · 8:00 AM PT · Pay up to ")
-    assert "now 20¢ · fair 37" in msg and "no earlier price · price 2 min old" in msg
+    assert "now 20¢ · fair 37" in msg and "no earlier Kalshi price · price 2 min old" in msg
     assert '\nReply "took 20" or "skip"\n' in msg
     assert msg.endswith("Practice · 0 of 100 games\nBet log unreadable: cap not tracked")
     assert len(msg) <= slate.MESSAGE_MAX and no_jargon(msg) == []
@@ -181,17 +192,21 @@ def test_check_sends_each_pick_once_with_the_stage_line(checked):
     assert "#1 Cleveland over Philadelphia" in sheet and no_jargon(sheet) == []
 
 
-def test_two_ways_to_back_one_team_are_two_picks_and_no_combo(tmp_path):
+def test_two_ways_to_back_one_team_show_once_the_cheaper(tmp_path):
+    """Owner ruling 5: display only; both rows stay in the ledger."""
     fee_table(tmp_path)
     sers, pages = world()
-    pages[0][0]["markets"][1].update({"no_ask_dollars": "0.2000", "no_bid_dollars": "0.1900"})
+    pages[0][0]["markets"][1].update({"no_ask_dollars": "0.1900", "no_bid_dollars": "0.1800"})
     run_at(DAILY_AT, sers, pages)
     run_at(CHECK_AT, sers, pages)
     health.record_success("snapshot", CHECK_AT)
     sent = alert(CHECK_AT + timedelta(minutes=1))
-    assert [m.split(" · ")[0] for m in sent] == ["#1 Cleveland over Philadelphia (Yes on Cleveland)",
-                                                 "#2 Cleveland over Philadelphia (No on Philadelphia)"]
-    assert '"took 1 20" or "skip 1"' in sent[0] and not any(m.startswith("Combo") for m in sent)
+    assert [m.split(" · ")[0] for m in sent] == ["#1 Cleveland over Philadelphia (No on Philadelphia)"]
+    assert "now 19¢" in sent[0] and '"took 19" or "skip"' in sent[0]
+    assert sorted((r["market_ticker"], r["side"]) for r in ledger.read_rows(config.shadow_ledger_path())) == [
+        ("KXNBAGAME-E1-CLE", "YES"), ("KXNBAGAME-E1-PHI", "NO")]
+    sheet = (config.sheet_dir() / "sheet.txt").read_text()
+    assert sheet.count("Cleveland over Philadelphia") == 1
 
 
 def test_picks_are_exactly_the_check_runs_ledger_rows(checked):
@@ -258,38 +273,45 @@ def test_out_of_credits_is_said_once(tmp_path, monkeypatch):
         "Out of odds credits today: 1 later time slots not checked — don't bet them."]
 
 
-def test_daily_cap_replaces_picks(checked, tmp_path, monkeypatch):
-    monkeypatch.setenv("IMESSAGE_TO", "+15551234567")
-    db = tmp_path / "chat.db"
-    import sqlite3
-    con = sqlite3.connect(db)
-    con.executescript("CREATE TABLE chat (ROWID INTEGER PRIMARY KEY, chat_identifier TEXT);"
-                      "CREATE TABLE message (ROWID INTEGER PRIMARY KEY, guid TEXT, text TEXT, attributedBody BLOB,"
-                      " date INTEGER, is_from_me INTEGER);"
-                      "CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);")
-    con.close()
-    monkeypatch.setenv("SPORTS_EDGE_MESSAGES_DB", str(db))
+def taken(i, logged, result=None):
+    """A taken bet today on market OLD-i, settled per `result` ('yes' wins, 'no' loses, None open)."""
+    row = {k: "" for k in HEADER}
+    row.update({"row_id": f"L{i}", "market_ticker": f"OLD-{i}", "event_ticker": f"OLD{i}", "side": "YES",
+                "rule_id": "GAP_v2", "run_id": f"old-{i}", "snapshot_utc": iso_z(logged), "logged_utc": iso_z(logged),
+                "fee_multiplier": "1", "fee_precision": "0.0001", "commence_utc": iso_z(logged + timedelta(minutes=30)),
+                "price_paid": "0.50", "fee_per_contract": "0.0175", "edge": "0.03"})
+    bet = {"logged_utc": iso_z(logged), "message_guid": f"g{i}", "message_utc": iso_z(logged),
+           "pick_date": "2026-10-22", "pick_no": i + 1, "row_id": f"L{i}", "market_ticker": f"OLD-{i}",
+           "event_ticker": f"OLD{i}", "side": "YES", "action": "took", "price": "0.50", "contracts": "20",
+           "raw_text": "took 50"}
+    return row, bet, result
+
+
+@pytest.mark.parametrize("results,capped", [
+    ((None, None, None), True),          # three open bets: $30 at risk
+    ((None, None), False),               # $20
+    ((None, None, "yes"), False),        # a win counts 0
+    ((None, None, "no"), True),          # a loss counts its $10
+])
+def test_daily_cap_is_money_at_risk(checked, results, capped):
+    bets.replies_path().parent.mkdir(parents=True, exist_ok=True)
+    bets.replies_path().write_text("")                                      # readable, no new replies
     earlier = CHECK_AT - timedelta(hours=3)
-    losers = []
-    for i in range(3):
-        row = {k: "" for k in HEADER}
-        row.update({"row_id": f"L{i}", "market_ticker": f"OLD-{i}", "event_ticker": f"OLD{i}", "side": "YES",
-                    "rule_id": "GAP_v2", "run_id": f"old-{i}", "snapshot_utc": iso_z(earlier),
-                    "logged_utc": iso_z(earlier), "fee_multiplier": "1", "fee_precision": "0.0001",
-                    "commence_utc": iso_z(earlier + timedelta(minutes=30))})
-        losers.append(row)
-    ledger.append_rows(config.shadow_ledger_path(), HEADER, losers)
-    ledger.append_rows(config.bet_log_path(), BET_LOG_HEADER, [
-        {"logged_utc": iso_z(earlier), "message_guid": f"g{i}", "message_utc": iso_z(earlier),
-         "pick_date": "2026-10-22", "pick_no": i + 1, "row_id": f"L{i}", "market_ticker": f"OLD-{i}",
-         "event_ticker": f"OLD{i}", "side": "YES", "action": "took", "price": "0.50", "contracts": "20",
-         "raw_text": "took 50"} for i in range(3)])
+    made = [taken(i, earlier, r) for i, r in enumerate(results)]
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, [m[0] for m in made])
+    ledger.append_rows(config.bet_log_path(), BET_LOG_HEADER, [m[1] for m in made])
     with Store.open() as s:
-        s.record_settlements([{"ticker": f"OLD-{i}", "result": "no", "settlement_value": D("0"),
-                               "settlement_ts": CHECK_AT, "source": "scan"} for i in range(3)], CHECK_AT)
+        s.record_settlements([{"ticker": f"OLD-{i}", "result": r, "settlement_value": D("0"),
+                               "settlement_ts": CHECK_AT, "source": "scan"}
+                              for i, (_, _, r) in enumerate(made) if r], CHECK_AT)
     sent = alert(CHECK_AT + timedelta(minutes=2))
-    assert sent == ["Daily cap reached — no more bets today. (1 price gaps logged for the record.)\n"
-                    "Practice · 0 of 100 games"]
+    if capped:
+        assert sent == ["Daily cap reached — no more bets today. (1 price gaps logged for the record.)\n"
+                        "Practice · 0 of 100 games"]
+    else:
+        assert sent[0].startswith("#")
+    sheet = (config.sheet_dir() / "sheet.txt").read_text()
+    assert "money at risk today $" in sheet
 
 
 # Morning, show, wake ------------------------------------------------------------------------
@@ -327,18 +349,6 @@ def test_show_writes_nothing(checked):
     slate.run_show(CHECK_AT + timedelta(minutes=2), out.append)
     assert out[0].startswith("Slate sheet · built ") and any("#1 Cleveland" in ln for ln in out)
     assert not (config.sheet_dir() / "sheet.txt").exists() and not (config.state_dir() / "slate_sent.json").exists()
-
-
-def test_wake_is_fifteen_minutes_before_the_first_check_ahead(tmp_path, monkeypatch):
-    fee_table(tmp_path)
-    sers, pages = world()
-    run_at(DAILY_AT, sers, pages)
-    wake, first, last = slate.wake_times(DAILY_AT + timedelta(minutes=5))
-    assert first == last == START - timedelta(minutes=30) and wake == first - timedelta(minutes=15)
-    monkeypatch.setenv("ODDS_PLAN", "paid")
-    wake, first, last = slate.wake_times(DAILY_AT + timedelta(minutes=5))
-    assert (first, last) == (START - timedelta(minutes=60), START - timedelta(minutes=15))
-    assert slate.wake_times(START) is None
 
 
 def test_an_alert_that_cannot_fit_fails_loudly_and_is_not_marked_sent(checked, monkeypatch):
@@ -389,9 +399,16 @@ def test_a_failed_send_partway_never_resends_what_already_went_out(tmp_path):
     """Review, lower priority: per-text send state."""
     fee_table(tmp_path)
     sers, pages = world()
-    pages[0][0]["markets"][1].update({"no_ask_dollars": "0.2000", "no_bid_dollars": "0.1900"})
-    run_at(DAILY_AT, sers, pages)
-    run_at(CHECK_AT, sers, pages)
+    ev2 = game_event("KXNBAGAME-E8", "KXNBAGAME", ["Boston", "Miami"], START)
+    ev2["markets"][0].update({"yes_ask_dollars": "0.2000", "yes_bid_dollars": "0.1900"})
+    ev2["markets"][1].update({"yes_ask_dollars": "0.6300", "no_ask_dollars": "0.3800"})
+    pages[0].append(ev2)
+    two = {**PRICED, "R8": {"Miami Heat": D("1.55"), "Boston Celtics": D("2.60")}}
+    for at in (DAILY_AT, CHECK_AT):
+        odds = lambda st, at=at: FakeOdds(st, [ref_sport()], {"basketball_nba": [
+            stub("R1", "Philadelphia 76ers", "Cleveland Cavaliers", START),
+            stub("R8", "Miami Heat", "Boston Celtics", START)]}, two, now=at)
+        run_cycle(FakeKalshi(sers, pages, at), odds, lambda at=at: at, quiet, quiet)
     health.record_success("snapshot", CHECK_AT)
     got = []
 
@@ -403,7 +420,7 @@ def test_a_failed_send_partway_never_resends_what_already_went_out(tmp_path):
     with pytest.raises(slate.imessage.SendFailed):
         slate.run_alert(CHECK_AT + timedelta(minutes=1), flaky, quiet)
     rest = alert(CHECK_AT + timedelta(minutes=2))
-    assert [m[:2] for m in got] == ["#1"] and [m[:2] for m in rest] == ["#2"]
+    assert [m[:2] for m in got] == ["#1"] and [m[:5] for m in rest] == ["#2 Bo", "Combo"]
 
 
 def test_hint_asks_for_the_number_when_one_run_checks_two_slots(tmp_path, monkeypatch):
@@ -433,3 +450,14 @@ def test_hint_asks_for_the_number_when_one_run_checks_two_slots(tmp_path, monkey
     picks = [m for m in sent if m.startswith("#")]
     assert len(picks) == 2
     assert '"took 1 20" or "skip 1"' in picks[0] and '"took 2 20" or "skip 2"' in picks[1]
+
+
+def test_a_reply_that_names_no_pick_asks_for_the_number_once(checked):
+    """Spec: an unclear reply makes the next message ask for the pick number."""
+    path = bets.replies_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("2026-10-22T07:30:00-07:00 took 40\n")      # before any pick existed: unclear
+    sent = alert(CHECK_AT + timedelta(minutes=2))
+    assert sent[0].startswith('Reply "took 40" not matched to a pick: send it again with the pick number')
+    assert len(sent[0]) <= slate.MESSAGE_MAX
+    assert not any(m.startswith("Reply") for m in alert(CHECK_AT + timedelta(minutes=4)))

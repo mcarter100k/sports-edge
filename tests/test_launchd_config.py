@@ -35,7 +35,8 @@ def test_install_and_uninstall_list_exactly_the_jobs_that_exist():
         assert listed == labels, name
 
 
-def test_digest_fires_at_7_30_system_time():
-    d = plistlib.loads((LAUNCHD / "com.quis.sportsedge.digest.plist").read_bytes())
-    assert d["StartCalendarInterval"] == {"Hour": 7, "Minute": 30}
-    assert d["ProgramArguments"][1] == f"{LIVE}/scripts/run_digest.sh"
+def test_morning_fires_at_8_system_time():
+    d = plistlib.loads((LAUNCHD / "com.quis.sportsedge.morning.plist").read_bytes())
+    assert d["StartCalendarInterval"] == {"Hour": 8, "Minute": 0}
+    assert d["ProgramArguments"][1] == f"{LIVE}/scripts/run_morning.sh"
+    assert not (LAUNCHD / "com.quis.sportsedge.digest.plist").exists()

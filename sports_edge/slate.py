@@ -1,11 +1,13 @@
 """The slate: today's matched games, pre-game check messages, the morning
 message and the iCloud sheet (docs/specs/slate_alerts_spec.md).
 
-python -m sports_edge.slate show|alert|morning|wake
+python -m sports_edge.slate show|alert|morning
 
 A read-only view over what the jobs collect. It writes only replies to the
 bet log, its sent-message state, logs/imessage.log, the digest report
-(morning) and the sheet. Picks are exactly the ledger rows written at a check.
+(morning) and the sheet. Picks are exactly the ledger rows written at a check;
+a two-team game's "Yes on A" and "No on B" are one result, shown once (the
+cheaper), and both stay in the ledger.
 """
 import json
 import math
@@ -19,16 +21,15 @@ from . import bets, checks, config, digest, fees, health, imessage, ledger
 from .grader import latest_replies, taken_bets
 from .store import Store, from_db_ts, to_db_ts
 from .timeutil import (display, display_clock, display_date, display_day, iso_z, pacific_midnight,
-                       parse_utc, pmset_time, utcnow)
+                       parse_utc, utcnow)
 
 SOURCE = "the-odds-api"
 MESSAGE_MAX = 300
 MORNING_MAX = 700
 FRESH = timedelta(minutes=15)          # a check older than this is never shown as picks
-STEADY = Decimal("0.02")               # line move under 2 cents either way = steady
+STEADY = Decimal("0.02")               # a move under 2 cents either way = steady
 POSTPONED = timedelta(minutes=60)
-DAILY_CAP = Decimal("30")
-WAKE_LEAD = timedelta(minutes=15)
+DAILY_CAP = Decimal("30")              # money at risk today: $10 per open or lost bet taken today
 NOT_RUNNING_AFTER = timedelta(hours=2)
 STAGES = ((1000, "Confirmed"), (500, "Supported"), (100, "Early signal"))
 NEXT_STAGE = {"Early signal": "Supported needs 500", "Supported": "Confirmed needs 1,000"}
@@ -137,17 +138,27 @@ def wording(row, teams, limit=NAME_MAX):
     return f"{opp} over {me} (No on {me})", opp
 
 
-def line_label(row, backed):
+def line_label(row, backed, earlier=None):
+    """earlier: the side's fair chance at the previous sharp-book read of this game, or None.
+
+    Two reads (the paid plan): the sportsbook line's move, with its advice. One read: only
+    the Kalshi price over the last hour, which says nothing about news.
+    """
+    if earlier is not None:
+        move = side_fair(row) - earlier
+        if abs(move) < STEADY:
+            return "line steady"
+        return f"line moved toward {backed}, check news" if move > 0 else "line moved against, skip"
     move = row.get("kalshi_move_1h")
     if move in (None, ""):
-        return "no earlier price"
+        return "no earlier Kalshi price"
     move = Decimal(move) * (1 if row["side"] == "YES" else -1)
     if abs(move) < STEADY:
-        return "line steady"
-    return f"moved toward {backed}, check news" if move > 0 else "moved against, skip"
+        return "Kalshi price steady"
+    return "Kalshi price rising" if move > 0 else "Kalshi price falling"
 
 
-def pick_text(row, number, again, teams, league, now, several=False, compact=False):
+def pick_text(row, number, again, teams, league, now, several=False, compact=False, earlier=None):
     """One pick in the owner's format. compact: the fallback when a message would run over
     300 characters (10-character names, no league, no 'again', 'toward this pick')."""
     who, backed = wording(row, teams, NAME_MIN if compact else NAME_MAX)
@@ -159,7 +170,7 @@ def pick_text(row, number, again, teams, league, now, several=False, compact=Fal
     age = minutes(now - parse_utc(row["snapshot_utc"]))
     head = (f"#{number}{' again' if again else ''} {who} · {'' if compact else league + ' · '}"
             f"{display_clock(parse_utc(row['commence_utc']))} · Pay up to {pay}¢ · now {paid} · "
-            f"fair {cents(side_fair(row))} · {line_label(row, backed)} · price {age} min old")
+            f"fair {cents(side_fair(row))} · {line_label(row, backed, earlier)} · price {age} min old")
     tag = f"{number} " if several else ""
     reply = f'Reply "took {tag}{cents(row["price_paid"])[:-1]}" or "skip{" " + str(number) if several else ""}"'
     return f"{head}\n{reply}"
@@ -195,11 +206,13 @@ def combo_line(picks, table):
 class Context:
     """Everything one invocation reads, read once."""
 
-    def __init__(self, store, now, replies):
-        self.store, self.now, self.replies = store, now, replies
+    def __init__(self, store, now, ingest=True):
+        """ingest: read new reply lines into the bet log first (alert, morning); show never does."""
+        self.store, self.now, self._titles = store, now, {}
         self.leagues = checks.slate_sports()
         self.ledger = ledger.read_rows(config.shadow_ledger_path())
-        self.ledger_by_id = {r["row_id"]: r for r in self.ledger}
+        self.replies = bets.ingest_replies(now, self.ledger, self.result_of) if ingest else \
+            {"readable": False, "error": "not read by show", "logged": 0, "unclear": 0, "unclear_lines": []}
         self.graded = ledger.read_rows(config.shadow_grades_path())
         self.stage_name, self.stage_line = stage(self.graded)
         self.fee_state = digest.fee_table_state()
@@ -207,12 +220,28 @@ class Context:
         snap = health.read_state().get("snapshot", {})
         self.snapshot_failing = bool(snap.get("consecutive_failures"))
         self.taken = taken_bets(store, self.ledger, ledger.read_rows(config.bet_log_path()))
-        today = display_date(now)
-        settled_today = sum((b["dollars"] for b in self.taken
-                             if b["pick_date"] == today and b["dollars"] is not None), Decimal(0))
-        self.day_result = settled_today
-        self.cap_reached = bool(replies.get("readable")) and settled_today <= -DAILY_CAP
-        self._titles = {}
+        self.at_risk = money_at_risk(self.taken, display_date(now))
+        self.cap_reached = bool(self.replies["readable"]) and self.at_risk >= DAILY_CAP
+
+    def result_of(self, row):
+        """A pick's result: in a two-team game with no Tie, "Yes on A" and "No on B" are one."""
+        t = self.teams(row["event_ticker"])
+        if t["tie"] or len(t["titles"]) != 2 or row["outcome"] not in t["titles"]:
+            return bets.bet_key(row)
+        backed = row["outcome"] if row["side"] == "YES" else next(x for x in t["titles"] if x != row["outcome"])
+        return row["event_ticker"], backed, row["rule_id"]
+
+    def earlier_fair(self, row):
+        """The side's fair chance at the sharp-book read before this row's, or None (read once)."""
+        found = self.store.con.execute("""
+            SELECT fair_prob FROM reference_odds
+            WHERE source = ? AND source_event_id = ? AND outcome = ? AND fetched_utc < ?
+            ORDER BY fetched_utc DESC LIMIT 1""", [row["odds_source"], row["source_event_id"], row["ref_outcome"],
+                                                   to_db_ts(parse_utc(row["odds_fetched_utc"]))]).fetchone()
+        if found is None:
+            return None
+        fair = Decimal(str(found[0])).quantize(Decimal("0.000001"))
+        return fair if row["side"] == "YES" else Decimal(1) - fair
 
     def footer(self):
         lines = [self.stage_line]
@@ -249,8 +278,8 @@ class Context:
         return set(json.loads(row[0] or "{}").get("compared_events", [])) if row else set()
 
     def run_pick_count(self, run_id):
-        """Distinct picks (repeats included) the run wrote: more than one means replies need a number."""
-        return len({bets.bet_key(r) for r in self.ledger if r["run_id"] == run_id})
+        """Results the run showed (repeats included): more than one means replies need a number."""
+        return len(bets.shown_in_run(self.ledger, run_id, self.result_of))
 
     def latest_starts(self):
         return {e: from_db_ts(c) for e, c in self.store.con.execute("""
@@ -259,20 +288,22 @@ class Context:
               ON r.source_event_id = l.source_event_id AND r.fetched_utc = l.f""").fetchall()}
 
     def picks_of_run(self, run_id, event_ids):
-        """[(number, again, row)] for ledger rows written by one run, games not started."""
-        rows = [r for r in self.ledger if r["run_id"] == run_id and r["source_event_id"] in event_ids
-                and parse_utc(r["commence_utc"]) > self.now]
-        first_ids = bets.first_fire_ids(self.ledger)
-        numbers = {}
-        for r in rows:
-            day = display_date(parse_utc(self.ledger_by_id[first_ids[bets.bet_key(r)]]["logged_utc"]))
-            numbers.setdefault(day, bets.day_picks(self.ledger, day))
+        """[(number, again, row)]: one row per result a run wrote (the cheaper), games not started."""
+        groups = bets.results(self.ledger, self.result_of)
         out = []
-        for r in rows:
-            first = self.ledger_by_id[first_ids[bets.bet_key(r)]]
-            n, _ = numbers[display_date(parse_utc(first["logged_utc"]))][bets.bet_key(r)]
-            out.append((n, first["row_id"] != r["row_id"], r))
-        return sorted(out, key=lambda p: (p[0], p[2]["side"]))
+        for key, r in bets.shown_in_run(self.ledger, run_id, self.result_of).items():
+            if r["source_event_id"] not in event_ids or parse_utc(r["commence_utc"]) <= self.now:
+                continue
+            _, n = bets.number_of(self.ledger, key, self.result_of)
+            again = any(f["run_id"] != run_id for f in groups[key])
+            out.append((n, again, r))
+        return sorted(out, key=lambda p: p[0])
+
+
+def money_at_risk(taken, day):
+    """$10 for each bet taken on `day` that is open or settled lost; won or void counts 0."""
+    return sum((bets.STAKE for b in taken if b["pick_date"] == day and
+                (b["result"] is None or (b["dollars"] is not None and b["dollars"] < 0))), Decimal(0))
 
 
 def slot(ctx, start, sport_keys):
@@ -316,11 +347,12 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
                                              if x["source_event_id"] == r["source_event_id"]))
                     args = (r, n, again, ctx.teams(r["event_ticker"]), league, now,
                             ctx.run_pick_count(run_id) > 1)
-                    text = pick_text(*args)
+                    earlier = ctx.earlier_fair(r)
+                    text = pick_text(*args, earlier=earlier)
                     if len(f"{text}\n{ctx.footer()}") > MESSAGE_MAX:
-                        text = pick_text(*args, compact=True)
+                        text = pick_text(*args, compact=True, earlier=earlier)
                     texts.append(text)
-                combo = combo_line([(n, r) for n, _, r in picks if isinstance(n, int)], ctx.table)
+                combo = combo_line([(n, r) for n, _, r in picks], ctx.table)
                 if combo:
                     texts.append(combo)
             elif compared:
@@ -347,9 +379,16 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
     return [(f"{iso_z(cstart)}|{offset}|{run_id}", texts)] + [(k, t) for k, t in extra if k not in sent]
 
 
+def unclear_text(text):
+    return f'Reply "{text[:40]}" not matched to a pick: send it again with the pick number, e.g. "took 2 42".'
+
+
 def alert_messages(ctx, sent):
-    """[(key, [texts])] not yet sent: checks that ran, and due checks a failing system missed."""
+    """[(key, [texts])] not yet sent: replies that named no pick, checks that ran, and due
+    checks a failing system missed."""
     now, store = ctx.now, ctx.store
+    out = [(f"unclear|{guid}", [unclear_text(text)]) for guid, text in ctx.replies["unclear_lines"]
+           if f"unclear|{guid}" not in sent]
     rows = [dict(zip(("run_id", "ts_utc", "source_event_id", "sport_key", "cluster_start_utc", "offset_min",
                       "status"), r)) for r in store.con.execute("""
         SELECT run_id, ts_utc, source_event_id, sport_key, cluster_start_utc, offset_min, status
@@ -358,7 +397,7 @@ def alert_messages(ctx, sent):
     groups = {}
     for r in rows:
         groups.setdefault((from_db_ts(r["cluster_start_utc"]), r["offset_min"], r["run_id"]), []).append(r)
-    out, seen_keys = [], set(sent)
+    seen_keys = set(sent)
     for (cstart, offset, run_id), grp in sorted(groups.items()):
         key = f"{iso_z(cstart)}|{offset}|{run_id}"
         if key in seen_keys:
@@ -464,7 +503,7 @@ def yesterday_lines(ctx, now):
     checked = ctx.store.con.execute(
         "SELECT count(DISTINCT (cluster_start_utc, offset_min)) FROM check_log "
         "WHERE status = 'checked' AND ts_utc >= ? AND ts_utc < ?", [to_db_ts(y0), to_db_ts(y1)]).fetchone()[0]
-    picks = [r for _, r in bets.day_picks(ctx.ledger, day).values()]
+    picks = [r for _, r in bets.day_picks(ctx.ledger, day, ctx.result_of).values()]
     games = len({r["event_ticker"] for r in picks})
     won, lost, void, open_, money, staked = pick_results(ctx, picks)
     cannot = unable_reason(ctx)
@@ -523,6 +562,7 @@ def morning_text(ctx, now):
     system = "System OK" if not trouble else "System: " + "; ".join(trouble)
     lines = [f"Kalshi slate · {display_day(now)}", ctx.stage_line, today_line(ctx, now)]
     lines += yesterday_lines(ctx, now)
+    lines += [unclear_text(text) for _, text in ctx.replies["unclear_lines"][:2]]
     lines.append(f"{system} · full sheet: iCloud Drive/sports-edge/sheet.txt")
     text = "\n".join(lines)
     if len(text) > MORNING_MAX:
@@ -540,7 +580,8 @@ def sheet_lines(ctx, now, digest_lines):
     lines = [f"Slate sheet · built {display(now)}", ctx.stage_line,
              f"Newest price: {age} · last price run {display(last)} ({status or 'none'})",
              "Bet log: " + ("read" if ctx.replies.get("readable") else f"unreadable ({ctx.replies.get('error')})")
-             + (" · daily cap reached" if ctx.cap_reached else f" · today's settled bets {dollars(ctx.day_result)}"
+             + (f" · money at risk today ${ctx.at_risk:.0f} of ${DAILY_CAP:.0f}"
+                + (" · daily cap reached" if ctx.cap_reached else "")
                 if ctx.replies.get("readable") else " · daily cap not tracked"),
              "", "TODAY (Pacific time)"]
     start, end = day_window(now)
@@ -560,20 +601,20 @@ def sheet_lines(ctx, now, digest_lines):
                          f" · {'; '.join(logged.get(g.source_event_id, [])) or 'not checked yet'}")
     starts = ctx.latest_starts()
     today = display_date(now)
-    picks = bets.day_picks(ctx.ledger, today)
-    newest_row = {}
+    picks = bets.day_picks(ctx.ledger, today, ctx.result_of)
+    latest_run = {}
     for r in sorted(ctx.ledger, key=lambda r: r["logged_utc"]):
-        newest_row[bets.bet_key(r)] = r
+        latest_run[ctx.result_of(r)] = r["run_id"]
     open_picks, postponed = [], []
     for key, (n, first) in sorted(picks.items(), key=lambda kv: kv[1][0]):
-        r = newest_row[key]
+        r = bets.shown_in_run(ctx.ledger, latest_run[key], ctx.result_of)[key]
         latest = starts.get(r["source_event_id"])
         if latest and latest - parse_utc(r["commence_utc"]) >= POSTPONED:
             postponed.append(f"  #{n} postponed — void (now listed {display(latest)})")
         elif parse_utc(r["commence_utc"]) > now:
             open_picks.append((n, r))
     lines += ["", "OPEN PICKS (games not started; prices as of each pick's latest check)"]
-    lines += [f"  {pick_text(r, n, False, ctx.teams(r['event_ticker']), ctx.league(sport_of(store, r)), now)}"
+    lines += [f"  {pick_text(r, n, False, ctx.teams(r['event_ticker']), ctx.league(sport_of(store, r)), now, earlier=ctx.earlier_fair(r))}"
               .replace("\n", " · ") for n, r in open_picks] or ["  none"]
     combo = combo_line(open_picks, ctx.table)
     if combo:
@@ -589,7 +630,9 @@ def sheet_lines(ctx, now, digest_lines):
     lines += ["", "HOW TO READ THIS",
               "  A pick is a price gap of at least 3¢ after Kalshi's fee, against the sharp book's fair price,",
               "  logged by the system. Pay up to = the highest price that still leaves 3¢. Practice stake $10.",
-              "  Line = Kalshi's price for the pick over the last hour (steady = under 2¢ either way).",
+              "  Kalshi price rising/falling/steady = Kalshi's price for the pick over the last hour (2¢ either way).",
+              "  Line moved = the sharp book's price for the pick between its two reads (paid plan only).",
+              "  Two ways to back one team in a two-team game show once, the cheaper; both are logged.",
               "  Nothing here places a bet."]
     return lines
 
@@ -646,11 +689,11 @@ def save_sent(sent, now):
 
 def run_alert(now=None, send=imessage.send, out=print):
     now = now or utcnow()
-    replies = bets.ingest_replies(now)
     _, _, digest_lines = digest_section(now)
     sent = load_sent()
     with Store.open(lock_wait_s=120) as store:
-        ctx = Context(store, now, replies)
+        ctx = Context(store, now)
+        replies = ctx.replies
         msgs = alert_messages(ctx, sent)
         sheet = sheet_lines(ctx, now, digest_lines)
     count = 0
@@ -676,10 +719,9 @@ def run_alert(now=None, send=imessage.send, out=print):
 
 def run_morning(now=None, send=imessage.send, out=print):
     now = now or utcnow()
-    replies = bets.ingest_replies(now)
     _, report, digest_lines = digest_section(now)
     with Store.open(lock_wait_s=120) as store:
-        ctx = Context(store, now, replies)
+        ctx = Context(store, now)
         text = f"{morning_text(ctx, now)}"
         sheet = sheet_lines(ctx, now, digest_lines)
     report_path = digest.write_report(report, now) if report else None
@@ -694,21 +736,9 @@ def run_show(now=None, out=print):
     now = now or utcnow()
     _, _, digest_lines = digest_section(now)
     with Store.open(lock_wait_s=120) as store:
-        ctx = Context(store, now, {"readable": False, "error": "not read by show"})
+        ctx = Context(store, now, ingest=False)
         for line in sheet_lines(ctx, now, digest_lines):
             out(line)
-
-
-def wake_times(now=None):
-    """(wake, first, last) over check times still ahead in the next 24 h, or None."""
-    now = now or utcnow()
-    with Store.open(lock_wait_s=120) as store:
-        cl = checks.plan(store, SOURCE, now, now + timedelta(hours=24))
-    times = [checks.check_time(c, o) for c in cl for o in checks.offsets()]
-    ahead = sorted(t for t in times if t > now)
-    if not ahead:
-        return None
-    return ahead[0] - WAKE_LEAD, ahead[0], ahead[-1]
 
 
 def main(argv):
@@ -719,12 +749,8 @@ def main(argv):
         run_morning()
     elif cmd == "show":
         run_show()
-    elif cmd == "wake":
-        found = wake_times()
-        print("wake=none (no check ahead in 24 h)" if found is None else
-              f"wake={pmset_time(found[0])} first={display(found[1])} last={display(found[2])}")
     else:
-        print("usage: python -m sports_edge.slate show|alert|morning|wake", file=sys.stderr)
+        print("usage: python -m sports_edge.slate show|alert|morning", file=sys.stderr)
         return 2
     return 0
 

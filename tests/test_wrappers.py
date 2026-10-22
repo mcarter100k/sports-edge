@@ -20,16 +20,14 @@ if [ "$2" = "sports_edge.heartbeat" ]; then
     hb_crash) printf 'Traceback (most recent call last):\\n  File "x"\\nKeyError: y\\n' >&2; exit 1;;
   esac
 fi
-if [ "$2" = "sports_edge.digest" ]; then
-  case "$FAKE_MODE" in
-    dg_ok) f="$SPORTS_EDGE_LOG_DIR/digest_2026-10-23.txt"; echo "full report" > "$f"
-           printf 'Sports-edge: 3 games · 2 underpriced · 2 scored · up 4.2¢ per $1 (too early) · system OK\nreport: %s\nGames watched yesterday: 3\n' "$f"; exit 0;;
-    dg_crash) printf 'Traceback (most recent call last):\n  File "x"\nStoreLocked: busy\n' >&2; exit 1;;
-    dg_tb0) f="$SPORTS_EDGE_LOG_DIR/digest_x.txt"; echo r > "$f"
-            printf 'Sports-edge: no games scored yet · system OK\nreport: %s\n' "$f"
-            printf 'Traceback (most recent call last):\n  File "x"\nValueError: hidden\n' >&2; exit 0;;
-    dg_nobanner) printf 'something else\nreport: /tmp/x\n'; exit 0;;
-    dg_noreport) printf 'Sports-edge: no games scored yet · system OK\nreport: /no/such/digest.txt\n'; exit 0;;
+if [ "$2" = "sports_edge.slate" ]; then
+  echo "slate $3" >> "$SPORTS_EDGE_LOG_DIR/stub_calls"
+  case "${FAKE_SLATE:-ok}" in
+    ok) if [ "$3" = "morning" ]; then printf 'Kalshi slate · Fri Oct 23\nPractice · 0 of 100 games\nSLATE MORNING OK report=x sheet=y\n'
+        else echo "SLATE ALERT OK messages=1"; fi; exit 0;;
+    send_fail) echo "SLATE FAILED: SendFailed: osascript exit 1: Not authorized" >&2; exit 1;;
+    tb0) echo "SLATE MORNING OK report=x"; printf 'Traceback (most recent call last):\n  File "x"\nValueError: hidden\n' >&2; exit 0;;
+    no_ok) echo "something else"; exit 0;;
   esac
 fi
 case "$FAKE_MODE" in
@@ -209,52 +207,56 @@ def test_heartbeat_crash_still_notifies(proj, tmp_path):
     assert "heartbeat report failed: KeyError: y" in alerts()[0]
 
 
-# Daily digest wrapper (docs/specs/daily_digest_spec.md, Part B) -----------------
+# The slate alert step inside the 15-minute job (docs/specs/slate_alerts_spec.md) --------
 
-def test_digest_success_notifies_the_banner_and_opens_the_report(proj, tmp_path):
-    r = run("run_digest.sh", proj, tmp_path, "dg_ok")
+def stub_calls():
+    p = Path(os.environ["SPORTS_EDGE_LOG_DIR"]) / "stub_calls"
+    return p.read_text().splitlines() if p.exists() else []
+
+
+def test_alert_step_runs_after_every_snapshot(proj, tmp_path):
+    assert run("run_snapshot.sh", proj, tmp_path, "ok").returncode == 0
+    assert stub_calls() == ["slate alert"] and alerts() == []
+    assert "SLATE ALERT OK" in day_log("slate_alert")
+
+
+def test_alert_step_runs_even_when_the_snapshot_failed(proj, tmp_path):
+    r = run("run_snapshot.sh", proj, tmp_path, "fail")
+    assert r.returncode == 1 and stub_calls() == ["slate alert"]       # it is what sends "Don't bet now"
+
+
+def test_a_failed_alert_step_is_loud_and_nonzero(proj, tmp_path):
+    r = run("run_snapshot.sh", proj, tmp_path, "ok", extra={"FAKE_SLATE": "send_fail"})
+    assert r.returncode == 1
+    (line,) = alerts()
+    assert "slate_alert failed: exit 1: SLATE FAILED: SendFailed: osascript exit 1" in line
+
+
+# Morning wrapper (replaces the digest job) ------------------------------------------------
+
+def test_morning_success_is_quiet_here_because_the_imessage_is_the_delivery(proj, tmp_path):
+    r = run("run_morning.sh", proj, tmp_path, "ok")
     assert r.returncode == 0, r.stderr
-    line = alerts()[0]
-    assert "DIGEST logged-only: Sports-edge: 3 games · 2 underpriced" in line
-    assert "→ digest_2026-10-23.txt" in line
-    assert "Games watched yesterday: 3" in day_log("digest_job")
-
-
-def test_digest_click_opens_the_report_quietly(proj, tmp_path):
-    calls = tmp_path / "tn_calls"
-    make_exe(tmp_path / "bin" / "terminal-notifier", f'#!/bin/bash\necho "$@" >> {calls}\nexit 0\n')
-    r = run("run_digest.sh", proj, tmp_path, "dg_ok", notify="on")
-    assert r.returncode == 0
-    text = calls.read_text()
-    assert "-open file://" in text and text.rstrip().endswith("digest_2026-10-23.txt")
-    assert "-sound" not in text
+    assert stub_calls() == ["slate morning"] and alerts() == []
+    assert "Kalshi slate · Fri Oct 23" in day_log("morning")
 
 
 @pytest.mark.parametrize("mode,reason", [
-    ("dg_crash", "DIGEST FAILED | exit 1: StoreLocked: busy"),
-    ("dg_tb0", "DIGEST FAILED | traceback with exit 0: ValueError: hidden"),
-    ("dg_nobanner", "DIGEST FAILED | no banner in the output"),
-    ("dg_noreport", "DIGEST FAILED | report file missing: /no/such/digest.txt"),
+    ("send_fail", "MORNING FAILED | exit 1: SLATE FAILED: SendFailed: osascript exit 1"),
+    ("tb0", "MORNING FAILED | traceback with exit 0: ValueError: hidden"),
+    ("no_ok", "MORNING FAILED | no SLATE MORNING OK line in the output"),
 ])
-def test_digest_failures_are_loud_and_nonzero(proj, tmp_path, mode, reason):
+def test_morning_failures_are_loud_and_nonzero(proj, tmp_path, mode, reason):
     calls = tmp_path / "tn_calls"
     make_exe(tmp_path / "bin" / "terminal-notifier", f'#!/bin/bash\necho "$@" >> {calls}\nexit 0\n')
-    r = run("run_digest.sh", proj, tmp_path, mode, notify="on")
+    r = run("run_morning.sh", proj, tmp_path, "ok", notify="on", extra={"FAKE_SLATE": mode})
     assert r.returncode == 1
     text = calls.read_text()
     assert reason in text and "-sound Basso" in text and "-subtitle ALERT" in text
-    assert reason in day_log("digest_job")
+    assert reason in day_log("morning")
 
 
-def test_digest_missing_env_file_is_a_failure(proj, tmp_path):
-    r = run("run_digest.sh", proj, tmp_path, "dg_ok", env_file=True)
-    assert r.returncode == 1
-    assert "DIGEST FAILED | exit 1: .env missing at" in alerts()[0]
-
-
-def test_digest_undeliverable_banner_is_a_failure(proj, tmp_path):
-    make_exe(tmp_path / "bin" / "terminal-notifier", "#!/bin/bash\nexit 1\n")
-    make_exe(tmp_path / "bin" / "osascript", "#!/bin/bash\nexit 1\n")
-    r = run("run_digest.sh", proj, tmp_path, "dg_ok", notify="on")
-    assert r.returncode == 1
-    assert any("ALERT DELIVERY FAILED DIGEST" in a for a in alerts())
+def test_morning_missing_env_file_is_a_failure(proj, tmp_path):
+    r = run("run_morning.sh", proj, tmp_path, "ok", env_file=True)
+    assert r.returncode == 1 and stub_calls() == []
+    assert "MORNING FAILED | exit 1: .env missing at" in alerts()[0]

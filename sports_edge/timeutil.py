@@ -67,8 +67,3 @@ def display_day(dt) -> str:
 def pacific_midnight(dt):
     """Start of the Pacific calendar day containing dt, as an aware datetime."""
     return dt.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-
-
-def pmset_time(dt) -> str:
-    """Local (Pacific) time in the form `pmset schedule` expects: MM/dd/yy HH:mm:ss."""
-    return dt.astimezone(DISPLAY_TZ).strftime("%m/%d/%y %H:%M:%S")

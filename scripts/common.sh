@@ -26,11 +26,11 @@ stamp() { TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M:%S %Z'; }
 
 . "$PROJ/scripts/notify.sh"
 
-# run_job <job> <python module>
+# run_job <job> <python module> [args...]
 # Runs the job, appends its output to the day log, records health, delivers
 # any alert, and returns nonzero on failure. A failed run never returns 0.
 run_job() {
-    _job="$1"; _module="$2"
+    _job="$1"; _module="$2"; shift 2
     _log="$LOG_DIR/${_job}_${DAY}.log"
     _out="$(mktemp)"; _err="$(mktemp)"
     echo "===== $_job $(stamp) =====" >> "$_log"
@@ -38,7 +38,7 @@ run_job() {
         _rc=1
         echo ".env missing at $PROJ/.env" > "$_err"
     else
-        "$PY" -m "$_module" > "$_out" 2> "$_err"
+        "$PY" -m "$_module" "$@" > "$_out" 2> "$_err"
         _rc=$?
     fi
     cat "$_out" >> "$_log"

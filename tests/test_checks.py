@@ -98,3 +98,12 @@ def test_slots_never_span_pacific_midnight():
     cl = clusters([game("x", 0), Game("y", "basketball_nba", late + timedelta(minutes=20), "H", "A", "E-y"),
                    Game("w", "basketball_nba", late, "H", "A", "E-w")])
     assert [[g.source_event_id for g in c.games] for c in cl] == [["x"], ["w"], ["y"]]
+
+
+def test_free_plan_soccer_is_epl_la_liga_and_champions_league(monkeypatch):
+    soccer = lambda: sorted(k for k in checks.slate_sports() if k.startswith("soccer_"))
+    assert soccer() == ["soccer_epl", "soccer_spain_la_liga", "soccer_uefa_champs_league"]
+    assert {"americanfootball_nfl", "americanfootball_ncaaf", "basketball_nba", "icehockey_nhl",
+            "baseball_mlb"} <= set(checks.slate_sports())
+    monkeypatch.setenv("ODDS_PLAN", "paid")
+    assert len(soccer()) == 10 and "soccer_germany_bundesliga" in soccer()

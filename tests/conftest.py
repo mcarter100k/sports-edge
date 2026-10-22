@@ -77,9 +77,8 @@ def isolated(tmp_path, monkeypatch, request):
                 "ODDS_INTERVAL_MIN", "ODDS_HORIZON_H", "ODDS_PLAN", "SSL_CERT_FILE", "KALSHI_TICKER_BATCH",
                 "IMESSAGE_TO"):
         monkeypatch.delenv(var, raising=False)
-    # The sheet (iCloud Drive) and Messages' chat.db never resolve to the real ones in a test.
+    # The iCloud folder (the sheet and replies.txt) never resolves to the real one in a test.
     monkeypatch.setenv("SPORTS_EDGE_SHEET_DIR", str(tmp_path / "sheet"))
-    monkeypatch.setenv("SPORTS_EDGE_MESSAGES_DB", str(tmp_path / "no_chat.db"))
     # Fees fail closed unless a test builds its own table (helpers.fee_table).
     monkeypatch.setenv("SPORTS_EDGE_FEE_TABLE", str(tmp_path / "no_fee_table.json"))
     monkeypatch.chdir(tmp_path)

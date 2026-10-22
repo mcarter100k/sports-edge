@@ -52,18 +52,65 @@ shadow row would have made or lost after fees.
 Every Sunday at 09:00 it sends a **proof-of-life** notification, healthy or
 not. If that notification doesn't arrive, something is wrong.
 
-**Messages** (`python -m sports_edge.slate`; scheduling is proposed in
-`docs/specs/slate_alerts_spec.md` Part B, awaiting owner review):
+**Messages** (run after every 15-minute cycle, and at 8:00 AM):
 - **A morning iMessage:** today's games, yesterday's results and the track
   record.
-- **One iMessage per pick at each check.** The picks are exactly the ledger
-  rows that check wrote.
+- **One iMessage per pick at each check.** The picks are the ledger rows that
+  check wrote. When a two-team game offers two ways to back one team ("Yes on
+  A" and "No on B"), only the cheaper is shown, but both are logged.
 - **"Don't bet now"** when prices weren't checked.
 - **A full sheet** in iCloud Drive at `sports-edge/sheet.txt`.
 
-Reply "took 42" or "skip" to log a bet; replies go to `data/bet_log.csv`.
 Every message ends with the stage: Practice, Early signal, Supported or
-Confirmed. The bar for each is fixed in the spec.
+Confirmed. The bar for each is fixed in `docs/specs/slate_alerts_spec.md`.
+
+**Daily cap.** Each bet you took today counts $10 while it is open, $10 if it
+lost, and nothing if it won. At $30, alerts say "Daily cap reached — no more
+bets today."
+
+### Logging your bets (Apple Shortcuts)
+
+The system reads your replies from `iCloud Drive/sports-edge/replies.txt`, one
+per line, and never writes to that file. A line looks like:
+
+```
+2026-10-22T19:05:12-07:00 took 42
+2026-10-22T19:06:40-07:00 skip 3
+```
+
+- **The date at the front** lets a reply be matched to the alert it answers.
+  A line without one is timed when the Mac first reads it.
+- **Reply forms:**
+  - `took 42`, or `took 42.3` for an average price;
+  - `took 3 42` names pick #3;
+  - `skip`, or `skip 3` for pick #3.
+- **When the number is needed:** the alert says so when one check showed
+  more than one pick.
+
+**Set it up once:**
+1. On the Mac, create the folder `sports-edge` in iCloud Drive if it is not
+   there. Then create an empty `replies.txt` in it.
+2. On the iPhone, in Shortcuts, make a shortcut named **Log bet** with these
+   actions:
+   1. **Receive** `Text` input from `Share Sheet` (or **Ask for Input**,
+      Text, prompt `took 42 / skip 3`).
+   2. **Current Date**, then **Format Date**: Date Format `ISO 8601`,
+      Include ISO 8601 Time on.
+   3. **Text**: `Formatted Date` + one space + `Shortcut Input` (or
+      `Provided Input`).
+   4. **Append to Text File**: the text from step 3, File Path
+      `sports-edge/replies.txt` in iCloud Drive, **Make New Line** on.
+3. **To log replies automatically:** Shortcuts → Automation → New → Message.
+   - Set **Message Contains** to `took`, choose **Run Immediately**, and use
+     the same actions with the message's Content as the text.
+   - Make a second automation the same way for `skip`.
+   - Run **Log bet** by hand if the automation does not fire for messages you
+     send to yourself.
+
+**Checking it works:** the sheet's "Bet log" line reads `read` once the file
+is there, and `unreadable (...)` with the reason when it is not. For example:
+"not downloaded to this Mac yet" means iCloud has not synced the file. The
+Shortcut steps above have not yet been tested on a phone.
 
 ## What it does not do
 
@@ -80,7 +127,7 @@ cd /Users/quis/sports-edge
 venv/bin/pip install -r requirements-dev.txt
 cp .env.example .env        # then put your Odds API key in .env
 venv/bin/python -m pytest -q
-scripts/launchd/install.sh  # loads the three scheduled jobs
+scripts/launchd/install.sh  # loads the scheduled jobs
 ```
 
 `.env` holds `ODDS_API_KEY` (from the-odds-api.com) and `IMESSAGE_TO` (your
@@ -96,7 +143,8 @@ weekly heartbeat says so.
 | `data/sports_edge.duckdb` | prices, markets, settlements, reference odds, matches, run log |
 | `data/shadow_ledger.csv` | gaps logged (append-only) |
 | `data/calibration_grades.csv`, `data/shadow_grades.csv` | grading results (append-only) |
-| `data/bet_log.csv` | your "took" and "skip" replies (append-only) |
+| `data/bet_log.csv` | your "took" and "skip" replies, as logged (append-only) |
+| iCloud Drive `sports-edge/replies.txt` | your replies, appended by your Shortcut (read only) |
 | iCloud Drive `sports-edge/sheet.txt` | today's slate, open picks and results (rewritten; a view) |
 | `logs/<job>_<date>.log` | everything each run printed; dates are Los Angeles dates |
 | `logs/alerts.log` | every notification sent |
