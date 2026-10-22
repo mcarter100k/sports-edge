@@ -592,3 +592,51 @@ Entries are cleared with a date and the evidence that reality produced.
   - the 3:41 PM PT check (step 3), run against `main` after the merge;
   - the fee table, waiting on the owner's two source files in `docs/sources/`;
   - `install.sh`, held until step 3 passes and the owner says "install".
+
+## 2026-10-22: owner waiver, launchd install, and the missing venv
+
+**Owner waiver:** install now, before the 3:41 PM PT check. The scheduled
+runs from here on are the live gate, and failures alert on their own.
+
+- **The live checkout had no `venv/`.** `scripts/common.sh` runs
+  `$PROJ/venv/bin/python`, so every wrapper would have failed to start.
+  - **Fix (owner-directed, ~2:00 PM PT):** created
+    `/Users/quis/sports-edge/venv` with Homebrew Python 3.14.7 (the same
+    interpreter as the phase1 worktree's venv) from `requirements-dev.txt`.
+    Packages match the phase1 venv: duckdb 1.5.6, pytest 9.1.1, iniconfig
+    2.3.1, packaging 26.3, pluggy 1.7.0, Pygments 2.21.0. `venv/` is
+    gitignored.
+  - **OBSERVED:** the suite in the live checkout with the new venv: 362
+    passed, 1 skipped, with no cache files left.
+  - **OBSERVED:** `common.sh` sourced without `SPORTS_EDGE_PYTHON` resolves
+    `PY=/Users/quis/sports-edge/venv/bin/python` (Python 3.14.7, duckdb
+    1.5.6). Neither `.env` nor the shell sets `SPORTS_EDGE_PYTHON`.
+- **OBSERVED, install (2:01 PM PT):** `scripts/launchd/install.sh` exited 0
+  and printed `loaded` for all four labels. `launchctl list` shows all four,
+  and `launchctl print` shows each plist in `~/Library/LaunchAgents`,
+  working directory `/Users/quis/sports-edge`, `runs = 0`. The system time
+  zone is America/Los_Angeles.
+- **Next firings (PT), read from the plists:**
+
+| Job | Schedule | Next |
+|---|---|---|
+| `snapshot` (then `slate alert`) | :00, :15, :30, :45 | Thu Oct 22, 2:15 PM |
+| `grader` | 3:30 AM daily | Fri Oct 23, 3:30 AM |
+| `morning` | 8:00 AM daily | Fri Oct 23, 8:00 AM |
+| `heartbeat` | Sundays 9:00 AM | Sun Oct 25, 9:00 AM |
+
+- **No iMessage can be sent.** `IMESSAGE_TO` is not set in `.env` or the
+  shell. `imessage.send` raises `SendFailed` before `osascript` runs (code
+  read, INFERRED for the live jobs). The consequences, by design (rule 7):
+  - **Slate alert:** any `slate alert` run that has a message to send fails.
+    `run_snapshot.sh` then exits nonzero and a loud Mac notification fires.
+    While there is no fee table, that is expected about once per newly
+    checked slot ("no fee table").
+  - **Morning job:** fails at 8:00 AM with a loud `MORNING FAILED`.
+  - **Failure alerts:** Mac notifications (terminal-notifier or
+    `osascript display notification`), not iMessages, so they still arrive.
+- **PENDING:**
+  - the first scheduled snapshot run (2:15 PM PT) and the 3:41 PM PT check
+    on the installed jobs;
+  - the first grader, morning and heartbeat firings above;
+  - the iMessage items at the top of this log, until `IMESSAGE_TO` is set.
