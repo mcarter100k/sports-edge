@@ -58,3 +58,34 @@ late backstop. For example, `KXNBAGAME-26OCT22CLEPHI-CLE` has
 Any exception means exit code 1 and an alert through the wrapper (see
 `heartbeat_spec.md`). A failed odds step fails the run. The snapshot rows
 already committed in step 5 stay, because they are valid observations.
+
+---
+
+## Amendment 2026-10-22: tiers by match status (owner-approved)
+
+| Kind | When | Fetch | Snapshot rows for |
+|---|---|---|---|
+| `daily` | the 03:00 Los Angeles run, or any run when no `daily` run has succeeded in the last 24 h 15 min | full scan of open sports events, then series refresh and settlement sweep | every open sports market |
+| `hourly` | other :00 runs | **matched events only**: `GET /events?tickers=…&with_nested_markets=true`, batched | every market of a matched event that is not fully settled |
+| `near` | :15, :30 and :45 runs | matched events only | matched-event markets resolving within 48 h |
+
+A **matched event** has a row in `odds_matches` and at least one market
+without a settlement, and resolved no more than 2 days ago. Unmatched
+markets get one snapshot a day at most. Every run prints
+`matched markets by sport: <sport>=<n>, …`.
+
+The ticker lookup has no status filter, so a finalized matched market comes
+back with its result and is recorded in `settlements` on the next run.
+
+**Order:** the odds step (when due) runs before the matched fetch, so a game
+matched this run is snapshotted this run. The daily scan runs first on daily
+runs, and the odds step matches against games known from the database
+(daily scan plus targeted lookups).
+
+**Exchange closed.** Each run first reads `GET /exchange/status`. If
+`exchange_active` is false (Kalshi's weekly maintenance is Thursday
+03:00–05:00 ET), the run records `exchange_closed`, prints `EXCHANGE CLOSED`,
+writes nothing else, exits 0 and does not alert. Observed 2026-10-22 00:20
+PDT: `/events?tickers=…` returned 503 throughout the window. The heartbeat
+counts closed runs and flags more than 12 in 7 days, since the weekly
+window is 8 runs.

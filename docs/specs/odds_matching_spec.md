@@ -114,3 +114,24 @@ games that have not started are priced.
 A match that
 later changes is a conflict: it is logged as `MATCH CONFLICT`, and that
 event is never compared again.
+
+---
+
+## Amendment 2026-10-22: Kalshi games from the database, targeted lookups (owner-approved)
+
+Kalshi game events for matching come from the `markets` table (filled by the
+daily scan and by targeted lookups). The rules above apply unchanged.
+`odds_matches` also records the reference `sport_key`.
+
+**Targeted Kalshi lookup.** When an hourly odds pull finds a reference game
+starting within the next 24 h that no Kalshi event fits:
+
+1. Find the Kalshi series that have matched games from that same `sport_key`
+   before (learned from `odds_matches`; no league list).
+2. For each such series, fetch `GET /events?series_ticker=<s>&status=open&with_nested_markets=true`,
+   at most 20 series per cycle, and add the events to `markets`.
+3. Match again, for those reference games only.
+4. If a game is still unmatched, or no series has matched that `sport_key`
+   before, print
+   `UNMATCHED-REFERENCE <source_event_id> sport_key=<k> reason=<no_kalshi_series_known|no_kalshi_event> detail=<home vs away, start>`
+   once per game and reason. This is logged like `UNMATCHED`, never guessed.

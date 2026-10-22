@@ -68,3 +68,13 @@ covers:
 
 Its first line is `healthy` or `NEEDS ATTENTION | <first problem>`. With
 NEEDS ATTENTION it notifies loudly and **exits 1**.
+
+---
+
+## Amendment 2026-10-22
+
+The report adds: matched markets by sport; sports with near or hourly
+(matched) snapshots in the last 24 h. That is the Phase 1 "3+ sports" count,
+since unmatched markets are now daily only. It also adds runs recorded as
+`exchange_closed` in 7 days (flagged above 12), and the fee table state:
+present or not, and how many series are unconfirmed.

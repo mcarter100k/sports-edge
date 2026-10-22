@@ -17,21 +17,28 @@ hypothesis, not an edge.
 
 ## PROTECTED — owner review before any merge
 
-The evidence path: everything that fetches, stores, compares, logs or grades.
+Narrowed by the owner on 2026-10-22 to the files that decide what counts as
+evidence:
 
 ```
-sports_edge/kalshi.py      sports_edge/store.py      sports_edge/snapshot.py
-sports_edge/fees.py        sports_edge/odds.py       sports_edge/matching.py
-sports_edge/shadow.py      sports_edge/ledger.py     sports_edge/grader.py
-sports_edge/health.py      sports_edge/config.py     sports_edge/timeutil.py
-config/*.json              scripts/*.sh              scripts/launchd/*.plist
+sports_edge/ledger.py        the append-only ledger writer
+sports_edge/fees.py          the fee model
+config/fee_schedule.json     the fee table (every value cited to docs/sources/)
+sports_edge/grader.py        the grader
+sports_edge/shadow.py        the signal rule and its thresholds
+sports_edge/matching.py      odds matching
+config/team_aliases.json     team-name aliases (change which games pair)
+config/sport_groups.json     sport mapping (changes which games pair)
 ```
+
+Everything else gets normal review: suite green and the reality gate run
+before merge.
 
 - **Spec first.** A change to a protected file starts with a spec in
   `docs/specs/`, committed before the code that implements it.
-- **The shadow threshold and fee model are part of the evidence.** Changing
-  either starts a new `schema_version` / `rule_id` in the shadow ledger;
-  rows written under the old rule are never re-labelled.
+- **The signal rule and the fee model are part of the evidence.** Changing
+  either one starts a new `rule_id` in the shadow ledger. Rows written under
+  the old rule are never relabelled.
 
 **Data is evidence — append-only, never edited by hand:**
 `data/shadow_ledger.csv`, the `price_snapshots`, `settlements`,

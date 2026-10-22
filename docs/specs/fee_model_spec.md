@@ -53,3 +53,40 @@ record in `docs/validation_log.md`:
 1. that the general taker coefficient is 0.07, and maker 0.0175;
 2. that there is no fee at settlement;
 3. how the Specific Trading Fees Table defines `flat`, if it is ever needed.
+
+---
+
+## Amendment 2026-10-22: fee table from the official schedule (owner-verified)
+
+The owner read the fee schedule (effective 2026-07-07) and confirmed:
+taker = 0.07 × M_taker × C × P × (1−P); maker = 0.0175 × M_maker × C × P × (1−P);
+round up per the schedule; **no settlement fee**. Default multipliers are
+taker 1 and maker 0. Series listed under "Non-Standard Fees" override them.
+
+**Source of truth: `config/fee_schedule.json`.** It is built only from the
+PDF the owner saves in `docs/sources/`, and never by an automated fetch
+(owner's terms). Every value carries a `cite` (page and section). The file
+records the PDF's sha256, and a test fails if the PDF is missing or its hash
+differs.
+
+**Fail closed.** `fees.py` refuses to price a fee (it raises
+`FeeScheduleUnknown`, and the shadow check counts the market as
+`fee_unknown`) when:
+
+1. `config/fee_schedule.json` does not exist yet;
+2. the series is in the table's `unconfirmed` list;
+3. the event carries a `fee_type_override` or `fee_multiplier_override`;
+4. the API disagrees with the table. The API's `fee_multiplier` must equal
+   the table's taker multiplier, and the API's `fee_type` must have maker
+   fees exactly when the table's maker multiplier is above 0. A `flat` type
+   always fails.
+
+**Unconfirmed until the owner checks them** (live API, 2026-10-22): the 19
+sports series with API multiplier 0.5, all Pro Baseball. One of them,
+`KXMLBGAME`, conflicts with the schedule as quoted ("1/1") because the API
+shows `quadratic_with_maker_fees` at 0.5. No `KXMVE*` (combo) series appears
+under category Sports, and `/events` excludes combos, so combo rows are
+never used here.
+
+The earlier `fee_type`-based coefficients remain only as the cross-check in
+point 4.

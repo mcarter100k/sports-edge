@@ -30,6 +30,10 @@ collapses them (see `grader_spec.md`).
 
 ## Rule identity
 
+The rule's constants and `rule_id` live in `sports_edge/shadow.py` (protected).
+`config.py` holds no signal parameter.
+
+
 `rule_id = GAP_v1` covers threshold 0.03, taker buy at best ask,
 `SHADOW_CONTRACTS` = 100, non-direct precision $0.01, proportional de-vig,
 Pinnacle h2h, and `ODDS_MAX_AGE_MIN` = 75. Changing any of these means a new
