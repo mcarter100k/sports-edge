@@ -163,3 +163,12 @@ source is news reporting.**
   "fee unconfirmed — no price".
 - **Status.** The combo fee is still UNCONFIRMED (see the correction above),
   so no table entry is made.
+
+---
+
+## Amendment 2026-10-22: combo taker fee key parked (owner cut B)
+
+`fees.combo_taker_multiplier` and the optional `combo` table key, both added
+above, are removed with the combo alert line, which is parked (see
+`slate_alerts_spec.md`). The fail-closed cross-check on
+`quadratic_with_combo_maker_fees` is unchanged.

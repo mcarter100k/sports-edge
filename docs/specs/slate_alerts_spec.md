@@ -617,3 +617,35 @@ The specs above call the wrappers, plists, `snapshot.py`, `odds_step.py`,
 feat/phase1 the protected list was narrowed (`a843253`). Of the files this work
 changes, only `shadow.py`, `fees.py` and `grader.py` are on it. The owner
 added `checks.py` to it on 2026-10-22.
+
+---
+
+## Amendment 2026-10-22: owner-approved cuts A–D
+
+- **A. The daily digest is removed** (`sports_edge/digest.py` and its tests).
+  - The morning message replaced it.
+  - The sheet loses its "Daily report" section.
+  - The morning job no longer writes `logs/digest_<date>.txt`; the wrapper's
+    `logs/morning_<date>.log` keeps the morning text.
+  - Moved into `slate.py`:
+    - the fee table's state, for "fee table missing/invalid";
+    - the stage line's first-fire selection, which now uses
+      `bets.first_fire_ids`, the same rule as before (earliest row per
+      market + side + rule, by `snapshot_utc`).
+  - The morning's "unchecked yesterday" breakdown stays.
+- **B. The combo line is PARKED.** It could only ever print "fee unconfirmed
+  — no price", because no combo fee is confirmed.
+  - Removed: the combo line, `fees.combo_taker_multiplier`, and the fee
+    table's optional `combo` key.
+  - The design in "Combo" above stays as written. Unparking it means
+    restoring the code with its tests and adding a cited `combo` entry to
+    the fee table.
+  - Unchanged: the API cross-check that fails closed on
+    `quadratic_with_combo_maker_fees`.
+- **C. The sheet is trimmed.**
+  - It no longer repeats yesterday's results, which are in the morning
+    message.
+  - It no longer has a "how to read this" block. The README explains the
+    wording.
+- **D. Superseded specs are archived.** `daily_digest_spec.md` and the parked
+  `phase3_combo_logger_spec.md` move to `docs/archive/`, unchanged.
