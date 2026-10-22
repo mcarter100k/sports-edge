@@ -167,3 +167,35 @@ def test_outcome_count_rule():
     assert check_outcomes(["A Team", "B Team"], ["A Team", "B Team"]) is None
     assert "outcome_count" in check_outcomes(["A Team", "B Team"], ["A Team", "B Team", "Draw"])
     assert "outcome_count" in check_outcomes(["A Team", "B Team", "Draw"], ["A Team", "B Team"])
+
+
+# Power de-vig ---------------------------------------------------------------
+
+def test_power_sums_to_one_and_shifts_toward_the_favourite():
+    from sports_edge.odds import devig_power
+    odds = {"Fav": D("1.30"), "Dog": D("3.60")}
+    power = devig_power(odds)
+    prop, _ = devig_proportional(odds)
+    assert sum(power.values()) == pytest.approx(1.0, abs=1e-9)
+    assert power["Fav"] > prop["Fav"] and power["Dog"] < prop["Dog"]
+
+
+def test_power_equals_proportional_without_margin():
+    from sports_edge.odds import devig_power
+    odds = {"A": D("2.0"), "B": D("2.0")}      # implied 0.5 + 0.5: no margin
+    prop, over = devig_proportional(odds)
+    assert over == pytest.approx(1.0)
+    assert devig_power(odds)["A"] == pytest.approx(prop["A"], abs=1e-9)
+
+
+def test_power_three_way():
+    from sports_edge.odds import devig_power
+    p = devig_power({"A": D("2.5"), "B": D("3.0"), "Draw": D("3.4")})
+    assert sum(p.values()) == pytest.approx(1.0, abs=1e-9)
+
+
+@pytest.mark.parametrize("outcomes", [{"A": D("1.0"), "B": D("5")}, {"A": D("1.5"), "B": D("1.5")}])
+def test_power_shares_the_rejections(outcomes):
+    from sports_edge.odds import devig_power
+    with pytest.raises(DevigRejected):
+        devig_power(outcomes)

@@ -137,3 +137,38 @@ def test_repo_table_if_present_is_valid_and_cited():
         pytest.skip("config/fee_schedule.json not built yet (waiting on the PDF in docs/sources/)")
     table = load_table(path)
     assert table["source"]["file"].startswith("docs/sources/")
+    assert table["rounding"]["balance_precision"] == "0.0001"
+
+
+# Centicent precision from the cited table ------------------------------------------
+
+def test_precision_comes_from_the_table(tmp_path):
+    from sports_edge.fees import table_precision
+    assert table_precision(load_table(fee_table(tmp_path))) == D("0.0001")
+    with pytest.raises(FeeScheduleUnknown):
+        table_precision(None)
+
+
+def test_centicent_changes_the_fee():
+    # 100 @ 0.42: model 1.7052 -> centicent keeps 1.7052, cent rounds to 1.71
+    assert fee_for_order("0.42", 100, 1, precision="0.0001") == D("1.7052")
+    assert fee_for_order("0.42", 100, 1, precision="0.01") == D("1.71")
+
+
+@pytest.mark.parametrize("change,match", [
+    ({"cite": ""}, "cite"),
+    ({"cite": "Rounding section"}, "page"),
+    ({"balance_precision": "0.001"}, "0.01 or 0.0001"),
+])
+def test_rounding_entry_must_be_cited_and_sane(tmp_path, change, match):
+    p = fee_table(tmp_path)
+    t = json.loads(p.read_text()); t["rounding"].update(change); p.write_text(json.dumps(t))
+    with pytest.raises(FeeTableInvalid, match=match):
+        load_table(p)
+
+
+def test_missing_rounding_entry_is_invalid(tmp_path):
+    p = fee_table(tmp_path)
+    t = json.loads(p.read_text()); del t["rounding"]; p.write_text(json.dumps(t))
+    with pytest.raises(FeeTableInvalid):
+        load_table(p)

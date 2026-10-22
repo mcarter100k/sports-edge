@@ -221,6 +221,9 @@ def test_odds_step_matches_prices_and_logs_shadow_rows(tmp_path):
     assert [(r["market_ticker"], r["side"]) for r in rows] == [("KXNBAGAME-E1-CLE", "YES")]
     with Store.open() as s:
         assert counts(s, "SELECT count(*) FROM odds_matches WHERE sport_key = 'basketball_nba'") == 2
+        prop, power = s.con.execute("SELECT fair_prob, fair_prob_power FROM reference_odds "
+                                    "WHERE outcome = 'Philadelphia 76ers'").fetchone()
+        assert power > prop          # favourite: power de-vig gives it more than proportional
 
 
 def test_without_fee_table_no_shadow_rows():

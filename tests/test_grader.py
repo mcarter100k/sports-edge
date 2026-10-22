@@ -39,7 +39,8 @@ def seed(s, result_cle="yes", with_ref=True, quote=("0.40", "0.42")):
         s.append("reference_odds", [
             {"fetched_utc": PRE, "source": SRC, "bookmaker": "pinnacle", "sport_key": "nba",
              "source_event_id": "R1", "commence_utc": COMMENCE, "outcome": o, "fair_prob": p,
-             "devig_method": "proportional"} for o, p in (("CLE", 0.45), ("PHI", 0.55))])
+             "fair_prob_power": pp, "devig_method": "proportional"}
+            for o, p, pp in (("CLE", 0.45, 0.44), ("PHI", 0.55, 0.56))])
     s.record_settlements([
         {"ticker": "E1-CLE", "result": result_cle, "settlement_value": D("1"), "settlement_ts": NOW, "source": "scan"},
         {"ticker": "E1-PHI", "result": "no" if result_cle == "yes" else "yes", "settlement_value": D("0"),
@@ -89,11 +90,13 @@ def test_zero_case_says_why():
     assert any("0 graded (no matched market has settled yet): matched markets=0" in m for m in out)
 
 
-def shadow_row(rid, ticker, side, price, fee, snap_ts, event="E1"):
+def shadow_row(rid, ticker, side, price, fee, snap_ts, event="E1", ref_outcome="CLE", fair="0.50"):
     base = {k: "" for k in HEADER}
     base.update({"row_id": rid, "market_ticker": ticker, "event_ticker": event, "side": side,
-                 "price_paid": price, "fee_per_contract": fee, "rule_id": "GAP_v1",
-                 "snapshot_utc": iso_z(snap_ts), "logged_utc": iso_z(snap_ts)})
+                 "price_paid": price, "fee_per_contract": fee, "rule_id": "GAP_v2",
+                 "snapshot_utc": iso_z(snap_ts), "logged_utc": iso_z(snap_ts),
+                 "ref_outcome": ref_outcome, "commence_utc": iso_z(COMMENCE), "odds_source": SRC,
+                 "source_event_id": "R1", "fair_prob": fair})
     return base
 
 
@@ -103,7 +106,7 @@ def test_shadow_pnl_and_first_fire():
     ledger.append_rows(config.shadow_ledger_path(), HEADER, [
         shadow_row("a", "E1-CLE", "YES", "0.42", "0.0171", PRE - timedelta(minutes=15)),
         shadow_row("b", "E1-CLE", "YES", "0.40", "0.0168", PRE),           # repeat: not first-fire
-        shadow_row("c", "E1-PHI", "NO", "0.43", "0.0172", PRE),
+        shadow_row("c", "E1-PHI", "NO", "0.43", "0.0172", PRE, ref_outcome="PHI", fair="0.40"),
         shadow_row("d", "E9-XXX", "YES", "0.50", "0.0175", PRE, "E9"),       # not settled: ungraded
     ])
     out = []
@@ -124,3 +127,46 @@ def test_shadow_loss():
     run_grader(kalshi(), now_fn=lambda: NOW, out=lambda m: None)
     (row,) = ledger.read_rows(config.shadow_grades_path())
     assert D(row["pnl_per_contract"]) == -D("0.42") - D("0.0171")
+
+
+def test_power_fair_is_scored_alongside_proportional():
+    with Store.open() as s:
+        seed(s)
+    out = []
+    run_grader(kalshi(), now_fn=lambda: NOW, out=out.append)
+    cle = {r["market_ticker"]: r for r in ledger.read_rows(config.calibration_grades_path())}["E1-CLE"]
+    assert float(cle["p_ref_power"]) == pytest.approx(0.44)
+    assert float(cle["brier_ref_power"]) == pytest.approx((0.44 - 1) ** 2)
+    assert float(cle["logloss_ref_power"]) == pytest.approx(-math.log(0.44))
+    assert any("power vs proportional on the same 2 markets" in m for m in out)
+
+
+def test_clv_per_row_from_last_reference_before_start():
+    with Store.open() as s:
+        seed(s, result_cle="yes")
+        # a later in-play fetch must be ignored for the closing line
+        s.append("reference_odds", [{"fetched_utc": COMMENCE + timedelta(minutes=10), "source": SRC,
+                                     "source_event_id": "R1", "commence_utc": COMMENCE, "outcome": "CLE",
+                                     "fair_prob": 0.99, "fair_prob_power": 0.99}])
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, [
+        shadow_row("a", "E1-CLE", "YES", "0.42", "0.0171", PRE, fair="0.50"),
+        shadow_row("c", "E1-PHI", "NO", "0.43", "0.0172", PRE, ref_outcome="PHI", fair="0.60")])
+    out = []
+    run_grader(kalshi(), now_fn=lambda: NOW, out=out.append)
+    g = {r["row_id"]: r for r in ledger.read_rows(config.shadow_grades_path())}
+    assert D(g["a"]["closing_fair_prob"]) == D("0.45") and D(g["a"]["closing_side_fair"]) == D("0.45")
+    assert D(g["a"]["clv"]) == D("0.45") - D("0.42") and D(g["a"]["fair_move"]) == D("0.45") - D("0.50")
+    # NO on PHI: closing PHI fair 0.55 -> side fair 0.45; entry side fair 1 - 0.60 = 0.40
+    assert D(g["c"]["closing_side_fair"]) == D("0.45")
+    assert D(g["c"]["clv"]) == D("0.45") - D("0.43") and D(g["c"]["fair_move"]) == D("0.45") - D("0.40")
+    assert any("first-fire CLV" in m and "record only" in m for m in out)
+
+
+def test_clv_blank_without_pre_start_reference():
+    with Store.open() as s:
+        seed(s, with_ref=False)
+    ledger.append_rows(config.shadow_ledger_path(), HEADER,
+                       [shadow_row("a", "E1-CLE", "YES", "0.42", "0.0171", PRE)])
+    run_grader(kalshi(), now_fn=lambda: NOW, out=lambda m: None)
+    (row,) = ledger.read_rows(config.shadow_grades_path())
+    assert row["clv"] == "" and row["pnl_per_contract"] != ""

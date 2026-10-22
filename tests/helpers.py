@@ -18,8 +18,8 @@ def market(ticker, title, start, *, status="active", yes_bid="0.4100", yes_ask="
          "close_time": iso_z(exp + timedelta(hours=close_after_h)),
          "expected_expiration_time": iso_z(exp), "occurrence_datetime": iso_z(exp),
          "yes_bid_dollars": yes_bid, "yes_ask_dollars": yes_ask, "no_bid_dollars": no_bid,
-         "no_ask_dollars": no_ask, "last_price_dollars": yes_ask, "yes_bid_size_fp": "10.00",
-         "yes_ask_size_fp": "10.00", "volume_fp": "100.00", "volume_24h_fp": "50.00",
+         "no_ask_dollars": no_ask, "last_price_dollars": yes_ask, "yes_bid_size_fp": "500.00",
+         "yes_ask_size_fp": "500.00", "volume_fp": "100.00", "volume_24h_fp": "50.00",
          "open_interest_fp": "20.00", "result": result}
     if settlement_value is not None:
         m["settlement_value_dollars"] = settlement_value
@@ -137,7 +137,7 @@ def stub(eid, home, away, commence, key="basketball_nba"):
     return RefEventStub(eid, key, commence, home, away)
 
 
-def fee_table(tmp_path, series=None, unconfirmed=None, default=("1", "0")):
+def fee_table(tmp_path, series=None, unconfirmed=None, default=("1", "0"), precision="0.0001"):
     """Write a cited fee table plus a stand-in source file; point the env at it."""
     import hashlib
     import json
@@ -149,6 +149,7 @@ def fee_table(tmp_path, series=None, unconfirmed=None, default=("1", "0")):
                    "effective": "2026-07-07"},
         "default": {"taker": default[0], "maker": default[1], "cite": "p.1 General"},
         "settlement_fee": {"value": "0", "cite": "p.1 Settlement"},
+        "rounding": {"balance_precision": precision, "cite": "p.3 Rounding"},
         "series": {k: {"taker": t, "maker": m, "cite": "p.2 Non-Standard Fees"}
                    for k, (t, m) in (series or {}).items()},
         "unconfirmed": dict(unconfirmed or {}),
