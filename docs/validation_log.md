@@ -691,3 +691,26 @@ Spec `6138fbb` (new `docs/specs/reality_gate_spec.md`), code `eb6a198`.
     code ran.
   - **Both:** 0 live files changed, no failure markers, exit 0.
 - **NOT CHECKED:** which code earlier branches' wrapper gates ran.
+
+## 2026-10-22: a daily run prices the games it matches (owner-approved fix)
+
+Spec `756681f`, code `0e3e69d`. `snapshot.py` is not on the narrowed
+protected list.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 375 passed, 1 skipped (3 new tests).
+  - Mutants: 4 of 4 killed, from clean caches, each restored
+    byte-identical. One of them restores the old behaviour (no matched
+    fetch after the scan); the new tests fail on it.
+  - Standing set rerun on this branch: 98 of 98 killed.
+- **VERIFIED, Gate 2,** with the fixed `reality_run.py` and no manual
+  settings: `--code <worktree> -- /bin/bash <worktree>/scripts/run_snapshot.sh`
+  on an empty folder (3:01 PM PT).
+  - **Result:** `tier=daily matches_added=44 events_matched=21
+    matched_after_scan=21 snapshot_rows=44`. 44 price rows (tier `daily`),
+    and 0 matched markets without a price row. `SLATE ALERT OK`.
+  - **Control (the same setup on the old code, 2:20 PM PT gate, and the
+    live 2:15 PM PT run):** `snapshot_rows` was 0.
+  - 0 live files changed, no failure markers.
+- **PENDING:** the next live daily run (3:00 AM PT Fri Oct 23) writing price
+  rows for any game it matches.
