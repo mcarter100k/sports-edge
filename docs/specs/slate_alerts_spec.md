@@ -684,3 +684,41 @@ changes.
 the given odds source (`reference_events.source`, `check_log.source`), like
 every other reader in `checks.py`. The output is unchanged while there is
 only one source. A test pins the behaviour with rows from a second source.
+
+---
+
+## Amendment 2026-10-22: stage counts only games with a closing price; walked fills and the cap (owner review)
+
+**Which games count.** A game counts toward "beating the final price" only
+if at least one of its first-fire bets has a non-blank `clv` (see the grader
+amendment: a later read, after fees). Write *c* for the number of such games
+and *n* for the number of graded games.
+
+**The stage criteria:**
+
+| Stage | Needs |
+|---|---|
+| Early signal | *c* ≥ 100, and the beat-the-close interval over those *c* games is above 0 |
+| Supported | *c* ≥ 500, Early signal holds, and the mean return over all *n* graded games > 0 |
+| Confirmed | *c* ≥ 1,000, Early signal holds, and the return interval is above 0 |
+
+**Demotion:**
+- **"Not beating the final price"** applies at *c* ≥ 100 when the mean
+  beat-the-close is ≤ 0.
+- **The 20-bet losing stretch** still uses every graded bet.
+
+**Wording:**
+
+| Case | Stage line |
+|---|---|
+| Practice | `Practice · <c> of 100 games with a closing price` |
+| Practice, on the free plan | the same, plus ` (free plan adds none)`, because the free plan reads each game once and a single read is never its own close (rule 8) |
+| Early signal | `Early signal · <c> games with a closing price · Supported needs 500` |
+| Supported | `Supported · <c> games with a closing price · Confirmed needs 1,000` |
+| Confirmed | `Confirmed · <c> games with a closing price` |
+| Demoted, not beating the close | `Practice (demoted: not beating the final price) · <c> games` |
+| Demoted, losing stretch | `Practice (demoted: 20-bet losing stretch) · <n> games` |
+
+**Walked fills and the cap (accepted by the owner).** A walked fill can cost
+slightly over $10, because its later levels are dearer. The daily cap still
+counts each taken bet as the nominal $10.

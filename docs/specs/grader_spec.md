@@ -85,3 +85,24 @@ The report adds two lines, in plain words. The bet log is
 
 Both lines are always printed. With no bet log, they read "no replies
 logged yet". These lines never decide anything; they are a record.
+
+---
+
+## Amendment 2026-10-22: the closing line must be a later read, and it counts the fee (owner review)
+
+- **Closing reference.** It is the last reference fetch for the row's game
+  and `ref_outcome` that is:
+  - **strictly after** the row's `snapshot_utc`;
+  - **strictly after** the row's own reference fetch (`odds_fetched_utc`);
+  - **before** `commence_utc`.
+
+  **Why both:** on a daily run, the Kalshi snapshot comes from the scan
+  that runs before the odds fetch. "After the snapshot" alone would let the
+  entry fetch serve as its own close.
+- **If no such fetch exists,** every closing field is blank. That covers a
+  game read once (a single pull), which on the free plan is every game.
+- **`clv` = `closing_side_fair − price_paid − fee_per_contract`.** This means
+  beating the close after fees. A 1¢ price beat can be negative once the fee
+  is taken off.
+- **Unchanged:** `fair_move`, the report line (it now names the fee), and
+  calibration, which still uses the last reference before the start.
