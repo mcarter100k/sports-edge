@@ -24,7 +24,7 @@ sports_edge/kalshi.py      sports_edge/store.py      sports_edge/snapshot.py
 sports_edge/fees.py        sports_edge/odds.py       sports_edge/matching.py
 sports_edge/shadow.py      sports_edge/ledger.py     sports_edge/grader.py
 sports_edge/health.py      sports_edge/config.py     sports_edge/timeutil.py
-scripts/*.sh               scripts/launchd/*.plist
+config/*.json              scripts/*.sh              scripts/launchd/*.plist
 ```
 
 - **Spec first.** A change to a protected file starts with a spec in
