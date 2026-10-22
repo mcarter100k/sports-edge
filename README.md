@@ -61,6 +61,11 @@ not. If that notification doesn't arrive, something is wrong.
 - **"Don't bet now"** when prices weren't checked.
 - **A full sheet** in iCloud Drive at `sports-edge/sheet.txt`.
 
+**Without `IMESSAGE_TO`,** the same messages appear as Mac notifications
+(no sound), cut to fit one banner. Clicking a banner opens the sheet. Set
+`IMESSAGE_TO` in `.env` and delivery switches back to iMessage from the
+next run.
+
 Every message ends with the stage: Practice, Early signal, Supported or
 Confirmed. The bar for each is fixed in `docs/specs/slate_alerts_spec.md`.
 
@@ -142,8 +147,8 @@ venv/bin/python -m pytest -q
 scripts/launchd/install.sh  # loads the scheduled jobs
 ```
 
-`.env` holds `ODDS_API_KEY` (from the-odds-api.com) and `IMESSAGE_TO` (your
-own number). The free plan has 500 credits a month; `ODDS_PLAN=free` (the
+`.env` holds `ODDS_API_KEY` (from the-odds-api.com) and, optionally,
+`IMESSAGE_TO` (your own number; without it, messages are Mac notifications). The free plan has 500 credits a month; `ODDS_PLAN=free` (the
 default) keeps to 15 a day, and `ODDS_PLAN=paid` switches the schedule.
 Without a key, prices are still recorded, but nothing is compared, and the
 weekly heartbeat says so.
