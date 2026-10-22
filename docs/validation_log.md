@@ -334,3 +334,41 @@ Entries are cleared with a date and the evidence that reality produced.
   - `run_morning.sh`: printed `SLATE MORNING OK sheet=…` and wrote no
     `digest_*.txt`. The two that exist in the folder are from runs before
     the cut, at 04:50 and 06:04.
+
+## 2026-10-22: slate.py audit applied (owner-approved MOVE/CUT plan, option b)
+
+- **Commits:** spec `5096b94`, then the code.
+- **`slate.py`:** 718 → 500 lines. The audit estimated about 480; the
+  measured result is 500, because the moved functions leave call sites and
+  arguments behind.
+- **Moved:**
+
+  | To | What |
+  |---|---|
+  | `grader.py` | stage line, paper results |
+  | `shadow.py` | pay up to |
+  | `fees.py` | table state |
+  | `checks.py` | 7 check and plan readers |
+  | `bets.py` | result pairing, picks in a run, open picks, money at risk |
+  | `store.py` | run finishes, newest snapshot |
+  | `timeutil.py` | Pacific day |
+
+- **Cut:** two unused Context fields, and the repeated fee and odds checks.
+- **VERIFIED (Gate 1):**
+  - 318 passed, 1 skipped, as before the move.
+  - The test diff renames call sites only (`slate.stage` →
+    `grader.stage`, `slate.pay_up_to` → `shadow.pay_up_to`) and moves the
+    `JARGON` list into the test. No assertion or expected value changed.
+- **Mutants: 66 of 66 killed**, each reverted byte-identical.
+  - Ten patterns were re-pointed to the moved code, each with the same
+    mutation against the same test file.
+- **VERIFIED, no behaviour change, on real data:**
+  - The old code (`e0bb32d`) and the new code ran `slate show` and
+    `slate morning`, at the same fixed time, on separate copies of the
+    reality-run data.
+  - Output, sheet and bet log were identical.
+  - **Positive control:** a one-character change to the sheet header was
+    detected (2 differing lines).
+- **VERIFIED (Gate 2):** real `run_snapshot.sh` (snapshot, then
+  `slate alert`) and `run_morning.sh` under `/bin/bash`, against real
+  Kalshi, in a temporary folder. 0 live files changed, no failure markers.
