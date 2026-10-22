@@ -817,3 +817,40 @@ review and is not built.
 - **Still PENDING:** the owner confirming that clicking a banner opens the
   iCloud sheet (path with a space); the 3:30 AM PT grader's markouts line;
   the 8:00 AM PT morning banner.
+
+## 2026-10-22: the status command, and `.env` for every command (owner request)
+
+Spec `b91f2bc`, code `7fc18fd`. No protected file is changed.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 415 passed, 1 skipped (13 new tests). `tests/conftest.py` now
+    also sets `SPORTS_EDGE_NO_ENV_FILE` for every test, so no test can load
+    the real `.env`.
+  - New mutants: 17 of 17 killed, from clean caches, each restored
+    byte-identical. They cover commands never loading `.env`, any import
+    loading it, an already-set value replaced, the skip switch ignored,
+    `SPORTS_EDGE_PROJ` ignored, quotes kept, the `export` prefix, a
+    read-write database, and each status line rule.
+  - The board and markout set (35) and the standing set (98) were rerun on
+    this branch: all killed.
+- **VERIFIED, `.env` loading, with a control.** Run through
+  `reality_run.py` on a copy of the live data, with `ODDS_API_KEY` removed
+  from the environment and `SPORTS_EDGE_PROJ` set to the live checkout:
+  - `slate board` printed `none (no fee table)`: the key came from `.env`.
+  - **Control,** with `SPORTS_EDGE_NO_ENV_FILE=1`: `none (odds not set up)`.
+- **OBSERVED, `status` on the live data from a clean environment (4:08 PM
+  PT):** exit 0, no stderr, 12 live files hashed before and after, 0
+  changed (the database file included). Output:
+  ```
+  SPORTS-EDGE · 4:08 PM PT
+  Running fine · last check 4:00 PM PT
+  Today: 18 games tracked · 0 checked · 0 picks
+  Why no picks: no fee table
+  Odds credits: 0 of 15 used today
+  ```
+- **OBSERVED, `run_snapshot.sh` on this branch** (empty folder, 4:09 PM
+  PT): `SNAPSHOT OK tier=daily events_matched=28 matched_after_scan=28
+  snapshot_rows=58`, then `SLATE ALERT OK`. 0 live files changed, no
+  failure markers.
+- **Owner's header:** line 1 is `SPORTS-EDGE`, as specified. The jargon
+  test exempts only that product name.
