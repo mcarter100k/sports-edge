@@ -132,3 +132,17 @@ step; it is recorded here as the owner reported it.
 
 Combo (`KXMVE*`) markets are still outside Phase 1 (see the 2026-10-22
 amendment above, and the PARKED `phase3_combo_logger_spec.md`).
+
+---
+
+## Correction 2026-10-22: the source of the August 20 date
+
+The amendment above attributes the combo maker fee date (2026-08-20) to
+"Kalshi's online fee table, as read by the owner". **That was wrong: the
+source is news reporting.**
+- **Status: UNCONFIRMED.** The owner will confirm it on
+  kalshi.com/fee-schedule. Until then no fee table entry, cite or rule may
+  rest on it.
+- The fail-closed cross-check is unchanged and does not depend on the date.
+- The amendment above is left as written; this correction supersedes its
+  attribution.

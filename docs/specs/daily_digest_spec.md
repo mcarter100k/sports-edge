@@ -106,3 +106,43 @@ two Part A definitions above were wrong:
 
 **Line length, measured:** 481 characters in the all-problems state, so a
 `notify.sh` banner cuts it either way. The Part B owner decision stands.
+
+---
+
+## Amendment 2026-10-22: owner rulings — banner format; Part B APPROVED
+
+**Banner (owner ruling).** `notify.sh` stays unchanged. The notification
+shows a short banner, and the click opens `logs/digest_<date>.txt`, which
+holds the full digest line and report.
+- Format: `Sports-edge: N games · N underpriced · N scored · up/down X¢ per $1 (too early / N games) · system OK`
+- When no bet has been graded yet: `Sports-edge: no games scored yet · system OK`
+- "(too early)" while fewer than 20 games are graded, "(N games)" from 20 on.
+- "system problems" replaces "system OK" when the digest lists any problem.
+- **Rule 8 holds in the banner too.** A field whose path cannot produce a
+  number shows words instead of a zero: "no matched games", "no snapshot
+  run", "no fee table", "fee table invalid", "grader never ran".
+- **Length:** `notify.sh` appends " → <report file name>" (about 25
+  characters) and cuts at 300, or 220 on the osascript fallback. The
+  banner is therefore held to at most 190 characters, so it survives
+  either path whole. A test pins the worst case.
+
+**Module output contract:** line 1 is the banner, line 2 is
+`report: <path>`, line 3 is the full digest line. Exit 1 on any exception.
+
+**Part B — APPROVED 2026-10-22, built to this design:**
+- `scripts/run_digest.sh` sources `common.sh`, so `.env` is loaded and its
+  absence is a failure. It runs `python -m sports_edge.digest` and appends
+  everything to `logs/digest_job_<date>.log`.
+- **Success** (exit 0, no traceback, a `Sports-edge:` banner on line 1, and
+  a report file that exists): `notify DIGEST "<banner>" "<report>"`, where
+  the click opens the report. If that notification cannot be delivered,
+  exit 1.
+- **Anything else:** a loud `notify ALERT "DIGEST FAILED | <reason>"
+  "<job log>"`, then exit 1. It never exits 0 on an error.
+- Like the weekly heartbeat, it always notifies; a missing 7:30
+  notification is itself a signal.
+- `scripts/launchd/com.quis.sportsedge.digest.plist` fires at Hour 7,
+  Minute 30, in system time (America/Los_Angeles). `install.sh` and
+  `uninstall.sh` list it with the other three jobs.
+- **Installed together with the others at merge, not before** (owner ruling).
+- **PENDING once installed:** the first 7:30 AM notification.
