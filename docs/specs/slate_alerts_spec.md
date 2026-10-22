@@ -488,3 +488,124 @@ Each is recorded in `docs/validation_log.md` with its date and evidence.
    Pacific midnight on are read.
 10. **Message sends are recorded per text,** so a failure partway through
     a group never resends the texts that already went out.
+
+---
+
+## Amendment 2026-10-22: owner rulings before merge
+
+**Approved as written:**
+- a drawdown is 20 stakes below the running peak;
+- after-midnight pick numbering;
+- logs may keep technical terms.
+
+The jargon rule applies to messages and the sheet only.
+
+### 1. Replies come from a text file, not `chat.db`
+
+There is no Full Disk Access, so `chat.db` is never read and the code that
+read it is removed.
+
+- **The file:** `<sheet folder>/replies.txt`, which is
+  `iCloud Drive/sports-edge/replies.txt` by default.
+- **Who writes it:** the owner's Apple Shortcuts automation appends one
+  line per reply. The README gives the steps.
+- **Line format:** `<timestamp> <reply>` or just `<reply>`.
+  - The timestamp is optional, and is ISO 8601 with an offset, as Shortcuts
+    writes "Current Date" in ISO 8601.
+  - The reply uses the existing grammar (`took 42`, `took 3 42`, `skip`,
+    `skip 3`).
+  - Any other line is ignored.
+- **A line without a timestamp** is timed when the system first reads it.
+- **Each line is logged once.** Its id is the sha1 of the timestamp, the
+  text and its occurrence number (the nth identical line), and that id goes
+  in `message_guid`.
+- **The file is read, never written.**
+- **When it cannot be read** (missing, or only an iCloud placeholder
+  `.replies.txt.icloud` because it has not been downloaded), the bet log is
+  "unreadable". Messages then say `Bet log unreadable: cap not tracked`,
+  and the reason is shown in the sheet.
+
+### 2. Daily cap = money at risk today
+
+- **Counted:** each bet taken today (by Pacific pick date, latest reply per
+  pick):
+  - **$10** while it is open;
+  - **$10** if it settled lost;
+  - **$0** if it settled won or void.
+- **Why the nominal $10:** the cap then stops at exactly three open bets,
+  as directed. The actual cost of a $10 practice bet is floor($10 ÷ price)
+  contracts plus the fee, which can come to slightly under $10.
+- **At $30 or more:** pick alerts are replaced by
+  `Daily cap reached — no more bets today.`, followed by
+  `(N price gaps logged for the record.)` when there are picks.
+- **The sheet** shows the amount at risk.
+
+### 3. Same-outcome pairs: show only the cheaper one (display only)
+
+**The pair.** In a game with exactly two teams and no Tie market, "Yes on
+A" and "No on B" back the same result.
+
+**Pick identity.**
+- A pick is now one **result**: the event plus the team it backs. That
+  replaces one market + side.
+- Both ledger rows keep their own bet key, first-fire grading and row id,
+  so the ledger, the grader and "not taken" are unchanged.
+- In games with a Tie market, every market + side is its own result, as
+  before.
+
+**Shown.**
+- Each alert and the sheet show one row per result: the cheaper one at that
+  check, meaning the lower price paid + fee per contract. A tie goes to the
+  larger gap.
+- Numbers are assigned per result, in order of the result's first logged
+  row that day. So a hidden twin never takes a number.
+
+**Replies.**
+- A reply to #n maps to the row shown for that result in the latest check
+  that showed it.
+- The bet log records that row's first-fire row id, so grading uses the
+  contract actually shown.
+
+### 4. "Line" wording
+
+- **The sharp book was read twice for this game.** This is in practice the
+  paid plan's 15-minute check after its 60-minute check.
+  - The move is the side's fair chance now, minus at the previous reference
+    fetch of the same game.
+  - Steady is under 2¢ either way. Shown as `line steady`.
+  - +2¢ or more: `line moved toward <team>, check news`.
+  - −2¢ or less: `line moved against, skip`.
+- **Otherwise, which on the free plan is always:**
+  - The move is the Kalshi price of the side bought over the last hour
+    (the ledger's `kalshi_move_1h`).
+  - Shown as `Kalshi price steady`, `Kalshi price rising` or
+    `Kalshi price falling`.
+  - Shown as `no earlier Kalshi price` when there is none.
+  - Nothing in this wording implies news.
+
+### 5. Free-plan soccer
+
+- `config/slate_sports.json` lists `_paid_only` keys. On the free plan
+  they are never listed, matched or priced.
+- **Free-plan soccer:** EPL, La Liga and the Champions League.
+- **Paid only:** Bundesliga, Serie A, Ligue 1, Eredivisie, Primeira Liga,
+  Europa League and Conference League.
+- **Unchanged:** NFL, college football, NBA, NHL and MLB (MLB still
+  spends nothing while its fee is unconfirmed).
+
+### 6. Part B: approved without the wake
+
+**Removed:** `wake.sh`, `pmset`, the sudoers entry, the `slate wake` command
+and `caffeinate`. The Mac stays on AC, where it never sleeps (observed), and
+the weekly heartbeat's shortfall check covers missed runs.
+
+**Built as proposed** in `docs/proposals/slate_part_b.md` §1–3:
+- `run_job` passes arguments through;
+- `run_snapshot.sh` always runs `slate alert` after the snapshot;
+- `run_morning.sh` and `com.quis.sportsedge.morning` fire at 8:00;
+- the digest wrapper and plist are removed from the scripts and from
+  install and uninstall.
+
+### 7. Protected list
+
+`sports_edge/checks.py` is added to AGENTS.md's protected list.
