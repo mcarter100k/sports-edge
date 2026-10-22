@@ -135,3 +135,17 @@ starting within the next 24 h that no Kalshi event fits:
    before, print
    `UNMATCHED-REFERENCE <source_event_id> sport_key=<k> reason=<no_kalshi_series_known|no_kalshi_event> detail=<home vs away, start>`
    once per game and reason. This is logged like `UNMATCHED`, never guessed.
+
+---
+
+## Amendment 2026-10-22: power de-vig stored alongside proportional (owner review finding 4)
+
+Every reference row stores two fair probabilities:
+
+- `fair_prob`: proportional, as above. **The signal uses this one.**
+- `fair_prob_power`: the power method. Find k ≥ 1 such that Σ_i (1/o_i)^k = 1,
+  then fair_i = (1/o_i)^k. Solved by bisection to 1e-12. When the overround
+  is 1 exactly, k = 1, and the two methods agree.
+
+The same rejections apply to both. The grader scores both (see
+`grader_spec.md`), so the data decides between them.

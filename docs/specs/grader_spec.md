@@ -45,3 +45,24 @@ Exit 1 on any exception. Zero settled-and-matched markets is **not** a
 failure. It is reported as `0 graded (no matched market has settled yet)`,
 together with the counts of matched markets and settled markets, so that
 "none yet" can be told apart from "path broken".
+
+---
+
+## Amendment 2026-10-22 (owner review findings 3 and 4)
+
+**Calibration** also scores `p_ref_power`: the power-method fair probability
+from the same last pre-start fetch. Brier and log loss are reported for
+Kalshi, reference (proportional) and reference (power).
+
+**CLV per shadow row**, written in `shadow_grades.csv`, record-only:
+- `closing_fair_prob`: the proportional fair probability of the row's
+  `ref_outcome`, at the last reference fetch before `commence_utc`;
+  `closing_ref_fetched_utc` is the time of that fetch;
+- `closing_side_fair` = closing fair for YES, and 1 − closing fair for NO;
+- `clv` = `closing_side_fair − price_paid` (in probability points, before
+  fees);
+- `fair_move` = `closing_side_fair − the side's fair probability when the row
+  was logged`.
+
+These fields are blank if there was no reference fetch before the start.
+The report gives mean and median first-fire CLV next to P&L.

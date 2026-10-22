@@ -44,3 +44,10 @@ fails partway, the run writes no snapshots and fails.
 hour plus about 16k every 15 minutes comes to roughly 3.4M snapshot rows a
 day. The weekly heartbeat reports the database size and free disk, and alerts
 below 5 GB free. Disk free on 2026-10-21 was 18 GiB.
+
+---
+
+## Amendment 2026-10-22
+
+`reference_odds` adds `fair_prob_power DOUBLE` (power-method de-vig,
+record-only).

@@ -90,3 +90,19 @@ never used here.
 
 The earlier `fee_type`-based coefficients remain only as the cross-check in
 point 4.
+
+---
+
+## Amendment 2026-10-22: centicent rounding (owner review finding 5)
+
+The July 7 schedule rounds to a centicent ($0.0001): the owner quotes it as
+"rounded to a centicent". This agrees with the Kalshi API docs' Fee
+Rounding page, which aligns **direct** members (retail Kalshi accounts) to
+$0.0001.
+
+The precision is a fee-table value: `rounding.balance_precision = "0.0001"`,
+with a required `cite` giving the PDF page and line. The table fails
+validation without it. A test checks the value and requires the cite to
+name a page. The shadow check takes the precision from the table and
+records it on every row. The cite is filled in from the saved PDF when the
+table is built. Until then there is no table, and every fee fails closed.

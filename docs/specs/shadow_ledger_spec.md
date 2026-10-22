@@ -64,3 +64,54 @@ writes the header only if the file is new. If the file exists with a
 different header, it raises `LedgerSchemaMismatch` and writes nothing. It
 appends and calls `fsync`. Nothing in the package opens a ledger in `w`
 mode, and a test enforces this.
+
+---
+
+## Amendment 2026-10-22: rule GAP_v2 (owner review findings 1–3)
+
+`GAP_v1` stays frozen as defined above. It wrote no live rows. New rows are
+written under **`GAP_v2`**, which changes only the following:
+
+**1. Staleness on two clocks.** Every check uses two reference ages: the
+snapshot time minus the reference **fetch** time, and the snapshot time minus
+the bookmaker's **last line update** (`book_last_update_utc`). Each is
+recorded in seconds on every row (`odds_fetch_age_s`, `book_update_age_s`;
+the sign is kept, so a negative value means the reference is newer than the
+snapshot). The check is skipped if either absolute age exceeds
+`ODDS_MAX_AGE_MIN`, **default 15**. The skips are counted separately as
+`reference_stale` and `book_line_stale`.
+
+**2. Depth.** The contracts resting at the price the side would buy at are
+recorded on each row as `depth_contracts`: `yes_ask_size` for YES. For NO,
+it is `yes_bid_size`, since buying NO at `1 − yes_bid` fills against the YES
+bid. A side that clears the threshold but has `depth_contracts <
+SHADOW_CONTRACTS` writes no row and is counted as `insufficient_depth`.
+
+**3. Record-only metadata.** None of these fields may affect whether a row
+is written. A test changes each of them and shows the rows stay the same.
+- `minutes_to_start` = (commence − snapshot) in minutes.
+- `kalshi_mid` and `kalshi_move_1h`: the YES mid now, minus the YES mid at
+  the latest two-sided snapshot of the same market taken 60–120 minutes
+  earlier. Blank if no snapshot exists in that window.
+- `ref_move_1h`: the proportional fair probability now, minus the one from
+  the latest reference fetch taken 60–120 minutes before this fetch. Blank
+  if none.
+- `fair_prob_power`: the power-method fair probability (see the odds
+  matching amendment). The signal still uses `fair_prob` (proportional).
+- Closing line value (CLV) is computed by the grader, because the closing
+  line is only known after the start (see `grader_spec.md`).
+
+**Fee precision** comes from the fee table (`rounding.balance_precision`,
+cited), and is recorded on each row as `fee_precision`. It is no longer a
+rule constant.
+
+**GAP_v2 constants:** threshold 0.03, taker buy at best ask,
+`SHADOW_CONTRACTS` = 100, `ODDS_MAX_AGE_MIN` = 15 on both clocks, depth
+≥ contracts, proportional de-vig, Pinnacle h2h. An environment override
+labels rows `GAP_v2+custom(...)`.
+
+**Ledger schema_version 2** adds these columns: `ref_outcome`,
+`odds_fetch_age_s`, `book_update_age_s`, `depth_contracts`,
+`yes_bid_size`, `yes_ask_size`, `minutes_to_start`, `kalshi_mid`,
+`kalshi_move_1h`, `ref_fair_1h_ago`, `ref_move_1h`, `fair_prob_power`
+and `fee_precision`. No version-1 ledger was ever written live.
