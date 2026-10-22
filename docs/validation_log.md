@@ -784,3 +784,17 @@ review and is not built.
   - the first markout row in `data/shadow_markouts.csv` (needs a logged
     row whose game has started);
   - owner review of `grader.py` before merge.
+
+## 2026-10-22: grader.py approved; feat/board merged to main
+
+- **Owner review:** `grader.py` on `feat/board` (markouts, `b0c3d16`) was
+  approved by the owner after the branch was pushed to `origin`.
+- **Merged** into `main` with a merge commit. Every validation-log entry
+  from both sides is kept (resolved earlier in `d285ccf`).
+- **Gate 2 on the merged code** (`d285ccf`, fixed `reality_run.py`, 3:06 PM
+  PT): `slate board` printed `none (no fee table)`, and the grader wrapper
+  printed `markouts: 0 measured (no shadow rows logged yet)`. 0 live files
+  changed, no failure markers.
+- **PENDING:** the first scheduled run on the merged code. The sheet should
+  open with the BOARD, and the 3:30 AM PT grader should print the markouts
+  line.
