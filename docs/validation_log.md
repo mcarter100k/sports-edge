@@ -640,3 +640,32 @@ runs from here on are the live gate, and failures alert on their own.
     on the installed jobs;
   - the first grader, morning and heartbeat firings above;
   - the iMessage items at the top of this log, until `IMESSAGE_TO` is set.
+
+## 2026-10-22: delivery without iMessage (owner request; not a protected file)
+
+Spec `29504c7`, code `d7da9e1`, on `feat/notify-delivery`, merged before
+`feat/board` as directed.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 368 passed, 1 skipped. Six tests were added, and one ("missing
+    number fails loudly") was replaced, because the rule is reversed.
+  - Delivery mutants: 10 of 10 killed, from clean caches, each restored
+    byte-identical. They include the two the owner named: a missing number
+    fails the job, and an alert is dropped instead of shown.
+  - Standing set rerun on this branch: 98 of 98 killed.
+- **OBSERVED, Gate 2** (`reality_run.py`, wrapper code from the branch,
+  copy of the live data; 0 live files changed in both runs):
+  - **Log mode:** `run_morning.sh` exited 0 with `SLATE MORNING OK`.
+  - **One real notification** (`SPORTS_EDGE_NOTIFY=on`, no `IMESSAGE_TO`):
+    `run_morning.sh` exited 0. `alerts.log` shows `SLATE terminal-notifier:`
+    with a banner of exactly 300 bytes ending `Yesterday:… → sheet.txt`.
+    `imessage.log` shows `notified (IMESSAGE_TO not set)`.
+- **PENDING:**
+  - the owner seeing that banner (about 2:45 PM PT) and confirming a click
+    opens a sheet;
+  - a click opening the real iCloud sheet, whose path contains a space
+    ("Mobile Documents");
+  - the first live slate banner after merge. On the free plan with no fee
+    table, that is "Don't bet today: prices not checked (no fee table)." at
+    the first check of the day;
+  - the 8:00 AM PT morning banner on Fri Oct 23, from the installed job.
