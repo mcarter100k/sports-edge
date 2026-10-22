@@ -126,3 +126,58 @@ is **record-only**: it never decides whether a row is written. The
 `book_line_stale` skip is removed. Why: `last_update` may mark when
 Pinnacle last *changed* the line, so a steady, current line would read as
 stale. The measured odds cycle will report how these ages are distributed.
+
+---
+
+## Amendment to GAP_v2, 2026-10-22, before any live run: stake, depth walk, ≥ 3¢, rows only at a check (owner direction)
+
+GAP_v2 is amended in place again. It has still written no live row (no
+`data/shadow_ledger.csv` exists, and launchd is not installed). The rule
+changes are:
+
+1. **Stake, not a fixed count.** `contracts_assumed` = floor(`SHADOW_STAKE_DOLLARS` ÷ best ask), with the stake default $10. This replaces `SHADOW_CONTRACTS` = 100. The fee is `fee_per_contract` for that order size, at the table's precision.
+2. **Depth must cover that size.**
+   - If the best level holds at least that many contracts, the fill is at
+     the best ask (as before).
+   - Otherwise, if the gap at the best ask clears the threshold, the book
+     is read (`GET /markets/{ticker}/orderbook?depth=10`, public and
+     unauthenticated; verified live on 2026-10-22). The contracts are then
+     filled level by level, best price first:
+     - **Yes asks** are 1 − each No bid.
+     - **No asks** are 1 − each Yes bid.
+     - **Fee:** `fee_for_order` for each level's fill, summed.
+     - **Price:** `price_paid` is the average fill price.
+     - **Record:** `fill_detail` records each level as `price×count`.
+   - If the levels returned cannot fill the order, there is no row, and
+     the market is counted `insufficient_depth`.
+   - A walk never starts when the best ask itself fails the threshold,
+     because a walk can only raise the average price.
+3. **Minimum gap 3¢, inclusive:** a row is written when `edge ≥ 0.03`. The
+   earlier rule was `> 0.03`. "Pay up to" uses the same ≥, so a pick
+   always shows a pay-up-to price at or above what it paid.
+4. **Rows only at a check.**
+   - The shadow step evaluates a market only if its game's reference odds
+     were fetched in the same run (a check; see `slate_alerts_spec.md`).
+   - Other markets are counted `not_checked_this_run`.
+   - The 15-minute fetch-age gate stays as a backstop.
+   - This makes the ledger and the alert picks the same set.
+
+**Constants, GAP_v2 as amended:**
+
+| Constant | Value |
+|---|---|
+| Threshold | 0.03, inclusive |
+| Fill | taker buy at the best ask, or walked through the book to fill the stake |
+| `SHADOW_STAKE_DOLLARS` | 10 |
+| `ODDS_MAX_AGE_MIN` | 15 (fetch age only) |
+| Rows | only at a check |
+| Fair chance | proportional de-vig of the Pinnacle moneyline |
+
+An environment override labels rows `GAP_v2+custom(...)`.
+
+**Ledger schema_version 3.**
+- **Adds:** `stake_dollars` and `fill_detail`.
+- **Changes:** `contracts_assumed` is now the stake-derived count, and
+  `threshold` records 0.03 with the inclusive rule.
+- **Why a new version:** the version number tracks the column list.
+  Version 2 was never written live, so nothing is relabelled.

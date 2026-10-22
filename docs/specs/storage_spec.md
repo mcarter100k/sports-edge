@@ -51,3 +51,15 @@ below 5 GB free. Disk free on 2026-10-21 was 18 GiB.
 
 `reference_odds` adds `fair_prob_power DOUBLE` (power-method de-vig,
 record-only).
+
+---
+
+## Amendment 2026-10-22: `reference_events` and `check_log` (see `slate_alerts_spec.md`)
+
+| Table | Kind | Columns |
+|---|---|---|
+| `reference_events` | evidence, append-only | `fetched_utc`, `source`, `sport_key`, `source_event_id`, `commence_utc`, `home`, `away`. What the reference listed for a matched game, and when |
+| `check_log` | evidence, append-only | `run_id`, `ts_utc`, `source`, `source_event_id`, `sport_key`, `cluster_start_utc`, `offset_min`, `status` (`checked`, `no_price`, `no_credits`, `fee_unknown`, `superseded`) |
+
+`data/bet_log.csv` is a new append-only CSV ledger, written only through
+`ledger.append_rows`.

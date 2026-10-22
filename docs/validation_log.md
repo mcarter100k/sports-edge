@@ -139,3 +139,30 @@ Entries are cleared with a date and the evidence that reality produced.
 - PENDING: the measured odds cycle (waiting on the key), the fee table
   (waiting on the PDF), the matched-only fetch with real matches (needs the
   key), and everything time-dependent once launchd is installed.
+
+## 2026-10-22: slate and pre-game alerts, spec committed before code
+
+- **Spec:** `docs/specs/slate_alerts_spec.md`, plus amendments to the
+  shadow ledger, odds matching, snapshot, storage, fee and grader specs.
+- **GAP_v2 is amended in place** (owner direction). It has written no live
+  row: no `data/shadow_ledger.csv` exists, and launchd is not installed.
+  The changes:
+  - stake $10, so contracts = floor(10 ÷ ask);
+  - depth must cover that size, walking the book;
+  - a gap ≥ 3¢ after the taker fee;
+  - rows only at a check.
+
+  The ledger moves to schema_version 3, because columns were added.
+- **VERIFIED (live, 2026-10-22, no credentials):**
+  `GET /markets/KXNBAGAME-26OCT22CLEPHI-CLE/orderbook?depth=5` returned HTTP
+  200 with `orderbook_fp.yes_dollars` and `no_dollars` bid levels. The best
+  No bid (0.58 × 570,333.51) equals the market's `yes_ask_size_fp` at Yes
+  ask 0.42.
+- **OBSERVED (machine, 2026-10-22):**
+  - **Sleep:** after 1 minute on battery, never on AC. It was running on
+    battery at the time.
+  - **Scheduling a wake:** `sudo -n` asks for a password, so `pmset
+    schedule` cannot run unattended.
+  - **Replies:** `~/Library/Messages/chat.db` returns "authorization
+    denied" without Full Disk Access.
+  - **OS:** macOS 13.0.

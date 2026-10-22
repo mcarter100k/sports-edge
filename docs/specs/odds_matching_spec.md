@@ -149,3 +149,31 @@ Every reference row stores two fair probabilities:
 
 The same rejections apply to both. The grader scores both (see
 `grader_spec.md`), so the data decides between them.
+
+---
+
+## Amendment 2026-10-22: sport scope, check schedule, credit planner, `reference_events` (owner request; see `slate_alerts_spec.md`)
+
+- **Scope.** Only the sport keys in `config/slate_sports.json` are listed,
+  matched or priced. No other key costs a call. An in-scope key that the
+  API does not report as active prints `SLATE SPORT NOT LISTED <key>`.
+- **Matching** is still at most once per `ODDS_INTERVAL_MIN` (60). It uses
+  only the free `/sports` and `/events` calls.
+  - After each matching pass, one `reference_events` row is appended for
+    each matched reference game. The row records its listed start, home
+    and away.
+  - Each priced game also gets a row at fetch time.
+  - The latest row gives the start time used for clusters and checks.
+- **Pricing** no longer runs hourly for every matched game within 24 h.
+  - It runs on every 15-minute cycle, but only for games whose check is
+    due (clusters, offsets by `ODDS_PLAN`, and the credit planner, all
+    defined in `slate_alerts_spec.md`).
+  - Each due game gets one `check_log` row per run, with its status.
+- **No credit on unpriceable games.** A game is fetched only if at least one
+  of its matched markets resolves a fee from the table. Otherwise it is
+  logged `fee_unknown`.
+- **Budget.** `ODDS_DAILY_CREDITS` defaults to 15 on the free plan and 600
+  on the paid plan. The guard is unchanged: assume the dearest call seen,
+  and never cross the cap.
+- **Return value.** The odds step returns `checked_events`, the reference
+  ids priced this run. The shadow step evaluates only those games.

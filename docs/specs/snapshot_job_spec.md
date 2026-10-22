@@ -89,3 +89,22 @@ writes nothing else, exits 0 and does not alert. Observed 2026-10-22 00:20
 PDT: `/events?tickers=…` returned 503 throughout the window. The heartbeat
 counts closed runs and flags more than 12 in 7 days, since the weekly
 window is 8 runs.
+
+---
+
+## Amendment 2026-10-22: lean cleanups (owner request)
+
+The owner's request called these "unprotected". They change `snapshot.py`,
+which is on the protected list, so they wait for owner review like the rest.
+
+1. **The daily scan writes price rows only for matched markets.** Matched
+   means a ticker in `odds_matches`, excluding events with a match conflict.
+   Every scanned market still updates the `markets` table, and finalized
+   markets in the scan are still recorded in `settlements`. As a result,
+   the digest and heartbeat counts of "games seen in the full scan" now
+   count matched games only.
+2. **Single-market settlement lookups only for matched markets.** The
+   pending query joins `odds_matches`. The bulk settled-market sweep is
+   unchanged; it is one paginated call, not per-market lookups.
+3. **The shadow step takes `checked_events` from the odds step** (see the
+   GAP_v2 amendment).

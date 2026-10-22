@@ -146,3 +146,20 @@ source is news reporting.**
 - The fail-closed cross-check is unchanged and does not depend on the date.
 - The amendment above is left as written; this correction supersedes its
   attribution.
+
+---
+
+## Amendment 2026-10-22: combo taker fee key (alerts only; never a ledger row)
+
+- **The key.** The fee table may carry
+  `"combo": {"taker": "<multiplier>", "cite": "<page and section>"}`. If it
+  does, the cite is required, as for every other value.
+- **`fees.combo_taker_multiplier(table)`** returns the multiplier. It raises
+  `FeeScheduleUnknown` when:
+  - there is no table;
+  - there is no `combo` entry;
+  - `combo` is listed under `unconfirmed`.
+- **Use.** The only user is the combo line in the alerts, which then reads
+  "fee unconfirmed — no price".
+- **Status.** The combo fee is still UNCONFIRMED (see the correction above),
+  so no table entry is made.

@@ -66,3 +66,22 @@ Kalshi, reference (proportional) and reference (power).
 
 These fields are blank if there was no reference fetch before the start.
 The report gives mean and median first-fire CLV next to P&L.
+
+---
+
+## Amendment 2026-10-22: taken and not-taken bets (see `slate_alerts_spec.md`)
+
+The report adds two lines, in plain words. The bet log is
+`data/bet_log.csv`, and the latest reply per pick is the one used.
+
+- **Bets you took:**
+  - **Counts:** bets and games.
+  - **Settled result in dollars:** at the price taken and
+    floor($10 ÷ price) contracts, after the taker fee, using the row's
+    multiplier and precision.
+  - **Open:** a count of bets not yet settled.
+- **Picks not taken:** the same figures for every other first-fire pick,
+  at the logged price and the logged contract count.
+
+Both lines are always printed. With no bet log, they read "no replies
+logged yet". These lines never decide anything; they are a record.
