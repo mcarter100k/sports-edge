@@ -798,3 +798,22 @@ review and is not built.
 - **PENDING:** the first scheduled run on the merged code. The sheet should
   open with the BOARD, and the 3:30 AM PT grader should print the markouts
   line.
+
+## 2026-10-22: first scheduled run on the merged board and notification delivery (3:30 PM PT)
+
+- **OBSERVED, the live 3:30 PM PT run on `main` `a1ebb2b`:**
+  - **Snapshot:** exit 0, `tier=near`, `checks_due=9`, `events_priced=0`
+    (no fee table, so nothing is priced).
+  - **Slate alert:** `SLATE ALERT OK messages=1`, exit 0. The message was
+    delivered as a Mac notification, not an iMessage. `alerts.log`:
+    `SLATE terminal-notifier: Don't bet today: prices not checked (no fee table). · Practice · … → sheet.txt`.
+    `imessage.log`: `notified (IMESSAGE_TO not set)`.
+  - **The live iCloud sheet** opens with
+    `BOARD (price gaps as of each game's check, 3:30 PM PT)` and
+    `none (no fee table)`.
+- **Cleared:** the first live slate banner after merge (PENDING in the
+  delivery entry), and the sheet opening with the BOARD on a scheduled run
+  (PENDING in the merge entry).
+- **Still PENDING:** the owner confirming that clicking a banner opens the
+  iCloud sheet (path with a space); the 3:30 AM PT grader's markouts line;
+  the 8:00 AM PT morning banner.
