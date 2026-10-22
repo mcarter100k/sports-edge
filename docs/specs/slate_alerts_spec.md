@@ -437,3 +437,54 @@ Each is recorded in `docs/validation_log.md` with its date and evidence.
 7. **The sheet and `state/slate_sent.json`** are written to a new temp file
    (exclusive create) and then renamed. Nothing in the module opens a file in
    an overwrite mode, so the package's write-mode guard is unchanged.
+
+---
+
+## Amendment 2026-10-22: independent review findings, fixed before any merge
+
+1. **Each group's `check_log` rows are written right after its own fetch.**
+   A failure later in the run therefore cannot leave a paid-for check
+   unlogged and cause it to be paid for again on the next run.
+   - **Known limit:** if the shadow step fails after a check was logged,
+     that check's rows are lost. The run is recorded as failed, the
+     snapshot alert fires, and the slate says "Don't bet now: prices not
+     checked (system problem)" for that slot. It is not re-checked.
+2. **Clusters are formed per Pacific calendar day, from that day's first
+   game, including games that have already started.** A started game still
+   anchors its slot. Before this fix, rebuilding clusters from unstarted
+   games only shifted later slots and ran checks up to an hour early.
+   - **Scope:** checks, alerts, the sheet, wake times and "unchecked" counts
+     all use the same day clusters.
+   - **Edge case:** a game first matched earlier in the day than games
+     already known can still re-anchor that day's later slots.
+3. **Reply prices.**
+   - A number of 1 or more is cents: `took 42`, and also `took 42.3`.
+   - A number below 1 is dollars: `took .42` or `took 0.42`.
+   - A trailing `c` or `¢` always means cents.
+
+   The walked-price hint ("took 42.3") is therefore parseable.
+4. **"No number needed"** applies when the latest check run that wrote
+   ledger rows wrote exactly one pick, repeats included, across all of its
+   slots. The same rule decides whether a message's hint includes the
+   number, and how an unnumbered reply is matched.
+5. **A numbered reply** (`took 3 42`) names the most recently messaged pick
+   numbered 3, whether that number was assigned on the reply's Pacific day
+   or the day before. So a pick sent at 11:50 PM can be answered after
+   midnight.
+6. **"Checked, no price gaps"** is said only for games the shadow step
+   actually compared, meaning at least one market reached the rule with no
+   skip. The run summary records them as `compared_events`. A game that
+   was fetched but not compared reads
+   `Don't bet now: prices not checked (could not compare). <slot>`. This
+   happens, for example, on an outcome mismatch, or when a daily run has no
+   snapshot for a game matched in that same run.
+7. **The 3¢ rule is applied to the unrounded gap.** The row stores the gap
+   rounded to 6 decimals. Before this fix, a gap of 0.0299995 rounded up
+   and passed.
+8. **Team names are shortened only after the opponent is chosen.** If two
+   shortened names would read the same, both are shown in full.
+9. **`chat.db` dates are compared in the unit each row uses**: nanoseconds
+   for modern rows, seconds for old ones. Only messages from the previous
+   Pacific midnight on are read.
+10. **Message sends are recorded per text,** so a failure partway through
+    a group never resends the texts that already went out.
