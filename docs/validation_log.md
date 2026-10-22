@@ -10,6 +10,18 @@ Entries are cleared with a date and the evidence that reality produced.
 - **Daily digest at 7:30 AM Pacific** (added 2026-10-22): the first scheduled
   notification after `install.sh` loads `com.quis.sportsedge.digest` at merge.
   Until then the wrapper has run only under `scripts/reality_run.py`.
+  *Proposed for replacement* by the 8:00 AM morning iMessage (see
+  `docs/proposals/slate_part_b.md`).
+- **Slate and alerts, Part B not built** (added 2026-10-22). These wait on
+  owner review and the owner's machine permissions:
+  - the first 8:00 AM morning iMessage;
+  - the first pre-game check iMessage;
+  - the first "Don't bet now" from a real failing run;
+  - the first reply logged from the phone;
+  - the first `pmset` wake.
+- **First real pick** (added 2026-10-22). This needs an odds key in `.env`
+  and `config/fee_schedule.json` built from the saved fee PDF. Until both
+  exist, no check can price a game.
 
 ---
 
@@ -166,3 +178,75 @@ Entries are cleared with a date and the evidence that reality produced.
   - **Replies:** `~/Library/Messages/chat.db` returns "authorization
     denied" without Full Disk Access.
   - **OS:** macOS 13.0.
+
+## 2026-10-22: slate and pre-game alerts (Part A) built; Part B proposed
+
+- **Commits on feat/phase1, specs first:**
+
+  | Commit | What |
+  |---|---|
+  | `a6a4251` | specs and amendments |
+  | `916cc84` | spec amendment from the build |
+  | `e8a6486` | code |
+  | `ac87d98` | spec amendment from the independent review |
+  | `4606d7a` | review fixes, and the Part B proposal |
+
+- **GAP_v2 amended in place** before any live row:
+  - stake $10, so contracts = floor(10 ÷ ask);
+  - book walk when the best level is short;
+  - gap ≥ 3¢ on the unrounded value;
+  - rows only for games checked in the same run;
+  - ledger schema_version 3.
+- **VERIFIED (Gate 1):** 327 passed, 1 skipped. Mutation checks, each
+  reverted byte-identical:
+  - **Build mutants:** 40 written, 39 killed alone. Mutant 27, which removes
+    the group-level "already sent" check, survives because the per-text
+    send record (added later) also blocks a resend. Removing both together
+    is killed.
+  - **Review mutants:** each of the 12 restores a bug found by the
+    independent review. All 12 were killed.
+  - **One build mutant first survived:** the 20-bet losing-stretch edge was
+    tested only at 30 losses. The test now pins exactly 20 and 19.
+- **Independent review:** a separate reviewer reported 9 correctness
+  findings and 1 lower-priority one. All 10 were reproduced or traced and
+  fixed, each with a regression test. Among them:
+  - checks re-paid after a partial failure;
+  - slots shifting once their first game started, which ran checks up to
+    an hour early;
+  - an unparseable reply hint for walked prices;
+  - unnumbered replies mapped to the wrong pick;
+  - the `chat.db` date filter reading every message ever sent.
+- **VERIFIED (Gate 2, `scripts/reality_run.py`, real Kalshi, temporary
+  folder, 0 live files changed, no failure markers):**
+  - **Daily cycle, first run:** 8,323 events and 93,329 markets recorded,
+    **0 price rows** (none matched), 0 settlement lookups. The comparable
+    earlier run saved 93,043 price rows.
+  - **Daily cycle on the fixed code:** 8,300 events, 93,282 markets, 0
+    price rows, 0 lookups.
+  - **Live book walk:** `KXNBAGAME-26OCT22CLEPHI-CLE` filled
+    `0.42×627067.69;0.43×4.31`. The best ask equals the snapshot's Yes ask.
+    An order larger than the book returns no fill.
+  - **The slate's alert, morning and wake commands** on that real data. The
+    morning names its causes ("nothing checked (odds not set up)").
+    **Corrected by this gate:** the first morning printed "0 checks, 0
+    price gaps" and "no matched games yesterday", which are zeros from a
+    path that could not produce anything (rule 8). Fixed before commit,
+    with tests.
+  - **Real `~/Library/Messages/chat.db`:** read through the real code, it
+    failed with "unable to open database file". The bet log is reported
+    "unreadable", as specified.
+- **VERIFIED (positive control):** the reality runner's new iCloud
+  sheet-folder hash catches a file written there (tested on a scratch
+  copy).
+- **NOT CHECKED in reality:**
+  - an iMessage actually sent (no `IMESSAGE_TO`; log mode only);
+  - reading real replies, including the `attributedBody` decoding (no Full
+    Disk Access);
+  - `pmset` wake (needs root);
+  - any odds call, check, pick, combo or stage above Practice (no odds
+    key, no fee table).
+
+  Gate 1 covers all of these.
+- **OBSERVED:** the live checkout `/Users/quis/sports-edge` has no `data/`,
+  `logs/`, `state/` or `.env`. The live-data hash therefore compared 0 files
+  before and after. It would still catch any file created there.
