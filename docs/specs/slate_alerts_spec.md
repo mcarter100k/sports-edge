@@ -395,3 +395,45 @@ overround, edge, lock or value. A test enforces this.
 - the first scheduled wake.
 
 Each is recorded in `docs/validation_log.md` with its date and evidence.
+
+---
+
+## Amendment 2026-10-22: found while building, before any merge
+
+1. **A check never goes back to an earlier offset.** Once any offset is
+   logged for a game, a larger offset (an earlier check time) is never run
+   for it. Before this fix, the paid plan would have run a missed 60-minute
+   check after the 15-minute one. The cluster tests found this.
+2. **Alerts are keyed by run.** The key is `<cluster start>|<offset>|<run_id>`.
+   A game matched after its cluster was checked is checked in a later run,
+   and gets its own message.
+3. **"Odds not set up" is said only in the morning message.** With no odds
+   key nothing is matched, so no cluster exists to attach a "today" alert
+   to.
+4. **Message wording** (to keep every alert under 300 characters):
+   - **Reply hint:** `Reply "took 42" or "skip"` when the check has one pick.
+     With several picks it is `Reply "took 2 42" or "skip 2"`.
+   - **Unreadable bet log:** the line reads `Bet log unreadable: cap not tracked`.
+   - **Compact fallback:** if a pick message would still run over 300
+     characters, it is rebuilt in compact form:
+     - names cut to 10 characters;
+     - no league;
+     - no "again";
+     - "moved toward this pick".
+
+     If that still runs over, the alert fails loudly. The measured worst
+     case is a three-way No pick with long soccer names, a walked price, a
+     demoted stage and an unreadable bet log. That case is 336 characters
+     in full form and fits in compact form.
+5. **No "edge" anywhere a person reads.**
+   - **Message and sheet headers:** `Kalshi slate · <day>` and `Slate sheet`.
+     The product name contains the word, so it is not used.
+   - **The digest report line** now reads "Nothing here claims that a price
+     gap is real."
+   - **The grader's closing line** now reads "Phase 1 claims nothing from
+     these numbers".
+6. **`wake`** reports the first and last check times still ahead in the next
+   24 hours. The wake time is the first of these minus 15 minutes.
+7. **The sheet and `state/slate_sent.json`** are written to a new temp file
+   (exclusive create) and then renamed. Nothing in the module opens a file in
+   an overwrite mode, so the package's write-mode guard is unchanged.
