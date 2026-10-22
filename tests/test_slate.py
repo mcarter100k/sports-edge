@@ -327,7 +327,8 @@ def test_morning_message(checked):
     assert lines[3] == "Yesterday: 1 checks, 1 price gaps in 1 games · results: 0 won, 0 lost, 1 open"
     assert lines[4] == "Your bets: bet log unreadable"
     assert lines[5] == "Unchecked yesterday: none (all 1 games checked)"
-    assert lines[6].startswith("System: ") and "bet log unreadable" in lines[6]
+    assert lines[6] == "Your own bets: none logged yet."                  # my_bets_spec: rule 8 wording
+    assert lines[7].startswith("System: ") and "bet log unreadable" in lines[7]
     assert not list(config.logs_dir().glob("digest_*.txt"))           # cut A: no digest report
     assert "BOARD" in (config.sheet_dir() / "sheet.txt").read_text()
 

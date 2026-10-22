@@ -449,6 +449,59 @@ def paper_results(store, picks):
     return won, lost, void, open_, money, staked
 
 
+# The owner's own bets (docs/specs/my_bets_spec.md): record-only, never the shadow ledger or stage ---
+
+MY_BET_GRADE_HEADER = ["bet_id", "result", "dollars", "legs_settled", "graded_utc"]
+
+
+def settle_my_bets(store, now):
+    """Settle each logged bet once: lost as soon as an identified leg settles no; won when every leg is
+    identified and settled yes; void_leg when a leg settles otherwise. Returns rows written."""
+    done = {r["bet_id"] for r in ledger.read_rows(config.my_bet_grades_path())}
+    pending = [b for b in ledger.read_rows(config.my_bets_path()) if b["bet_id"] not in done]
+    tickers = sorted({t for b in pending for t in b["leg_tickers"].split(" | ") if t})
+    results = dict(store.con.execute(
+        "SELECT ticker, result FROM settlements WHERE ticker IN (SELECT unnest(?))", [tickers]).fetchall()) \
+        if tickers else {}
+    out = []
+    for b in pending:
+        legs = b["leg_tickers"].split(" | ")
+        got = [results.get(t) for t in legs if t]
+        cost, payout = Decimal(b["cost"]), Decimal(b["payout"])
+        if "no" in got:
+            result, dollars = "lost", -cost
+        elif any(g not in (None, "yes", "no") for g in got):
+            result, dollars = "void_leg", ""
+        elif all(legs) and len(got) == len(legs) and all(g == "yes" for g in got):
+            result, dollars = "won", payout - cost
+        else:
+            continue
+        out.append({"bet_id": b["bet_id"], "result": result, "dollars": dollars,
+                    "legs_settled": sum(1 for g in got if g is not None), "graded_utc": iso_z(now)})
+    ledger.append_rows(config.my_bet_grades_path(), MY_BET_GRADE_HEADER, out)
+    return len(out)
+
+
+def my_bets_summary():
+    """(logged, won, lost, void, can't settle, net dollars over won and lost)."""
+    bets = ledger.read_rows(config.my_bets_path())
+    grades = {g["bet_id"]: g for g in ledger.read_rows(config.my_bet_grades_path())}
+    won = sum(1 for g in grades.values() if g["result"] == "won")
+    lost = sum(1 for g in grades.values() if g["result"] == "lost")
+    void = sum(1 for g in grades.values() if g["result"] == "void_leg")
+    stuck = sum(1 for b in bets if b["bet_id"] not in grades and "" in b["leg_tickers"].split(" | "))
+    net = sum((Decimal(g["dollars"]) for g in grades.values() if g["result"] in ("won", "lost")), Decimal(0))
+    return len(bets), won, lost, void, stuck, net
+
+
+def my_bets_report():
+    logged, won, lost, void, stuck, net = my_bets_summary()
+    if not logged:
+        return ["your own bets: none logged yet"]
+    return [f"your own bets: {logged} logged; settled {won + lost} (won {won}, lost {lost}), {_dollars(net)}; "
+            f"void leg {void}; open {logged - won - lost - void - stuck}; can't settle {stuck} (legs not identified)"]
+
+
 def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
     client = client or KalshiClient()
     now = now_fn()
@@ -461,9 +514,11 @@ def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
             n_cal, cal_skips, settled_matched = calibrate(store, source, now)
             n_sh, sh_skips = grade_shadow(store, now)
             n_mk, mk_postponed = grade_markouts(store, now, source)
+            n_mine = settle_my_bets(store, now)
             matched = store.con.execute(
                 "SELECT count(*) FROM odds_matches WHERE source = ?", [source]).fetchone()[0]
             summary.update({"calibration_graded": n_cal, "shadow_graded": n_sh, "markouts_measured": n_mk,
+                            "my_bets_settled": n_mine,
                             "matched_markets": matched, "matched_and_settled": settled_matched,
                             **{f"cal_skip_{k}": v for k, v in cal_skips.items()},
                             **{f"shadow_skip_{k}": v for k, v in sh_skips.items()}})
@@ -472,6 +527,7 @@ def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
             lines += shadow_report()
             lines += markout_report(store, mk_postponed)
             lines += bets_report(store)
+            lines += my_bets_report()
         except BaseException as exc:
             summary["error"] = f"{type(exc).__name__}: {exc}"
             record_failure(store, run_id, JOB, now_fn(), summary)

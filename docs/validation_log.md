@@ -798,3 +798,49 @@ review and is not built.
 - **PENDING:** the first scheduled run on the merged code. The sheet should
   open with the BOARD, and the 3:30 AM PT grader should print the markouts
   line.
+
+## 2026-10-22: logging your own bets (`sports_edge/mybet.py`), record-only
+
+- **Spec `251e475`.**
+  - Covers `my_bets_spec.md`, plus amendments to the grader spec and the
+    slate spec.
+  - **Kept separate:** never written to the shadow ledger, the pick bet log
+    or the stage line.
+- **VERIFIED (Gate 1):** 412 passed, 1 skipped. Twelve new tests cover:
+  - **Strict reading:** the `placed` line must appear exactly once, with
+    the cause named.
+  - **Identification:** every leg of the owner's real slip is identified,
+    including "Jokić" and SA pairing with SAS by name. "Total Points" is
+    never taken for "Points", and an ambiguous or missing market is not
+    identified.
+  - **Settling:** won, lost (even with a leg unidentified), void leg, open,
+    and can't settle. Each bet is settled once.
+  - **The morning line,** and nothing written to the shadow ledger or the
+    stage line.
+- **Mutants: 13 of 13 killed**, from clean caches, each restored
+  byte-identical.
+  - **First pass: 12 of 13.** A second `placed` line was still refused
+    downstream, but with a less useful message. The test now pins the
+    message, and the mutant is killed.
+- **VERIFIED (Gate 2):** `reality_run.py --with-live-data` on a copy of the
+  live database (taken at 15:35, between launchd runs). 0 live files
+  changed, no failure markers.
+  - **The real slip logged as a bet:** 5 of 9 legs were identified (the 5
+    moneylines).
+  - **The grader** printed the my-bets line, and the morning showed "Your
+    own bets: 1, settled 0, +$0.00. (1 can't settle)".
+- **OBSERVED (live Kalshi, 2026-10-22), why 4 legs were not identified:**
+  1. **HOU–SA:** that game has no sharp-book match yet (it is beyond the
+     24-hour listing), so the slip's `SA` can't pair with Kalshi's `SAS` by
+     name.
+  2. **Every NBA player market is listed twice,** with identical event and
+     market titles, under different contract terms:
+     - `KXNBAPTS` "NBA Player Points" (`BASKETBALLENTITYSTAT.pdf`);
+     - `KXNBAPTSPROT` "NBA Player Points Protected"
+       (`NBAENTITYSTATCOVERED.pdf`).
+
+     Two markets fit, so the rule refuses to choose (never guess). The
+     standard series matched the slip's price (Jokić 20+ at 74–75¢). The
+     protected one was thin (17¢ bid against 77¢ ask). **Owner decision
+     pending:** which series an unmarked slip leg means.
+- **NOT CHECKED:** a real settlement. No logged bet's games had finished.
