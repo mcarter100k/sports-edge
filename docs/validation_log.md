@@ -308,3 +308,29 @@ Entries are cleared with a date and the evidence that reality produced.
   - an iMessage actually sent;
   - any odds call, check or pick (no odds key and no fee table on this
     machine).
+
+## 2026-10-22: owner-approved cuts A–D
+
+- **Commits:** spec `967cb8f`, then code `95785c2`.
+- **Removed:**
+  - `digest.py` and its tests;
+  - the combo line and the fee table's `combo` key (parked);
+  - the sheet's yesterday and how-to sections.
+- **Archived:** the digest and combo-logger specs, moved to `docs/archive/`.
+- **`slate.py`:** 763 → 718 lines.
+- **VERIFIED (Gate 1):** 318 passed, 1 skipped. The 19 fewer than before are
+  the removed digest and combo tests.
+- **Mutation baseline after the cuts:** 66 of 66 killed, each reverted
+  byte-identical.
+  - The sets: build 36, review 12, rulings 18.
+  - The patterns for removed code were dropped, and the re-aimed ones
+    written in.
+  - The mutant-27 check (the group-level "already sent" guard together with
+    the per-text record) is now a standing double mutant.
+- **VERIFIED (Gate 2, real `/bin/bash` wrappers, real Kalshi, temporary
+  folder, 0 live files changed, no failure markers):**
+  - `run_snapshot.sh`: an hourly run (1 Kalshi request, nothing matched),
+    then `slate alert`.
+  - `run_morning.sh`: printed `SLATE MORNING OK sheet=…` and wrote no
+    `digest_*.txt`. The two that exist in the folder are from runs before
+    the cut, at 04:50 and 06:04.
