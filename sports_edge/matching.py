@@ -7,7 +7,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-RULE_VERSION = "match_v1"
+RULE_VERSION = "match_v2"          # v2: the whole word "st" reads as "state"
 TIE = "Tie"
 DRAW = "Draw"
 WINDOW_BEFORE = timedelta(hours=8)
@@ -34,7 +34,8 @@ def normalize(name):
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = text.casefold().replace("&", " and ")
     text = re.sub(r"[^\w\s]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\bst\b", "state", text)        # "Appalachian St." = "Appalachian State"
 
 
 def names_match(kalshi_name, ref_name, aliases):

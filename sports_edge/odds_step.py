@@ -17,6 +17,7 @@ MATCH_WINDOW_AFTER_HORIZON = timedelta(hours=8)
 LIVE_LOOKBACK = timedelta(hours=8)
 LOOKUP_HORIZON = timedelta(hours=24)
 LOOKUP_SERIES_CAP = 20
+LISTING_SLACK = timedelta(hours=3)        # resolve-by is about start + 3 h; the listing covers starts
 CHECK_LOOKBACK = timedelta(days=2)
 
 
@@ -62,15 +63,23 @@ def games_from_db(store, start, end):
     return games
 
 
-def report_unmatched(store, unmatched, markets_per_event, run_id, now, err, prefix="UNMATCHED"):
-    """Print and record each (event, reason) the first time only; return how many were new."""
+def report_unmatched(store, unmatched, markets_per_event, run_id, now, err, prefix="UNMATCHED", listable=None):
+    """Record each (event, reason) the first time only; return how many were new.
+
+    A new one is printed on its own line when listable(u) holds (default: always); the rest of
+    this run's unmatched are printed as one count per reason.
+    """
     if not unmatched:
         return 0
     seen = set(store.con.execute(
         "SELECT event_ticker, reason FROM unmatched WHERE event_ticker IN (SELECT unnest(?))",
         [sorted({u["event_ticker"] for u in unmatched})]).fetchall())
     new = [u for u in unmatched if (u["event_ticker"], u["reason"]) not in seen]
-    for u in new:
+    show = listable or (lambda u: True)
+    hidden = Counter(u["reason"] for u in unmatched if not show(u))
+    if hidden:
+        err(f"{prefix} (not listed): " + ", ".join(f"{k}={v}" for k, v in sorted(hidden.items())))
+    for u in (u for u in new if show(u)):
         label = u["event_ticker"].removeprefix("ref:")
         extra = "" if prefix != "UNMATCHED" else \
             f" markets={markets_per_event.get(u['event_ticker'], '?')}"
@@ -180,7 +189,8 @@ def match_step(store, source, client, upsert_events, run_id, now, out, err):
             [to_db_ts(now)]).fetchall():
         err(f"MATCH CONFLICT {c[0]} now fits {c[1]}; never compared again")
     markets_per_event = {g.event_ticker: len(g.teams) + (1 if g.tie_market else 0) for g, _ in relevant}
-    report_unmatched(store, result.unmatched, markets_per_event, run_id, now, err)
+    report_unmatched(store, result.unmatched, markets_per_event, run_id, now, err,
+                     listable=listable_unmatched(store, relevant, scope, now))
     matched_ids = sorted({m["source_event_id"] for m in result.matches})
     store.append("reference_events", reference_event_rows(source, [stub_by_id[i] for i in matched_ids], now))
     return {"odds": "ran", "games_considered": len(relevant), "matches_added": added,
@@ -196,6 +206,21 @@ def can_spend(store, now):
     worst = store.con.execute(
         "SELECT coalesce(max(credits_last), 1) FROM odds_calls WHERE endpoint = 'odds'").fetchone()[0]
     return store.credits_used_since(pacific_midnight(now)) + max(1, worst) <= config.odds_daily_credits()
+
+
+def listable_unmatched(store, relevant, scope, now):
+    """An unmatched Kalshi game gets its own log line only if its series has matched games for an
+    in-scope sport key and it resolves within the odds listing window."""
+    in_scope = {s for (s,) in store.con.execute("""
+        SELECT DISTINCT m.series_ticker FROM odds_matches o JOIN markets m ON m.ticker = o.market_ticker
+        WHERE o.sport_key IN (SELECT unnest(?))""", [sorted(scope)]).fetchall()}
+    series = dict(store.con.execute(
+        "SELECT DISTINCT event_ticker, series_ticker FROM markets WHERE event_ticker IN (SELECT unnest(?))",
+        [[g.event_ticker for g, _ in relevant]]).fetchall()) if relevant else {}
+    until = now + timedelta(hours=config.odds_horizon_h()) + LISTING_SLACK
+    resolve_by = {g.event_ticker: g.resolve_by for g, _ in relevant}
+    return lambda u: series.get(u["event_ticker"]) in in_scope and \
+        resolve_by.get(u["event_ticker"]) is not None and resolve_by[u["event_ticker"]] <= until
 
 
 def priceable_events(store, source, table, event_ids):

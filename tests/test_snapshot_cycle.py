@@ -388,7 +388,19 @@ def test_daily_scan_prices_matched_markets_only(tmp_path):
         assert counts(s, "SELECT count(*) FROM markets") == 10        # every market still recorded
 
 
+def in_scope_series(series_ticker, sport_key="basketball_nba"):
+    """An earlier match makes a Kalshi series count as in scope for the unmatched log."""
+    with Store.open() as s:
+        s.upsert("markets", [{"ticker": f"{series_ticker}-OLD-X", "event_ticker": f"{series_ticker}-OLD",
+                              "series_ticker": series_ticker, "first_seen_utc": DAILY_AT,
+                              "last_seen_utc": DAILY_AT}], "ticker")
+        s.record_matches([{"market_ticker": f"{series_ticker}-OLD-X", "event_ticker": f"{series_ticker}-OLD",
+                           "source": "the-odds-api", "source_event_id": "R-OLD", "ref_outcome": "X",
+                           "rule_version": "v", "sport_key": sport_key}], DAILY_AT - timedelta(days=3))
+
+
 def test_unmatched_printed_once_per_event_and_reason():
+    in_scope_series("KXNBAGAME")
     sers, pages = world()
     for m in pages[0][0]["markets"]:
         if m["yes_sub_title"] == "Cleveland":
@@ -541,3 +553,27 @@ def test_a_failure_after_a_paid_fetch_never_pays_for_that_check_again(tmp_path):
     with Store.open() as s:
         assert sorted(s.con.execute("SELECT source_event_id, status FROM check_log").fetchall()) == [
             ("H1", "checked"), ("R1", "checked")]
+
+
+def test_unmatched_games_outside_scope_or_the_odds_window_are_only_counted():
+    """Owner ruling: one line each only for in-scope games within the odds window; the rest as counts."""
+    in_scope_series("KXNBAGAME")
+    sers, pages = world()
+    sers.append(series("KXALLSVENSKANGAME", ("Soccer",)))
+    pages[0].append(game_event("KXALLSVENSKANGAME-E9", "KXALLSVENSKANGAME", ["Elfsborg", "Malmo"],
+                               START, tie=True))                                   # a league not followed
+    far = game_event("KXNBAGAME-E8", "KXNBAGAME", ["Utah", "Phoenix"], DAILY_AT + timedelta(hours=26))
+    pages[0].append(far)                                                           # beyond the odds window
+    for m in pages[0][0]["markets"]:
+        if m["yes_sub_title"] == "Cleveland":
+            m["yes_sub_title"] = "Cleveland C"                                     # in scope, in window
+    extra = {"soccer_epl": [stub("S1", "Ipswich Town", "Nottingham Forest", START, "soccer_epl")]}
+    sports = [ref_sport(), ref_sport("soccer_epl", "Soccer")]
+    summary, _, out, err = daily_with_odds(FakeKalshi(sers, pages, DAILY_AT), extra_stubs=extra, sports=sports)
+    listed = [m for m in err if m.startswith("UNMATCHED KX")]
+    assert [m.split()[1] for m in listed] == ["KXNBAGAME-E1"]
+    (counted,) = [m for m in err if m.startswith("UNMATCHED (not listed): ")]
+    assert "name_mismatch=1" in counted and "no_candidate=1" in counted
+    with Store.open() as s:                                                        # still all recorded
+        assert {e for (e,) in s.con.execute("SELECT event_ticker FROM unmatched").fetchall()} >= {
+            "KXNBAGAME-E1", "KXALLSVENSKANGAME-E9", "KXNBAGAME-E8"}

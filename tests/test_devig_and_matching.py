@@ -199,3 +199,69 @@ def test_power_shares_the_rejections(outcomes):
     from sports_edge.odds import devig_power
     with pytest.raises(DevigRejected):
         devig_power(outcomes)
+
+
+# Owner-approved after the live odds run: "St." = "State", NHL New York aliases (match_v2) -------
+
+def real_aliases():
+    from sports_edge import config
+    return {k: v for k, v in config.load_json_config("team_aliases.json").items() if not k.startswith("_")}
+
+
+def ref_game(eid, home, away, key):
+    return stub(eid, home, away, START, key)
+
+
+def test_st_reads_as_state_and_pairs_the_right_game():
+    assert normalize("Appalachian St.") == "appalachian state" and normalize("St. Louis") == "state louis"
+    ev = game_event("KXNCAAFGAME-JMUAPP", "S", ["Appalachian St.", "James Madison"], START)
+    other = ref_game("R9", "Appalachian Campus Club", "James Madison Dukes", "americanfootball_ncaaf")
+    r = match([(game(ev, ("Football",)), "Football")],
+              {"Football": [ref_game("R1", "Appalachian State Mountaineers", "James Madison Dukes",
+                                     "americanfootball_ncaaf"), other]}, real_aliases())
+    assert {m["market_ticker"]: (m["source_event_id"], m["ref_outcome"]) for m in r.matches} == {
+        "KXNCAAFGAME-JMUAPP-APP": ("R1", "Appalachian State Mountaineers"),
+        "KXNCAAFGAME-JMUAPP-JAM": ("R1", "James Madison Dukes")}
+
+
+def test_st_louis_still_pairs():
+    ev = game_event("KXNHLGAME-VGKSTL", "S", ["Vegas", "St. Louis"], START)
+    r = match([(game(ev, ("Hockey",)), "Hockey")],
+              {"Hockey": [ref_game("R1", "St Louis Blues", "Vegas Golden Knights", "icehockey_nhl")]}, real_aliases())
+    assert {m["ref_outcome"] for m in r.matches} == {"St Louis Blues", "Vegas Golden Knights"}
+
+
+@pytest.mark.parametrize("kalshi,ref_home,ref_away,want", [
+    (["New York R", "Toronto"], "Toronto Maple Leafs", "New York Rangers", "New York Rangers"),
+    (["Los Angeles", "New York I"], "New York Islanders", "Los Angeles Kings", "New York Islanders"),
+])
+def test_new_york_aliases_pair_the_right_game(kalshi, ref_home, ref_away, want):
+    ev = game_event("KXNHLGAME-NY", "S", kalshi, START)
+    # both New York teams play tonight: the alias must pick the right one, never both
+    stubs = [ref_game("R1", ref_home, ref_away, "icehockey_nhl"),
+             ref_game("R2", "Boston Bruins", "New York Islanders" if "Rangers" in want else "New York Rangers",
+                      "icehockey_nhl")]
+    r = match([(game(ev, ("Hockey",)), "Hockey")], {"Hockey": stubs}, real_aliases())
+    assert r.unmatched == [] and {m["source_event_id"] for m in r.matches} == {"R1"}
+    assert want in {m["ref_outcome"] for m in r.matches}
+
+
+def test_without_the_alias_new_york_r_still_refuses():
+    ev = game_event("KXNHLGAME-NYRTOR", "S", ["New York R", "Toronto"], START)
+    r = match([(game(ev, ("Hockey",)), "Hockey")],
+              {"Hockey": [ref_game("R1", "Toronto Maple Leafs", "New York Rangers", "icehockey_nhl")]}, {})
+    assert r.matches == [] and r.unmatched[0]["reason"] == "name_mismatch"
+
+
+def test_an_ambiguous_name_still_refuses():
+    # "Kansas" fits both "Kansas Jayhawks" and "Kansas State Wildcats": each Kalshi team must fit exactly one
+    ev = game_event("KXNCAAFGAME-KUKSU", "S", ["Kansas", "Kansas St."], START)
+    r = match([(game(ev, ("Football",)), "Football")],
+              {"Football": [ref_game("R1", "Kansas State Wildcats", "Kansas Jayhawks", "americanfootball_ncaaf")]},
+              real_aliases())
+    assert r.matches == [] and r.unmatched[0]["reason"] == "name_mismatch"
+
+
+def test_matches_record_rule_version_match_v2():
+    from sports_edge.matching import RULE_VERSION
+    assert RULE_VERSION == "match_v2"
