@@ -140,3 +140,11 @@ def resolve_multipliers(table, series_ticker, api_fee_type, api_multiplier, has_
         raise FeeScheduleUnknown(
             f"{series_ticker}: API fee type {api_fee_type} disagrees with table maker multiplier {m_maker}")
     return m_taker, m_maker
+
+
+def table_state():
+    """'ok', 'missing' (no config/fee_schedule.json yet) or 'invalid'."""
+    try:
+        return "ok" if load_table() is not None else "missing"
+    except FeeTableInvalid:
+        return "invalid"

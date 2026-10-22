@@ -111,3 +111,78 @@ def due_checks(cluster_list, done, now, offset_list):
 
 def check_time(cluster, offset_min):
     return cluster.start_utc - timedelta(minutes=offset_min)
+
+
+# Read by the slate (docs/specs/slate_alerts_spec.md) -------------------------------------
+
+def latest_starts(store):
+    """{source_event_id: latest listed start}."""
+    return {e: from_db_ts(c) for e, c in store.con.execute("""
+        SELECT r.source_event_id, r.commence_utc FROM reference_events r
+        JOIN (SELECT source_event_id, max(fetched_utc) AS f FROM reference_events GROUP BY 1) l
+          ON r.source_event_id = l.source_event_id AND r.fetched_utc = l.f""").fetchall()}
+
+
+def recent_checks(store, source, since):
+    """{(cluster start, offset, run_id): [check_log rows as dicts]} logged since `since`, oldest first."""
+    groups = {}
+    for row in store.con.execute("""
+            SELECT run_id, ts_utc, source_event_id, sport_key, cluster_start_utc, offset_min, status
+            FROM check_log WHERE source = ? AND ts_utc >= ? ORDER BY ts_utc""",
+                                 [source, to_db_ts(since)]).fetchall():
+        r = dict(zip(("run_id", "ts_utc", "source_event_id", "sport_key", "cluster_start_utc", "offset_min",
+                      "status"), row))
+        groups.setdefault((from_db_ts(r["cluster_start_utc"]), r["offset_min"], r["run_id"]), []).append(r)
+    return groups
+
+
+def missed_checks(cluster_list, done, now, offset_list):
+    """[(cluster, offset)]: the latest offset whose time has come, for slots with a game still
+    ahead and no check logged at that offset for any of its games. done: {(game, offset)}."""
+    out = []
+    for c in cluster_list:
+        ready = [o for o in offset_list if check_time(c, o) <= now]
+        if not ready or all(g.commence_utc <= now for g in c.games):
+            continue
+        if not any((g.source_event_id, min(ready)) in done for g in c.games):
+            out.append((c, min(ready)))
+    return out
+
+
+def checked_slots(store, start, end):
+    """Distinct (slot, offset) checks with status checked, logged in [start, end)."""
+    return store.con.execute(
+        "SELECT count(DISTINCT (cluster_start_utc, offset_min)) FROM check_log "
+        "WHERE status = 'checked' AND ts_utc >= ? AND ts_utc < ?", [to_db_ts(start), to_db_ts(end)]).fetchone()[0]
+
+
+def unchecked(store, source, start, end):
+    """(games starting in [start, end), [(game, its status or None)] for those never checked,
+    the number of slots holding them). A game's status is 'checked' if any check was, else its latest."""
+    games = slate_games(store, source, start, end)
+    status = {}
+    for eid, st in store.con.execute(
+            "SELECT source_event_id, status FROM check_log WHERE source = ? AND source_event_id IN "
+            "(SELECT unnest(?)) ORDER BY ts_utc", [source, [g.source_event_id for g in games]]).fetchall():
+        if status.get(eid) != "checked":
+            status[eid] = st
+    missed = [(g, status.get(g.source_event_id)) for g in games if status.get(g.source_event_id) != "checked"]
+    ids = {g.source_event_id for g, _ in missed}
+    slots = sum(1 for c in plan(store, source, start, end) if any(g.source_event_id in ids for g in c.games))
+    return games, missed, slots
+
+
+def check_history(store, source, since):
+    """{source_event_id: [(offset, status, time)]} logged since `since`, oldest first."""
+    out = {}
+    for eid, off, st, ts in store.con.execute(
+            "SELECT source_event_id, offset_min, status, ts_utc FROM check_log WHERE source = ? AND ts_utc >= ? "
+            "ORDER BY ts_utc", [source, to_db_ts(since)]).fetchall():
+        out.setdefault(eid, []).append((off, st, from_db_ts(ts)))
+    return out
+
+
+def sport_key_of(store, market_ticker):
+    found = store.con.execute("SELECT sport_key FROM odds_matches WHERE market_ticker = ? LIMIT 1",
+                              [market_ticker]).fetchone()
+    return found[0] if found else None

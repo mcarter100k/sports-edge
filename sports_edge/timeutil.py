@@ -2,7 +2,7 @@
 
 Every stored timestamp is UTC. Conversion for display happens here only.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 DISPLAY_TZ = ZoneInfo("America/Los_Angeles")
@@ -67,3 +67,11 @@ def display_day(dt) -> str:
 def pacific_midnight(dt):
     """Start of the Pacific calendar day containing dt, as an aware datetime."""
     return dt.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def pacific_day(now, days_back=0):
+    """(start, end) of the Pacific calendar day `days_back` days before the one holding `now`."""
+    start = pacific_midnight(now)
+    for _ in range(days_back):
+        start = pacific_midnight(start - timedelta(hours=1))
+    return start, pacific_midnight(start + timedelta(hours=30))

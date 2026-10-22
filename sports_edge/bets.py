@@ -20,6 +20,8 @@ from .timeutil import display_date, iso_z, pacific_midnight, parse_utc
 BET_LOG_HEADER = ["logged_utc", "message_guid", "message_utc", "pick_date", "pick_no", "row_id",
                   "market_ticker", "event_ticker", "side", "action", "price", "contracts", "raw_text"]
 STAKE = Decimal("10")
+DAILY_CAP = Decimal("30")             # money at risk today: $10 per open or lost bet taken today
+POSTPONED_AFTER = timedelta(minutes=60)
 REPLIES_FILE = "replies.txt"
 _NUMBERS = re.compile(r"(?:\s*(?:at\s+)?#?(?:\d*\.\d+|\d+)\s*(?:c|¢)?)*\s*")
 _NUMBER = re.compile(r"(#)?(\d*\.\d+|\d+)\s*(c|¢)?")
@@ -224,3 +226,50 @@ def log_row(guid, when, text, parsed, rows, now, outcome_of=bet_key):
             "event_ticker": pick["event_ticker"] if pick else "", "side": pick["side"] if pick else "",
             "action": action, "price": price if took else "",
             "contracts": int(STAKE // price) if took else "", "raw_text": (text or "")[:200]}
+
+
+# Picks as the slate shows them (docs/specs/slate_alerts_spec.md) --------------------------
+
+def result_key(row, teams):
+    """A pick's result: in a two-team game with no Tie, "Yes on A" and "No on B" are one.
+    teams: {"titles": [team titles], "tie": bool} for the row's event."""
+    if teams["tie"] or len(teams["titles"]) != 2 or row["outcome"] not in teams["titles"]:
+        return bet_key(row)
+    backed = row["outcome"] if row["side"] == "YES" else next(x for x in teams["titles"] if x != row["outcome"])
+    return row["event_ticker"], backed, row["rule_id"]
+
+
+def picks_in_run(rows, run_id, outcome_of, event_ids, now):
+    """[(number, again, row)]: one row per result a run wrote (the cheaper), games not started."""
+    groups = results(rows, outcome_of)
+    out = []
+    for key, r in shown_in_run(rows, run_id, outcome_of).items():
+        if r["source_event_id"] not in event_ids or parse_utc(r["commence_utc"]) <= now:
+            continue
+        _, n = number_of(rows, key, outcome_of)
+        again = any(f["run_id"] != run_id for f in groups[key])
+        out.append((n, again, r))
+    return sorted(out, key=lambda p: p[0])
+
+
+def open_picks(rows, day, outcome_of, now, starts):
+    """([(number, row shown at the result's latest check)] for games not started,
+    [(number, latest listed start)] for results whose game moved 60+ minutes later: void)."""
+    latest_run = {}
+    for r in sorted(rows, key=lambda r: r["logged_utc"]):
+        latest_run[outcome_of(r)] = r["run_id"]
+    open_, postponed = [], []
+    for key, (n, _) in sorted(day_picks(rows, day, outcome_of).items(), key=lambda kv: kv[1][0]):
+        r = shown_in_run(rows, latest_run[key], outcome_of)[key]
+        latest = starts.get(r["source_event_id"])
+        if latest and latest - parse_utc(r["commence_utc"]) >= POSTPONED_AFTER:
+            postponed.append((n, latest))
+        elif parse_utc(r["commence_utc"]) > now:
+            open_.append((n, r))
+    return open_, postponed
+
+
+def money_at_risk(taken, day):
+    """$10 for each bet taken on `day` that is open or settled lost; won or void counts 0."""
+    return sum((STAKE for b in taken if b["pick_date"] == day and
+                (b["result"] is None or (b["dollars"] is not None and b["dollars"] < 0))), Decimal(0))

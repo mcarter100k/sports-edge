@@ -7,7 +7,7 @@ import statistics
 import sys
 from decimal import Decimal
 
-from . import config, ledger
+from . import bets, config, ledger
 from .fees import fee_for_order
 from .kalshi import KalshiClient
 from .snapshot import new_run_id, record_failure, sweep_settlements
@@ -273,6 +273,79 @@ def bets_report(store):
                  f"settled {len(graded)}: {_dollars(paper)} on paper at the logged price; "
                  f"open {len(not_taken) - len(graded)}")
     return lines
+
+
+# Stage line and paper results for the slate (docs/specs/slate_alerts_spec.md) ------------
+
+STAGES = ((1000, "Confirmed"), (500, "Supported"), (100, "Early signal"))
+NEXT_STAGE = {"Early signal": "Supported needs 500", "Supported": "Confirmed needs 1,000"}
+PRACTICE_N = 100
+DRAWDOWN_UNITS = 20
+Z95 = 1.96
+
+
+def _low(xs):
+    if len(xs) < 2:
+        return None
+    return statistics.fmean(xs) - Z95 * statistics.stdev(xs) / math.sqrt(len(xs))
+
+
+def stage(graded):
+    """(stage name, line) from graded first-fire bets, by game (docs/specs/slate_alerts_spec.md)."""
+    ids = set(bets.first_fire_ids(graded).values())
+    first = sorted((r for r in graded if r["row_id"] in ids), key=lambda r: (r["snapshot_utc"], r["row_id"]))
+    games = {}
+    for r in first:
+        games.setdefault(r["event_ticker"], []).append(r)
+    n = len(games)
+    beat, ret = [], []
+    for rs in games.values():
+        have = [float(r["clv"]) for r in rs if r.get("clv") not in (None, "")]
+        if have:
+            beat.append(statistics.fmean(have))
+        ret.append(sum(float(r["pnl_per_contract"]) for r in rs)
+                   / sum(float(r["price_paid"]) + float(r["fee_per_contract"]) for r in rs))
+    cum = peak = 0.0
+    for r in first:
+        cum += float(r["pnl_per_contract"]) / (float(r["price_paid"]) + float(r["fee_per_contract"]))
+        peak = max(peak, cum)
+    if n >= PRACTICE_N and beat and statistics.fmean(beat) <= 0:
+        return "Practice", f"Practice (demoted: not beating the final price) · {n} games"
+    if peak - cum >= DRAWDOWN_UNITS:
+        return "Practice", f"Practice (demoted: {DRAWDOWN_UNITS}-bet losing stretch) · {n} games"
+    beat_low = _low(beat)
+    for need, name in STAGES:
+        if n < need or beat_low is None or beat_low <= 0:
+            continue
+        if name == "Early signal" or (name == "Supported" and statistics.fmean(ret) > 0) or \
+                (name == "Confirmed" and (_low(ret) or 0) > 0):
+            return name, " · ".join([name, f"{n} games"] + ([NEXT_STAGE[name]] if name in NEXT_STAGE else []))
+    return "Practice", f"Practice · {n} of {PRACTICE_N} games"
+
+
+def paper_results(store, picks):
+    """Paper results at $10 per pick: (won, lost, void, open, dollars, staked)."""
+    tickers = sorted({r["market_ticker"] for r in picks})
+    results = dict(store.con.execute(
+        "SELECT ticker, result FROM settlements WHERE ticker IN (SELECT unnest(?))", [tickers]).fetchall()) \
+        if tickers else {}
+    won = lost = void = open_ = 0
+    money = staked = Decimal(0)
+    for r in picks:
+        res = results.get(r["market_ticker"])
+        n = int(r["contracts_assumed"])
+        if res is None:
+            open_ += 1
+            continue
+        if res not in ("yes", "no"):
+            void += 1
+            continue
+        win = (r["side"] == "YES") == (res == "yes")
+        won, lost = won + win, lost + (not win)
+        cost = (Decimal(r["price_paid"]) + Decimal(r["fee_per_contract"])) * n
+        money += (Decimal(n) if win else Decimal(0)) - cost
+        staked += cost
+    return won, lost, void, open_, money, staked
 
 
 def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):

@@ -4,7 +4,7 @@ from decimal import Decimal as D
 import pytest
 
 from helpers import FakeKalshi, FakeOdds, fee_table, game_event, ref_sport, series, stub
-from sports_edge import bets, config, health, ledger, slate
+from sports_edge import bets, config, grader, health, ledger, shadow, slate
 from sports_edge.bets import BET_LOG_HEADER
 from sports_edge.shadow import HEADER
 from sports_edge.snapshot import run_cycle
@@ -14,6 +14,7 @@ from sports_edge.timeutil import iso_z, parse_utc
 DAILY_AT = parse_utc("2026-10-22T10:00:00Z")      # 03:00 PDT
 START = DAILY_AT + timedelta(hours=5)              # 08:00 PDT
 CHECK_AT = START - timedelta(minutes=25)
+JARGON = ("clv", "brier", "de-vig", "devig", "overround", " ev ", "edge", "lock", "value")
 PRICED = {"R1": {"Philadelphia 76ers": D("1.55"), "Cleveland Cavaliers": D("2.60")}}
 
 
@@ -59,7 +60,7 @@ def alert(now):
 
 def no_jargon(text):
     low = text.lower().replace("sports-edge/", "")
-    return [w for w in slate.JARGON if w in low]
+    return [w for w in JARGON if w in low]
 
 
 # Formatting and wording -------------------------------------------------------------------
@@ -70,8 +71,8 @@ def test_cents():
 
 def test_pay_up_to_is_the_highest_cent_that_still_leaves_three_cents():
     # fair 0.50: at 45c, 22 contracts, fee 0.3812/22 -> gap 0.0327; at 46c, 21 contracts -> gap 0.0226
-    assert slate.pay_up_to(D("0.5"), D("1"), D("0.0001"), D("10"), D("0.03")) == 45
-    assert slate.pay_up_to(D("0.02"), D("1"), D("0.0001"), D("10"), D("0.03")) is None
+    assert shadow.pay_up_to(D("0.5"), D("1"), D("0.0001"), D("10"), D("0.03")) == 45
+    assert shadow.pay_up_to(D("0.02"), D("1"), D("0.0001"), D("10"), D("0.03")) is None
 
 
 TEAMS2 = {"titles": ["Cleveland", "Philadelphia"], "tie": False}
@@ -119,19 +120,19 @@ def grades(n_games, clv="0.02", pnl="0.05", price="0.45", fee="0.017"):
 
 
 def test_stage_practice_until_a_hundred_games():
-    assert slate.stage([]) == ("Practice", "Practice · 0 of 100 games")
-    assert slate.stage(grades(99))[1] == "Practice · 99 of 100 games"
+    assert grader.stage([]) == ("Practice", "Practice · 0 of 100 games")
+    assert grader.stage(grades(99))[1] == "Practice · 99 of 100 games"
 
 
 def test_stage_early_signal_supported_and_confirmed():
-    assert slate.stage(grades(100)) == ("Early signal", "Early signal · 100 games · Supported needs 500")
-    assert slate.stage(grades(500))[0] == "Supported"
-    assert slate.stage(grades(500, pnl="-0.05"))[0] == "Early signal"      # beating the close, no profit
-    assert slate.stage(grades(1000)) == ("Confirmed", "Confirmed · 1000 games")
+    assert grader.stage(grades(100)) == ("Early signal", "Early signal · 100 games · Supported needs 500")
+    assert grader.stage(grades(500))[0] == "Supported"
+    assert grader.stage(grades(500, pnl="-0.05"))[0] == "Early signal"      # beating the close, no profit
+    assert grader.stage(grades(1000)) == ("Confirmed", "Confirmed · 1000 games")
 
 
 def test_stage_demotes_when_not_beating_the_final_price():
-    assert slate.stage(grades(150, clv="-0.01"))[1] == \
+    assert grader.stage(grades(150, clv="-0.01"))[1] == \
         "Practice (demoted: not beating the final price) · 150 games"
 
 
@@ -139,9 +140,9 @@ def test_stage_demotes_on_a_twenty_bet_losing_stretch():
     rows = grades(30, pnl="-0.462", price="0.45", fee="0.012")                # each loss = 1 stake
     for r in rows:
         r["pnl_per_contract"] = "-0.462"
-    assert slate.stage(rows)[1] == "Practice (demoted: 20-bet losing stretch) · 30 games"
-    assert slate.stage(rows[:20])[1] == "Practice (demoted: 20-bet losing stretch) · 20 games"   # exactly 20
-    assert slate.stage(rows[:19])[1] == "Practice · 19 of 100 games"
+    assert grader.stage(rows)[1] == "Practice (demoted: 20-bet losing stretch) · 30 games"
+    assert grader.stage(rows[:20])[1] == "Practice (demoted: 20-bet losing stretch) · 20 games"   # exactly 20
+    assert grader.stage(rows[:19])[1] == "Practice · 19 of 100 games"
 
 
 def test_long_names_still_fit_in_one_message():

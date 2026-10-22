@@ -107,6 +107,18 @@ def contracts_for(stake, price):
     return int(Decimal(stake) // Decimal(price))
 
 
+def pay_up_to(win, multiplier, precision, stake, threshold):
+    """GAP_v2 solved for price: the highest whole cent where the side's fair chance - price -
+    taker fee (for floor(stake / price) contracts) >= threshold, or None."""
+    best = None
+    for c in range(1, 100):
+        p = Decimal(c) / 100
+        n = int(Decimal(stake) // p)
+        if n >= 1 and win - p - fee_per_contract(p, n, multiplier, "taker", precision) >= threshold:
+            best = c
+    return best
+
+
 def asks_from_book(book, side):
     """[(ask, count)] best first. A Yes ask is 1 - a No bid; a No ask is 1 - a Yes bid."""
     bids = book.get("no" if side == "YES" else "yes") or []

@@ -292,6 +292,24 @@ class Store:
                 return from_db_ts(ts)
         return None
 
+    def last_finish(self, job):
+        """(status, time) of the job's latest finished run, or (None, None)."""
+        row = self.con.execute(
+            "SELECT status, ts_utc FROM job_runs WHERE job = ? AND phase = 'finish' "
+            "ORDER BY ts_utc DESC LIMIT 1", [job]).fetchone()
+        return (row[0], from_db_ts(row[1])) if row else (None, None)
+
+    def run_finish(self, run_id):
+        """(status, time, summary) of one run's finish row, or (None, None, {})."""
+        row = self.con.execute(
+            "SELECT status, ts_utc, summary FROM job_runs WHERE run_id = ? AND phase = 'finish'",
+            [run_id]).fetchone()
+        return (row[0], from_db_ts(row[1]), json.loads(row[2] or "{}")) if row else (None, None, {})
+
+    def newest_snapshot(self):
+        (ts,) = self.con.execute("SELECT max(ts_utc) FROM price_snapshots").fetchone()
+        return from_db_ts(ts)
+
     # Odds budget -----------------------------------------------------------
 
     def credits_used_since(self, since):
