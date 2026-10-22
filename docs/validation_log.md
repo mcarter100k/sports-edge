@@ -112,3 +112,30 @@ Entries are cleared with a date and the evidence that reality produced.
 - **PENDING:** the first 7:30 AM firing (top of this log).
 - **NOT CHECKED in reality:** a banner with real numbers. It needs odds, a
   fee table and graded bets.
+
+## 2026-10-22 02:01–02:09 PDT: step 1 under standing approval (batch probe and reality gate)
+
+- VERIFIED (live): `GET /events?tickers=…&with_nested_markets=true` returned
+  every requested event for batches of 10, 50, 100 and 200 in one request each
+  (0.4–0.6 s). A batch of 400 also returned everything, in 2 requests (the
+  client followed the 200-per-page cursor). Events that contain finalized
+  markets come back with no status filter. The default batch stays 50.
+- VERIFIED (reality_run, scratch folder, live data hashes unchanged): the daily
+  cycle exited 0. Tier daily, 8,243 sports events, 93,043 markets, 93,043
+  snapshot rows, 22 sports, 1,709 settlements from the scan, 173 Kalshi
+  requests, 2 min 56 s.
+- VERIFIED: the settlement sweep records when there is something to record.
+  The daily run's sweep added 0. A direct check found 216 swept markets known
+  to us, 204 already recorded, and the rest settled at or after 09:04:05Z,
+  after that sweep ran. The grader's sweep then added 20, plus 3 single
+  lookups.
+- VERIFIED: the hourly cycle with no matches made 1 Kalshi request (exchange
+  status only), did no full scan, wrote 0 snapshot rows, and printed
+  "matched events: 0 (no odds matches yet)".
+- OBSERVED: the heartbeat module reported NEEDS ATTENTION (exit 1), naming
+  odds not configured, fee table missing, 0 matched sports, and "never
+  succeeded". The last is because health state is written by the wrapper
+  scripts, which were not used in this run, while job_runs shows 2 ok runs.
+- PENDING: the measured odds cycle (waiting on the key), the fee table
+  (waiting on the PDF), the matched-only fetch with real matches (needs the
+  key), and everything time-dependent once launchd is installed.
