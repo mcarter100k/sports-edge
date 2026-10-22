@@ -16,7 +16,8 @@ as Phase 1. For each observed same-game combo print it would record:
    product of leg probabilities is wrong.
 2. **The residual after fees:** fair joint probability − print price − the
    combo fee, with fees from the cited fee table. That includes the combo
-   maker fee effective 2026-08-20 (`fee_model_spec.md`), and the same
+   maker fee reported in news coverage as effective 2026-08-20 (unconfirmed;
+   see the `fee_model_spec.md` correction), and the same
    fail-closed rules apply.
 3. **A grade at settlement:** the combo's actual result against the
    recorded residual, under the same append-only and first-fire rules as
