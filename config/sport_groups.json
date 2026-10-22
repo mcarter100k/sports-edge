@@ -1,0 +1,16 @@
+{
+  "_doc": "Maps a reference-source sport group to a Kalshi series tag. Sports only, never competitions. See docs/specs/odds_matching_spec.md.",
+  "American Football": "Football",
+  "Aussie Rules": "Aussie Rules",
+  "Baseball": "Baseball",
+  "Basketball": "Basketball",
+  "Boxing": "Boxing",
+  "Cricket": "Cricket",
+  "Ice Hockey": "Hockey",
+  "Lacrosse": "Lacrosse",
+  "Mixed Martial Arts": "MMA",
+  "Rugby League": "Rugby",
+  "Rugby Union": "Rugby",
+  "Soccer": "Soccer",
+  "Tennis": "Tennis"
+}

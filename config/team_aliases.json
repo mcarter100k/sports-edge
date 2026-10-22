@@ -1,0 +1,7 @@
+{
+  "_doc": "Per Kalshi sport tag: {kalshi yes_sub_title: reference team name}. Add an entry only after inspecting an UNMATCHED name_mismatch line.",
+  "Hockey": {
+    "New York R": "New York Rangers",
+    "New York I": "New York Islanders"
+  }
+}
