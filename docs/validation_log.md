@@ -593,6 +593,128 @@ Entries are cleared with a date and the evidence that reality produced.
   - the fee table, waiting on the owner's two source files in `docs/sources/`;
   - `install.sh`, held until step 3 passes and the owner says "install".
 
+## 2026-10-22: owner waiver, launchd install, and the missing venv
+
+**Owner waiver:** install now, before the 3:41 PM PT check. The scheduled
+runs from here on are the live gate, and failures alert on their own.
+
+- **The live checkout had no `venv/`.** `scripts/common.sh` runs
+  `$PROJ/venv/bin/python`, so every wrapper would have failed to start.
+  - **Fix (owner-directed, ~2:00 PM PT):** created
+    `/Users/quis/sports-edge/venv` with Homebrew Python 3.14.7 (the same
+    interpreter as the phase1 worktree's venv) from `requirements-dev.txt`.
+    Packages match the phase1 venv: duckdb 1.5.6, pytest 9.1.1, iniconfig
+    2.3.1, packaging 26.3, pluggy 1.7.0, Pygments 2.21.0. `venv/` is
+    gitignored.
+  - **OBSERVED:** the suite in the live checkout with the new venv: 362
+    passed, 1 skipped, with no cache files left.
+  - **OBSERVED:** `common.sh` sourced without `SPORTS_EDGE_PYTHON` resolves
+    `PY=/Users/quis/sports-edge/venv/bin/python` (Python 3.14.7, duckdb
+    1.5.6). Neither `.env` nor the shell sets `SPORTS_EDGE_PYTHON`.
+- **OBSERVED, install (2:01 PM PT):** `scripts/launchd/install.sh` exited 0
+  and printed `loaded` for all four labels. `launchctl list` shows all four,
+  and `launchctl print` shows each plist in `~/Library/LaunchAgents`,
+  working directory `/Users/quis/sports-edge`, `runs = 0`. The system time
+  zone is America/Los_Angeles.
+- **Next firings (PT), read from the plists:**
+
+| Job | Schedule | Next |
+|---|---|---|
+| `snapshot` (then `slate alert`) | :00, :15, :30, :45 | Thu Oct 22, 2:15 PM |
+| `grader` | 3:30 AM daily | Fri Oct 23, 3:30 AM |
+| `morning` | 8:00 AM daily | Fri Oct 23, 8:00 AM |
+| `heartbeat` | Sundays 9:00 AM | Sun Oct 25, 9:00 AM |
+
+- **No iMessage can be sent.** `IMESSAGE_TO` is not set in `.env` or the
+  shell. `imessage.send` raises `SendFailed` before `osascript` runs (code
+  read, INFERRED for the live jobs). The consequences, by design (rule 7):
+  - **Slate alert:** any `slate alert` run that has a message to send fails.
+    `run_snapshot.sh` then exits nonzero and a loud Mac notification fires.
+    While there is no fee table, that is expected about once per newly
+    checked slot ("no fee table").
+  - **Morning job:** fails at 8:00 AM with a loud `MORNING FAILED`.
+  - **Failure alerts:** Mac notifications (terminal-notifier or
+    `osascript display notification`), not iMessages, so they still arrive.
+- **PENDING:**
+  - the first scheduled snapshot run (2:15 PM PT) and the 3:41 PM PT check
+    on the installed jobs;
+  - the first grader, morning and heartbeat firings above;
+  - the iMessage items at the top of this log, until `IMESSAGE_TO` is set.
+
+## 2026-10-22: delivery without iMessage (owner request; not a protected file)
+
+Spec `29504c7`, code `d7da9e1`, on `feat/notify-delivery`, merged before
+`feat/board` as directed.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 368 passed, 1 skipped. Six tests were added, and one ("missing
+    number fails loudly") was replaced, because the rule is reversed.
+  - Delivery mutants: 10 of 10 killed, from clean caches, each restored
+    byte-identical. They include the two the owner named: a missing number
+    fails the job, and an alert is dropped instead of shown.
+  - Standing set rerun on this branch: 98 of 98 killed.
+- **OBSERVED, Gate 2** (`reality_run.py`, wrapper code from the branch,
+  copy of the live data; 0 live files changed in both runs):
+  - **Log mode:** `run_morning.sh` exited 0 with `SLATE MORNING OK`.
+  - **One real notification** (`SPORTS_EDGE_NOTIFY=on`, no `IMESSAGE_TO`):
+    `run_morning.sh` exited 0. `alerts.log` shows `SLATE terminal-notifier:`
+    with a banner of exactly 300 bytes ending `Yesterday:… → sheet.txt`.
+    `imessage.log` shows `notified (IMESSAGE_TO not set)`.
+- **PENDING:**
+  - the owner seeing that banner (about 2:45 PM PT) and confirming a click
+    opens a sheet;
+  - a click opening the real iCloud sheet, whose path contains a space
+    ("Mobile Documents");
+  - the first live slate banner after merge. On the free plan with no fee
+    table, that is "Don't bet today: prices not checked (no fee table)." at
+    the first check of the day;
+  - the 8:00 AM PT morning banner on Fri Oct 23, from the installed job.
+
+## 2026-10-22: the reality gate runs the `--code` checkout in wrappers too (owner-approved fix)
+
+Spec `6138fbb` (new `docs/specs/reality_gate_spec.md`), code `eb6a198`.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 372 passed, 1 skipped (4 new tests).
+  - Mutants: 6 of 6 killed, from clean caches, each restored
+    byte-identical: never set, set for the live checkout too, not applied,
+    each of the three settings missing or wrong.
+- **VERIFIED, Gate 2, with a control that fails without the fix.** The same
+  command was run with no manual settings:
+  `--code <feat/board worktree> --with-live-data -- /bin/bash <worktree>/scripts/run_grader.sh`.
+  - **Fixed `reality_run.py`:** the report shows
+    `code path: …sports-edge-board (wrappers run …sports-edge-board)`. The
+    grader log has `markouts_measured=0` and
+    `markouts: 0 measured (no shadow rows logged yet)`, so `feat/board`'s
+    code ran.
+  - **Old `reality_run.py` (`main`):** no markouts field or line; `main`'s
+    code ran.
+  - **Both:** 0 live files changed, no failure markers, exit 0.
+- **NOT CHECKED:** which code earlier branches' wrapper gates ran.
+
+## 2026-10-22: a daily run prices the games it matches (owner-approved fix)
+
+Spec `756681f`, code `0e3e69d`. `snapshot.py` is not on the narrowed
+protected list.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 375 passed, 1 skipped (3 new tests).
+  - Mutants: 4 of 4 killed, from clean caches, each restored
+    byte-identical. One of them restores the old behaviour (no matched
+    fetch after the scan); the new tests fail on it.
+  - Standing set rerun on this branch: 98 of 98 killed.
+- **VERIFIED, Gate 2,** with the fixed `reality_run.py` and no manual
+  settings: `--code <worktree> -- /bin/bash <worktree>/scripts/run_snapshot.sh`
+  on an empty folder (3:01 PM PT).
+  - **Result:** `tier=daily matches_added=44 events_matched=21
+    matched_after_scan=21 snapshot_rows=44`. 44 price rows (tier `daily`),
+    and 0 matched markets without a price row. `SLATE ALERT OK`.
+  - **Control (the same setup on the old code, 2:20 PM PT gate, and the
+    live 2:15 PM PT run):** `snapshot_rows` was 0.
+  - 0 live files changed, no failure markers.
+- **PENDING:** the next live daily run (3:00 AM PT Fri Oct 23) writing price
+  rows for any game it matches.
+
 ## 2026-10-22: board and markouts specs (feat/board), and the live venv
 
 - **Specs committed before any code:** `c150e91` (the board, near misses,

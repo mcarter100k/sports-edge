@@ -36,13 +36,6 @@ def test_sends_number_and_text_as_arguments_not_script(monkeypatch):
     assert " sent: " in log_text()
 
 
-def test_missing_number_fails_loudly(monkeypatch):
-    monkeypatch.setenv("SPORTS_EDGE_NOTIFY", "on")
-    with pytest.raises(imessage.SendFailed, match="IMESSAGE_TO"):
-        imessage.send("x", Runner())
-    assert "FAILED (IMESSAGE_TO not set)" in log_text()
-
-
 def test_osascript_failure_fails_loudly(monkeypatch):
     monkeypatch.setenv("SPORTS_EDGE_NOTIFY", "on")
     monkeypatch.setenv("IMESSAGE_TO", "+15551234567")

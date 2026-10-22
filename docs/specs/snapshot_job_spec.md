@@ -108,3 +108,34 @@ which is on the protected list, so they wait for owner review like the rest.
    unchanged; it is one paginated call, not per-market lookups.
 3. **The shadow step takes `checked_events` from the odds step** (see the
    GAP_v2 amendment).
+
+---
+
+## Amendment 2026-10-22: a daily run prices what it matches (owner-approved fix)
+
+**The problem (observed 2026-10-22).** On a daily run the scan comes first.
+It writes price rows only for markets that were already matched. The odds
+step then matches new games, but the matched fetch that would price them
+runs only on hourly and near runs. So a game matched on a daily run had no
+price row until the next run. Examples:
+- The first live run (2:15 PM PT) matched 44 markets and wrote 0 price
+  rows. The 2:30 PM PT run wrote 44.
+- Games matched through targeted lookups on a daily run had no price row
+  either.
+
+This broke "a game matched this run is snapshotted this run". On a daily
+run where a check was due, the check would have paid for odds on a game
+with no Kalshi price to compare.
+
+**The rule.** On a daily run, after the odds step, the matched fetch also
+runs (`GET /events?tickers=…`, batched), but only for matched events that
+got no price row from the scan in this run.
+- Every market of those events is written, as on an hourly run, with tier
+  `daily`.
+- Events already priced by the scan are not fetched again.
+- No odds credits are spent.
+- The run summary records the count as `matched_after_scan`.
+
+**Unchanged:** hourly and near runs, the scan itself, settlements and the
+shadow step. The shadow step still compares only games checked in that
+same run, now with their price from this run.

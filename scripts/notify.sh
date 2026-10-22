@@ -27,10 +27,10 @@ notify() {
     if [ -x "$TN_BIN" ]; then
         if [ -n "$_n_sound" ]; then
             "$TN_BIN" -title "sports-edge" -subtitle "$_n_cat" -message "$_n_text" \
-                -sound "$_n_sound" -open "file://$_n_log" >/dev/null 2>&1 &
+                -sound "$_n_sound" -open "file://${_n_log// /%20}" >/dev/null 2>&1 &
         else
             "$TN_BIN" -title "sports-edge" -subtitle "$_n_cat" -message "$_n_text" \
-                -open "file://$_n_log" >/dev/null 2>&1 &
+                -open "file://${_n_log// /%20}" >/dev/null 2>&1 &
         fi
         _n_pid=$!
         _n_i=0

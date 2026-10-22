@@ -725,6 +725,44 @@ counts each taken bet as the nominal $10.
 
 ---
 
+## Amendment 2026-10-22: delivery without iMessage (owner request)
+
+**Rule.** When `IMESSAGE_TO` is not set, every text the slate would send by
+iMessage is shown as a Mac notification instead. That covers pick alerts,
+"Don't bet now" and every other alert text, and the morning message. A
+missing `IMESSAGE_TO` is not a failure: `slate alert` and `slate morning`
+exit 0.
+
+- **How:** through `scripts/notify.sh`, the same function that delivers
+  failure alerts today: terminal-notifier under its watchdog, then
+  `osascript`. Every attempt goes to `logs/alerts.log`.
+  - Subtitle: `SLATE`.
+  - No sound. The Basso sound stays reserved for failures.
+- **Click:** clicking the banner opens the sheet,
+  `<sheet folder>/sheet.txt`. The file URL has its spaces encoded
+  (`Mobile Documents` → `Mobile%20Documents`), so a path with spaces still
+  opens. This `notify.sh` fix applies to failure alerts too.
+- **Banner:** the text on one line, its line breaks shown as ` · `.
+  - **Limit:** the whole notification text, including `notify.sh`'s
+    ` → sheet.txt`, is at most 300 bytes. Bytes, not characters: launchd
+    runs in the C locale, where `notify.sh`'s `cut -c1-300` counts bytes.
+    Staying within the limit means it never cuts a character in half.
+  - **A longer text** is cut at a character boundary and ends with `…`. In
+    practice that is the morning message. The full text is in the sheet.
+- **Records:** each delivery is logged in `logs/imessage.log` as
+  `notified (IMESSAGE_TO not set)`. Sent-message state, numbering, replies
+  and the 300-character message limit are unchanged.
+- **Failure:** if `notify.sh` cannot deliver (both methods failed), the send
+  raises `SendFailed` and the job fails loudly, as a failed iMessage does
+  today.
+- **Switching back:** `IMESSAGE_TO` is read at every send. Setting it in
+  `.env` switches delivery back to iMessage from the next run, with no
+  notification.
+- **Unchanged:** `SPORTS_EDGE_NOTIFY=log` still records without delivering,
+  in tests and reality runs.
+
+---
+
 ## Amendment 2026-10-22: the board (owner-approved; replaces OPEN PICKS)
 
 **Why.** OPEN PICKS showed each pick from its latest ledger row, not from its
