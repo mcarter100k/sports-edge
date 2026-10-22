@@ -55,7 +55,8 @@ TABLES = {
         ("fetched_utc", "TIMESTAMP"), ("source", "VARCHAR"), ("bookmaker", "VARCHAR"),
         ("sport_key", "VARCHAR"), ("source_event_id", "VARCHAR"), ("commence_utc", "TIMESTAMP"),
         ("home", "VARCHAR"), ("away", "VARCHAR"), ("outcome", "VARCHAR"),
-        ("decimal_odds", "DECIMAL(12,6)"), ("fair_prob", "DOUBLE"), ("overround", "DOUBLE"),
+        ("decimal_odds", "DECIMAL(12,6)"), ("fair_prob", "DOUBLE"), ("fair_prob_power", "DOUBLE"),
+        ("overround", "DOUBLE"),
         ("devig_method", "VARCHAR"), ("book_last_update_utc", "TIMESTAMP"),
     ],
     "odds_matches": [

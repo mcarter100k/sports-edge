@@ -10,8 +10,8 @@ from decimal import Decimal
 from . import config, ledger
 from .kalshi import KalshiClient
 from .snapshot import new_run_id, record_failure, sweep_settlements
-from .store import Store, from_db_ts
-from .timeutil import iso_z, utcnow
+from .store import Store, from_db_ts, to_db_ts
+from .timeutil import iso_z, parse_utc, utcnow
 
 JOB = "grader"
 INSUFFICIENT_N = 20
@@ -20,11 +20,13 @@ P_CLIP = 1e-6
 CALIBRATION_HEADER = [
     "market_ticker", "event_ticker", "sport", "source_event_id", "y", "p_kalshi", "p_ref",
     "kalshi_snapshot_utc", "ref_fetched_utc", "commence_utc", "brier_kalshi", "brier_ref",
-    "logloss_kalshi", "logloss_ref", "graded_utc",
+    "logloss_kalshi", "logloss_ref", "p_ref_power", "brier_ref_power", "logloss_ref_power", "graded_utc",
 ]
 SHADOW_GRADE_HEADER = [
     "row_id", "market_ticker", "event_ticker", "side", "rule_id", "snapshot_utc", "result",
-    "payout", "price_paid", "fee_per_contract", "pnl_per_contract", "graded_utc",
+    "payout", "price_paid", "fee_per_contract", "pnl_per_contract",
+    # record-only closing line value (docs/specs/grader_spec.md amendment)
+    "closing_fair_prob", "closing_ref_fetched_utc", "closing_side_fair", "clv", "fair_move", "graded_utc",
 ]
 
 
@@ -62,7 +64,7 @@ def calibrate(store, source, now):
             WHERE ticker = ? AND ts_utc < ? AND yes_bid > 0 AND yes_ask < 1 AND yes_bid <= yes_ask
             ORDER BY ts_utc DESC LIMIT 1""", [ticker, commence]).fetchone()
         ref = store.con.execute("""
-            SELECT fetched_utc, fair_prob FROM reference_odds
+            SELECT fetched_utc, fair_prob, fair_prob_power FROM reference_odds
             WHERE source = ? AND source_event_id = ? AND outcome = ? AND fetched_utc < ?
             ORDER BY fetched_utc DESC LIMIT 1""", [source, eid, outcome, commence]).fetchone()
         if snap is None or ref is None:
@@ -72,6 +74,7 @@ def calibrate(store, source, now):
         y = 1 if result == "yes" else 0
         p_k = float((Decimal(snap[1]) + Decimal(snap[2])) / 2)
         p_r = float(ref[1])
+        p_rp = float(ref[2]) if ref[2] is not None else None
         rows.append({
             "market_ticker": ticker, "event_ticker": event, "sport": sport, "source_event_id": eid,
             "y": y, "p_kalshi": f"{p_k:.6f}", "p_ref": f"{p_r:.6f}",
@@ -79,9 +82,34 @@ def calibrate(store, source, now):
             "ref_fetched_utc": iso_z(from_db_ts(ref[0])), "commence_utc": iso_z(from_db_ts(commence)),
             "brier_kalshi": f"{brier(p_k, y):.6f}", "brier_ref": f"{brier(p_r, y):.6f}",
             "logloss_kalshi": f"{log_loss(p_k, y):.6f}", "logloss_ref": f"{log_loss(p_r, y):.6f}",
+            "p_ref_power": f"{p_rp:.6f}" if p_rp is not None else "",
+            "brier_ref_power": f"{brier(p_rp, y):.6f}" if p_rp is not None else "",
+            "logloss_ref_power": f"{log_loss(p_rp, y):.6f}" if p_rp is not None else "",
             "graded_utc": iso_z(now)})
     ledger.append_rows(config.calibration_grades_path(), CALIBRATION_HEADER, rows)
     return len(rows), skipped, len(candidates)
+
+
+def closing_line(store, r):
+    """Record-only CLV for one shadow row: the last reference before the start."""
+    blank = {"closing_fair_prob": "", "closing_ref_fetched_utc": "", "closing_side_fair": "",
+             "clv": "", "fair_move": ""}
+    if not r.get("ref_outcome") or not r.get("commence_utc"):
+        return blank
+    found = store.con.execute("""
+        SELECT fetched_utc, fair_prob FROM reference_odds
+        WHERE source = ? AND source_event_id = ? AND outcome = ? AND fetched_utc < ?
+        ORDER BY fetched_utc DESC LIMIT 1""", [r["odds_source"], r["source_event_id"], r["ref_outcome"],
+                                               to_db_ts(parse_utc(r["commence_utc"]))]).fetchone()
+    if found is None:
+        return blank
+    closing = Decimal(str(found[1])).quantize(Decimal("0.000001"))
+    side_close = closing if r["side"] == "YES" else Decimal(1) - closing
+    entry_fair = Decimal(r["fair_prob"])
+    side_entry = entry_fair if r["side"] == "YES" else Decimal(1) - entry_fair
+    return {"closing_fair_prob": closing, "closing_ref_fetched_utc": iso_z(from_db_ts(found[0])),
+            "closing_side_fair": side_close, "clv": side_close - Decimal(r["price_paid"]),
+            "fair_move": side_close - side_entry}
 
 
 def grade_shadow(store, now):
@@ -103,11 +131,13 @@ def grade_shadow(store, now):
         won = (r["side"] == "YES") == (result == "yes")
         payout = Decimal(1 if won else 0)
         pnl = payout - Decimal(r["price_paid"]) - Decimal(r["fee_per_contract"])
+        clv = closing_line(store, r)
         out.append({
             "row_id": r["row_id"], "market_ticker": r["market_ticker"], "event_ticker": r["event_ticker"],
             "side": r["side"], "rule_id": r["rule_id"], "snapshot_utc": r["snapshot_utc"],
             "result": result, "payout": payout, "price_paid": r["price_paid"],
-            "fee_per_contract": r["fee_per_contract"], "pnl_per_contract": pnl, "graded_utc": iso_z(now)})
+            "fee_per_contract": r["fee_per_contract"], "pnl_per_contract": pnl, **clv,
+            "graded_utc": iso_z(now)})
     ledger.append_rows(config.shadow_grades_path(), SHADOW_GRADE_HEADER, out)
     return len(out), skipped
 
@@ -128,7 +158,19 @@ def calibration_report(matched, settled_matched):
         f"calibration: {len(rows)} markets, independent events {insufficient(len(events))}",
         f"  Brier    kalshi {bk:.4f}  reference {br:.4f}  (kalshi - reference {bk - br:+.4f}; lower is better)",
         f"  log loss kalshi {lk:.4f}  reference {lr:.4f}  (kalshi - reference {lk - lr:+.4f})",
-    ]
+    ] + power_lines(rows)
+
+
+def power_lines(rows):
+    have = [r for r in rows if r.get("p_ref_power")]
+    if not have:
+        return ["  power de-vig: no graded rows with a power fair probability yet"]
+    bp = statistics.fmean(float(r["brier_ref_power"]) for r in have)
+    lp = statistics.fmean(float(r["logloss_ref_power"]) for r in have)
+    bpr = statistics.fmean(float(r["brier_ref"]) for r in have)
+    lpr = statistics.fmean(float(r["logloss_ref"]) for r in have)
+    return [f"  reference, power vs proportional on the same {len(have)} markets: "
+            f"Brier {bp:.4f} vs {bpr:.4f}, log loss {lp:.4f} vs {lpr:.4f} (lower is better)"]
 
 
 def shadow_report():
@@ -155,6 +197,12 @@ def shadow_report():
         rest = [v for e, v in event_pnl.items() if e != best]
         lines.append(f"  per-event mean {statistics.fmean(event_pnl.values()):+.4f}; "
                      f"without the best event {statistics.fmean(rest):+.4f}")
+    clvs = [float(r["clv"]) for r in first.values() if r.get("clv") not in (None, "")]
+    if clvs:
+        lines.append(f"  first-fire CLV (closing side fair - price paid): mean {statistics.fmean(clvs):+.4f}, "
+                     f"median {statistics.median(clvs):+.4f}, over {len(clvs)} rows (record only)")
+    else:
+        lines.append("  first-fire CLV: none yet (no reference fetched before a start)")
     lines.append("  Phase 1 makes no edge claim; this is a record, not a verdict.")
     return lines
 

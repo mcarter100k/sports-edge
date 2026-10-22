@@ -11,6 +11,7 @@ A fee is never guessed.
 """
 import hashlib
 import json
+import re
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 
@@ -84,8 +85,12 @@ def validate_table(table, repo_root=None):
     digest = hashlib.sha256(pdf.read_bytes()).hexdigest()
     if digest != src["sha256"]:
         raise FeeTableInvalid(f"source file {src['file']} sha256 {digest} != recorded {src['sha256']}")
-    for name in ("default", "settlement_fee"):
+    for name in ("default", "settlement_fee", "rounding"):
         _need_cite(table.get(name), name)
+    if not re.search(r"\b(p\.|page)\s*\d+", table["rounding"]["cite"], re.IGNORECASE):
+        raise FeeTableInvalid("rounding: the cite must name a page of the source")
+    if Decimal(str(table["rounding"]["balance_precision"])) not in (Decimal("0.01"), Decimal("0.0001")):
+        raise FeeTableInvalid("rounding.balance_precision must be 0.01 or 0.0001")
     for ticker, entry in (table.get("series") or {}).items():
         _need_cite(entry, f"series.{ticker}")
         for k in ("taker", "maker"):
@@ -107,6 +112,13 @@ def load_table(path=None):
         return None
     with open(path) as fh:
         return validate_table(json.load(fh))
+
+
+def table_precision(table):
+    """Balance precision from the cited fee table (the July 7 schedule: a centicent)."""
+    if table is None:
+        raise FeeScheduleUnknown("no fee table yet (config/fee_schedule.json)")
+    return Decimal(str(table["rounding"]["balance_precision"]))
 
 
 def resolve_multipliers(table, series_ticker, api_fee_type, api_multiplier, has_override):

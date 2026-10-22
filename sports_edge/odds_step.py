@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from . import config
 from .matching import RULE_VERSION, check_outcomes, kalshi_game, match
-from .odds import DevigRejected, TheOddsApi, devig_proportional
+from .odds import DevigRejected, TheOddsApi, devig_power, devig_proportional
 from .store import from_db_ts, to_db_ts
 from .timeutil import DISPLAY_TZ, utcnow
 
@@ -193,6 +193,7 @@ def odds_step(store, source, client, upsert_events, run_id, now, out, err):
                                        "detail": problem})
             try:
                 fair, overround = devig_proportional(ref.outcomes)
+                fair_power = devig_power(ref.outcomes)
             except DevigRejected as exc:
                 err(f"DEVIG REJECTED {key} {ref.source_event_id}: {exc}")
                 rejected += 1
@@ -203,6 +204,7 @@ def odds_step(store, source, client, upsert_events, run_id, now, out, err):
                     "sport_key": key, "source_event_id": ref.source_event_id,
                     "commence_utc": ref.commence_utc, "home": ref.home, "away": ref.away,
                     "outcome": name, "decimal_odds": odds, "fair_prob": fair[name],
+                    "fair_prob_power": fair_power[name],
                     "overround": overround, "devig_method": "proportional",
                     "book_last_update_utc": ref.book_last_update_utc})
             priced += 1

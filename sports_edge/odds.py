@@ -83,6 +83,27 @@ def devig_proportional(outcomes):
     return {k: float(v / total) for k, v in implied.items()}, float(total)
 
 
+def devig_power(outcomes):
+    """{name: decimal odds} -> {name: fair prob}: fair_i = (1/o_i)^k with sum = 1, k >= 1.
+
+    Same rejections as devig_proportional. Bisection to 1e-12.
+    """
+    devig_proportional(outcomes)          # applies the shared rejection rules
+    implied = {k: 1.0 / float(v) for k, v in outcomes.items()}
+    total = lambda k: sum(q ** k for q in implied.values())
+    lo, hi = 1.0, 1.0
+    while total(hi) > 1.0:
+        hi *= 2.0
+    while hi - lo > 1e-12:
+        mid = (lo + hi) / 2.0
+        if total(mid) > 1.0:
+            lo = mid
+        else:
+            hi = mid
+    k = (lo + hi) / 2.0
+    return {name: q ** k for name, q in implied.items()}
+
+
 class TheOddsApi:
     """The Odds API v4. /sports and /events are free; /odds costs credits."""
 
