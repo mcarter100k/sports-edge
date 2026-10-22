@@ -455,3 +455,45 @@ Entries are cleared with a date and the evidence that reality produced.
     (free plan adds none)".
 - **NOT CHECKED in reality:** the closing line on real reads. That needs an
   odds key and two reads of one game, which the free plan never makes.
+
+## 2026-10-22: slip rating (`sports_edge/rate.py`), display only
+
+- **Spec `d304aaa`.** The owner's 9-leg NBA slip is pinned verbatim as
+  `tests/fixtures/slip_nba_9leg.txt`. This does not unpark the Phase 3
+  combo logger: nothing about a slip is stored.
+- **Design choice (flagged to the owner):** the one pull per sport that
+  `rate` may make is **not** stored in `reference_odds`. That keeps a rating
+  from becoming a game's closing price. The call is logged in `odds_calls`
+  for the budget.
+- **OBSERVED (live Kalshi, 2026-10-22):** NBA game markets carry the team
+  code as the ticker suffix (`KXNBAGAME-26OCT22CLEPHI-PHI`), and San Antonio
+  is `SAS` where the slip says `SA`. Hence the second pairing rule: the slip
+  name equals the end of the matched sharp-book name.
+- **VERIFIED (Gate 1):** 354 passed, 1 skipped.
+  - **The slip:** read exactly, and 9 off-format variants stop with exit 2.
+  - **The markup line on the real slip:** 1.93% against 1.64%, 17% more,
+    1 in 61.
+  - **Grades:** the band edges, and all five letters through the real fee
+    function.
+  - **Pairing:** SA Spurs pairs by name, and two fitting games pair neither.
+  - **The stale-read pull:** one call per sport, not stored, and it counts
+    against the budget.
+  - **Other cases:** "Can't rate: no odds credits left today"; no fee
+    table; a game already started; the combo fair line.
+- **Mutants, from clean caches: 91 of 91 killed**, each restored
+  byte-identical.
+  - The sets: build 60, review 13, rulings 18.
+  - The 14 new ones cover the grade edges, the fee in the gap, the
+    name-pairing rule, ambiguity, the 15-minute limit, the budget, strict
+    reading, the markup direction, "1 in N", the game-started check, the
+    reason order, and the shared budget helper in both directions.
+- **VERIFIED (Gate 2, `reality_run.py`, 0 live files changed):**
+  - **The real command on the real slip:** printed every line. The
+    moneyline legs said "odds not set up", which is true on this machine.
+  - **The pairing probe on real Kalshi markets:** CLE–PHI, DEN–OKC,
+    DAL–IND, MIN–ORL and TOR–WAS paired with the right events by code.
+    HOU–SA did not; it needs the sharp-book name, which needs an odds key.
+- **NOT CHECKED in reality:** a real fair chance, a real grade or a real
+  pull. These need an odds key, a fee table and matched games.
+- **PENDING, after merge (owner ruling):** the user-level `/rate-slip`
+  skill.

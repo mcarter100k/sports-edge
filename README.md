@@ -112,6 +112,18 @@ is there, and `unreadable (...)` with the reason when it is not. For example:
 "not downloaded to this Mac yet" means iCloud has not synced the file. The
 Shortcut steps above have not yet been tested on a phone.
 
+### Rating a slip
+
+Run `venv/bin/python -m sports_edge.rate slip.txt` on a slip in the
+plain-text format of `tests/fixtures/slip_nba_9leg.txt`. It prints:
+- each leg's sharp-book fair chance and an A–F grade after Kalshi's fee,
+  where it can;
+- the payout's markup over the legs' own prices.
+
+It places nothing and stores nothing. A stored sharp-book read older than 15
+minutes costs one odds credit per sport. The rules are in
+`docs/specs/rate_slip_spec.md`.
+
 ## What it does not do
 
 - Place, size or manage trades.

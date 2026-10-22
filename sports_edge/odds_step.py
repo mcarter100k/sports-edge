@@ -11,7 +11,7 @@ from .fees import FeeScheduleUnknown, load_table, resolve_multipliers
 from .matching import RULE_VERSION, check_outcomes, kalshi_game, match
 from .odds import DevigRejected, TheOddsApi, devig_power, devig_proportional
 from .store import from_db_ts, to_db_ts
-from .timeutil import DISPLAY_TZ, utcnow
+from .timeutil import pacific_midnight, utcnow
 
 MATCH_WINDOW_AFTER_HORIZON = timedelta(hours=8)
 LIVE_LOOKBACK = timedelta(hours=8)
@@ -190,6 +190,14 @@ def match_step(store, source, client, upsert_events, run_id, now, out, err):
             "reference_orphans": len(orphans), "lookup_series": len(looked_up)}
 
 
+def can_spend(store, now):
+    """Whether one more odds call fits today's (Pacific) credit budget, assuming it costs as much
+    as the dearest odds call seen so far, so the cap is never crossed."""
+    worst = store.con.execute(
+        "SELECT coalesce(max(credits_last), 1) FROM odds_calls WHERE endpoint = 'odds'").fetchone()[0]
+    return store.credits_used_since(pacific_midnight(now)) + max(1, worst) <= config.odds_daily_credits()
+
+
 def priceable_events(store, source, table, event_ids):
     """Reference ids with at least one matched market whose fee the table confirms."""
     ok = set()
@@ -241,14 +249,10 @@ def price_due_checks(store, source, run_id, now, out, err):
             groups.setdefault((c.start_utc, g.sport_key), []).append((c, g, offset))
     flush()
 
-    day_start = now.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
     budget = config.odds_daily_credits()
     checked, rejected, budget_hit, mismatched = set(), 0, False, []
     for (_start, key), members in sorted(groups.items()):
-        # Assume the dearest paid call seen so far, so the cap is never crossed.
-        worst = store.con.execute(
-            "SELECT coalesce(max(credits_last), 1) FROM odds_calls WHERE endpoint = 'odds'").fetchone()[0]
-        if store.credits_used_since(day_start) + max(1, worst) > budget:
+        if not can_spend(store, now):
             if not budget_hit:
                 out(f"ODDS BUDGET REACHED ({budget} credits/day); {key} and later checks not priced")
             budget_hit = True
