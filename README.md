@@ -47,7 +47,10 @@ Every 15 minutes it:
 Every night at 03:30 Los Angeles time it **grades**: once markets settle,
 it scores how well Kalshi's pre-game price and Pinnacle's fair price
 predicted the result (Brier score and log loss), and works out what each
-shadow row would have made or lost after fees.
+shadow row would have made or lost after fees. Once a game has started, it
+also records how Kalshi's price of the side bought moved after each row: at
+the next stored price 10–20 minutes later, and at the last price before the
+start (`data/shadow_markouts.csv`, a record only; nothing decides on it).
 
 Every Sunday at 09:00 it sends a **proof-of-life** notification, healthy or
 not. If that notification doesn't arrive, something is wrong.
@@ -59,7 +62,17 @@ not. If that notification doesn't arrive, something is wrong.
   check wrote. When a two-team game offers two ways to back one team ("Yes on
   A" and "No on B"), only the cheaper is shown, but both are logged.
 - **"Don't bet now"** when prices weren't checked.
-- **A full sheet** in iCloud Drive at `sports-edge/sheet.txt`.
+- **A full sheet** in iCloud Drive at `sports-edge/sheet.txt`. It opens
+  with the **BOARD**:
+  - the price gaps from each game's latest check, numbered as in the
+    alerts, biggest first;
+  - up to 5 near misses: gaps under 3 cents, marked "not a pick", never
+    logged;
+  - checks too old or unsafe to bet, listed without numbers under "Older
+    checks, don't bet".
+
+  To print the board on its own (it writes nothing):
+  `venv/bin/python -m sports_edge.slate board`.
 
 Every message ends with the stage: Practice, Early signal, Supported or
 Confirmed. The bar for each is fixed in `docs/specs/slate_alerts_spec.md`.
@@ -155,9 +168,10 @@ weekly heartbeat says so.
 | `data/sports_edge.duckdb` | prices, markets, settlements, reference odds, matches, run log |
 | `data/shadow_ledger.csv` | gaps logged (append-only) |
 | `data/calibration_grades.csv`, `data/shadow_grades.csv` | grading results (append-only) |
+| `data/shadow_markouts.csv` | how Kalshi's price moved after each logged gap (append-only, a record only) |
 | `data/bet_log.csv` | your "took" and "skip" replies, as logged (append-only) |
 | iCloud Drive `sports-edge/replies.txt` | your replies, appended by your Shortcut (read only) |
-| iCloud Drive `sports-edge/sheet.txt` | today's slate, open picks and results (rewritten; a view) |
+| iCloud Drive `sports-edge/sheet.txt` | the board, today's slate and results (rewritten; a view) |
 | `logs/<job>_<date>.log` | everything each run printed; dates are Los Angeles dates |
 | `logs/alerts.log` | every notification sent |
 | `docs/specs/` | how each piece is supposed to behave |

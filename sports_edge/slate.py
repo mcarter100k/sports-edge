@@ -1,7 +1,7 @@
 """The slate: today's matched games, pre-game check messages, the morning
 message and the iCloud sheet (docs/specs/slate_alerts_spec.md).
 
-python -m sports_edge.slate show|alert|morning
+python -m sports_edge.slate show|board|alert|morning
 
 Formats and sends what shadow, checks, bets and grader decide. It writes only
 replies to the bet log (through bets), its sent-message state,
@@ -15,7 +15,7 @@ import sys
 from datetime import timedelta
 from decimal import Decimal
 
-from . import bets, checks, config, fees, grader, health, imessage, ledger
+from . import bets, board, checks, config, fees, grader, health, imessage, ledger
 from .shadow import pay_up_to
 from .store import Store, to_db_ts
 from .timeutil import display, display_clock, display_date, display_day, iso_z, pacific_day, parse_utc, utcnow
@@ -24,6 +24,7 @@ SOURCE = "the-odds-api"
 MESSAGE_MAX = 300
 MORNING_MAX = 700
 FRESH = timedelta(minutes=15)          # a check older than this is never shown as picks
+BOARD_MAX = 10
 STEADY = Decimal("0.02")               # a move under 2 cents either way = steady
 NOT_RUNNING_AFTER = timedelta(hours=2)
 NAME_MAX = 16
@@ -359,6 +360,61 @@ def morning_text(ctx, now):
     return text
 
 
+# Board ------------------------------------------------------------------------------
+
+def board_line(ctx, r, now, number=None, why=""):
+    """One gap: the pick text on one line with its number, or unnumbered ending with why not to bet."""
+    league = ctx.league(checks.sport_key_of(ctx.store, r["market_ticker"]) or r["sport"])
+    head, reply = pick_text(r, number, False, ctx.teams(r["event_ticker"]), league, now,
+                            earlier=ctx.earlier_fair(r)).split("\n")
+    return f"  {head} · {reply}" if number else f"  {head.split(' ', 1)[1]} · {why}"
+
+
+def near_line(ctx, r):
+    who, _ = wording(r, ctx.teams(r["event_ticker"]))
+    return (f"  {who} · {ctx.league(r['sport_key'])} · {display_clock(parse_utc(r['commence_utc']))} · "
+            f"now {cents(r['price_paid'])} · fair {cents(side_fair(r))} · gap {cents(r['edge'])} after fee · not a pick")
+
+
+def board_lines(ctx, now):
+    """The board (docs/specs/slate_alerts_spec.md): gaps from each game's latest check, near misses,
+    and checks too old or unsafe to bet."""
+    store = ctx.store
+    starts = checks.latest_starts(store, SOURCE)
+    current, older, why = {}, {}, {}
+    for eid, check in board.latest_checks(store, SOURCE, now, starts).items():
+        status, end, _ = store.run_finish(check["run_id"])
+        if status != "ok" or ctx.snapshot_failing:
+            older[eid], why[eid] = check, "system problem, don't bet"
+        elif now - end > FRESH:
+            older[eid], why[eid] = check, "old price, don't bet"
+        else:
+            current[eid] = check
+    gaps = board.current_gaps(ctx.ledger, current, ctx.result_of, now, starts)
+    late = board.current_gaps(ctx.ledger, older, ctx.result_of, now, starts)
+    near = [] if ctx.fee_state != "ok" else board.near_misses(
+        store, SOURCE, current, ctx.result_of, now, starts, {ctx.result_of(r) for r in gaps})
+    more = lambda rows: [f"  +{len(rows) - BOARD_MAX} more"] if len(rows) > BOARD_MAX else []
+    lines = [f"BOARD (price gaps as of each game's check, {display_clock(now)})"]
+    if ctx.cap_reached:
+        lines.append("  Daily cap reached — no more bets today.")
+    for r in gaps[:BOARD_MAX]:
+        n = None if ctx.cap_reached else bets.number_of(ctx.ledger, ctx.result_of(r), ctx.result_of)[1]
+        lines.append(board_line(ctx, r, now, n, "cap reached, don't bet"))
+    lines += more(gaps)
+    if not gaps:
+        cause = unable_reason(ctx) or ("no checked game still to start" if not current and not older else
+                                       "only older checks, see below" if not current else
+                                       "checked, no price gaps of 3¢ or more")
+        lines.append(f"  none ({cause})")
+    if near:
+        lines += ["  Near misses (not picks):"] + [near_line(ctx, r) for r in near]
+    if late:
+        lines += ["  Older checks, don't bet:"] + [board_line(ctx, r, now, why=why[r["source_event_id"]])
+                                                   for r in late[:BOARD_MAX]] + more(late)
+    return lines
+
+
 # Sheet ------------------------------------------------------------------------------
 
 def sheet_lines(ctx, now):
@@ -372,7 +428,7 @@ def sheet_lines(ctx, now):
              + (f" · money at risk today ${ctx.at_risk:.0f} of ${bets.DAILY_CAP:.0f}"
                 + (" · daily cap reached" if ctx.cap_reached else "")
                 if ctx.replies.get("readable") else " · daily cap not tracked"),
-             "", "TODAY (Pacific time)"]
+             ""] + board_lines(ctx, now) + ["", "TODAY (Pacific time)"]
     start, end = pacific_day(now)
     cl = checks.plan(store, SOURCE, start, end)
     logged = checks.check_history(store, SOURCE, start - timedelta(hours=2))
@@ -386,10 +442,7 @@ def sheet_lines(ctx, now):
             lines.append(f"    {g.away} at {g.home} · {ctx.league(g.sport_key)} · {display_clock(g.commence_utc)}"
                          f" · {done or 'not checked yet'}")
     today = display_date(now)
-    open_, postponed = bets.open_picks(ctx.ledger, today, ctx.result_of, now, checks.latest_starts(store, SOURCE))
-    lines += ["", "OPEN PICKS (games not started; prices as of each pick's latest check)"]
-    lines += [f"  {pick_text(r, n, False, ctx.teams(r['event_ticker']), ctx.league(checks.sport_key_of(store, r['market_ticker']) or r['sport']), now, earlier=ctx.earlier_fair(r))}"
-              .replace("\n", " · ") for n, r in open_] or ["  none"]
+    postponed = bets.postponed_picks(ctx.ledger, today, ctx.result_of, checks.latest_starts(store, SOURCE))
     if postponed:
         lines += ["", "POSTPONED"] + [f"  #{n} postponed — void (now listed {display(latest)})" for n, latest in postponed]
     lines += ["", "YOUR REPLIES TODAY"]
@@ -484,10 +537,20 @@ def run_show(now=None, out=print):
             out(line)
 
 
+def run_board(now=None, out=print):
+    """Print the board. Writes nothing: no replies read, no sent state, no sheet."""
+    now = now or utcnow()
+    with Store.open(lock_wait_s=120) as store:
+        ctx = Context(store, now, ingest=False)
+        for line in board_lines(ctx, now):
+            out(line)
+
+
 def main(argv):
-    command = {"alert": run_alert, "morning": run_morning, "show": run_show}.get(argv[0] if argv else "")
+    command = {"alert": run_alert, "morning": run_morning, "show": run_show, "board": run_board}.get(
+        argv[0] if argv else "")
     if command is None:
-        print("usage: python -m sports_edge.slate show|alert|morning", file=sys.stderr)
+        print("usage: python -m sports_edge.slate show|board|alert|morning", file=sys.stderr)
         return 2
     command()
     return 0
