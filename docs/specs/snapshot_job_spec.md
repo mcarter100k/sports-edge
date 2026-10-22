@@ -40,8 +40,11 @@ late backstop. For example, `KXNBAGAME-26OCT22CLEPHI-CLE` has
    `GET /markets?status=settled&min_settled_ts=<last sweep − 2 h>`. Keep
    tickers present in `markets` and insert the finalized ones. For known
    markets past their resolve-by time by more than 6 hours with no
-   settlement, fetch `GET /markets/{ticker}` (then `/historical/markets/{ticker}`),
-   at most 200 per run.
+   settlement, and that are no longer active or have not been seen in a
+   scan for 2 hours, fetch `GET /markets/{ticker}` (then
+   `/historical/markets/{ticker}`), at most 200 per run, matched markets
+   first. A market still listed as active is still open, so looking it up
+   would be wasted. The first reality run spent 200 lookups that way.
 7. **Odds + shadow:** run the odds step and the shadow comparison (see
    `odds_matching_spec.md` and `shadow_ledger_spec.md`). If no odds key is
    configured, the run prints `ODDS NOT CONFIGURED` and carries on. The
