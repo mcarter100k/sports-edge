@@ -303,7 +303,7 @@ def today_line(ctx, now):
 def yesterday_lines(ctx, now):
     y0, y1 = pacific_day(now, 1)
     day = display_date(y0)
-    checked = checks.checked_slots(ctx.store, y0, y1)
+    checked = checks.checked_slots(ctx.store, SOURCE, y0, y1)
     picks = [r for _, r in bets.day_picks(ctx.ledger, day, ctx.result_of).values()]
     won, lost, void, open_, money, staked = grader.paper_results(ctx.store, picks)
     cannot = unable_reason(ctx)
@@ -385,7 +385,7 @@ def sheet_lines(ctx, now):
             lines.append(f"    {g.away} at {g.home} · {ctx.league(g.sport_key)} · {display_clock(g.commence_utc)}"
                          f" · {done or 'not checked yet'}")
     today = display_date(now)
-    open_, postponed = bets.open_picks(ctx.ledger, today, ctx.result_of, now, checks.latest_starts(store))
+    open_, postponed = bets.open_picks(ctx.ledger, today, ctx.result_of, now, checks.latest_starts(store, SOURCE))
     lines += ["", "OPEN PICKS (games not started; prices as of each pick's latest check)"]
     lines += [f"  {pick_text(r, n, False, ctx.teams(r['event_ticker']), ctx.league(checks.sport_key_of(store, r['market_ticker']) or r['sport']), now, earlier=ctx.earlier_fair(r))}"
               .replace("\n", " · ") for n, r in open_] or ["  none"]

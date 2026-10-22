@@ -107,3 +107,21 @@ def test_free_plan_soccer_is_epl_la_liga_and_champions_league(monkeypatch):
             "baseball_mlb"} <= set(checks.slate_sports())
     monkeypatch.setenv("ODDS_PLAN", "paid")
     assert len(soccer()) == 10 and "soccer_germany_bundesliga" in soccer()
+
+
+
+def test_starts_and_checked_slots_read_one_odds_source_only():
+    """Owner review: rows from another odds source never count."""
+    t = parse_utc("2026-10-22T20:00:00Z")
+    with Store.open() as s:
+        for src, start in (("the-odds-api", t), ("other-source", t + timedelta(hours=3))):
+            s.append("reference_events", [{"fetched_utc": t - timedelta(hours=1, minutes=1 if src == "the-odds-api" else 0),
+                                           "source": src, "sport_key": "basketball_nba", "source_event_id": "R1",
+                                           "commence_utc": start, "home": "H", "away": "A"}])
+            s.append("check_log", [{"run_id": "r", "ts_utc": t - timedelta(minutes=30), "source": src,
+                                    "source_event_id": "R1", "sport_key": "basketball_nba",
+                                    "cluster_start_utc": start, "offset_min": 30, "status": "checked"}])
+        assert checks.latest_starts(s, "the-odds-api") == {"R1": t}        # the other source's row is newer
+        assert checks.checked_slots(s, "the-odds-api", t - timedelta(hours=2), t) == 1
+        assert checks.checked_slots(s, "other-source", t - timedelta(hours=2), t) == 1
+        assert checks.checked_slots(s, "nobody", t - timedelta(hours=2), t) == 0

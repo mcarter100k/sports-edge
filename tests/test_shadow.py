@@ -139,6 +139,23 @@ def test_short_best_level_walks_the_book_and_prices_the_average():
     assert r["edge"] == (D("0.5") - avg - fee).quantize(Q6)
 
 
+def test_walked_fee_is_per_level_and_differs_from_one_fee_at_the_best_or_average_price():
+    """Owner review: 10 at 0.42 and 13 at 0.44 are two fills, each charged its own rounded fee,
+    and the gap uses the average fill price."""
+    book, _ = book_of(no_bids=[("0.56", "50"), ("0.58", "10")])        # Yes asks 0.42 x10, then 0.44
+    r = ev(snap(yes_ask_size="10"), ref(0.50), book=book)[0][0]
+    per_level = fee_for_order(D("0.42"), 10, 1, "taker", D("0.0001")) + \
+        fee_for_order(D("0.44"), 13, 1, "taker", D("0.0001"))
+    at_best = fee_for_order(D("0.42"), 23, 1, "taker", D("0.0001"))
+    avg = (D("0.42") * 10 + D("0.44") * 13) / 23
+    at_avg = fee_for_order(avg, 23, 1, "taker", D("0.0001")).quantize(D("0.0001"))   # avg repeats: round the test's own value
+    assert (per_level, at_best, at_avg) == (D("0.3949"), D("0.3922"), D("0.3950"))   # three different fees
+    assert r["fill_detail"] == "0.42x10;0.44x13"
+    assert r["fee_per_contract"] == (per_level / 23).quantize(Q6)
+    assert r["price_paid"] == avg.quantize(Q6) != D("0.42")              # the average, not the best price
+    assert r["edge"] == (D("0.5") - avg - per_level / 23).quantize(Q6) == D("0.051526")
+
+
 def test_book_too_thin_to_fill_the_stake_is_a_depth_skip():
     book, _ = book_of(no_bids=[("0.58", "10"), ("0.57", "12")])       # 22 of 23
     assert ev(snap(yes_ask_size="10"), ref(0.50), book=book) == ([], None, 1)

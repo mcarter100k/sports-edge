@@ -115,12 +115,11 @@ def check_time(cluster, offset_min):
 
 # Read by the slate (docs/specs/slate_alerts_spec.md) -------------------------------------
 
-def latest_starts(store):
-    """{source_event_id: latest listed start}."""
-    return {e: from_db_ts(c) for e, c in store.con.execute("""
-        SELECT r.source_event_id, r.commence_utc FROM reference_events r
-        JOIN (SELECT source_event_id, max(fetched_utc) AS f FROM reference_events GROUP BY 1) l
-          ON r.source_event_id = l.source_event_id AND r.fetched_utc = l.f""").fetchall()}
+def latest_starts(store, source):
+    """{source_event_id: latest listed start} from one odds source."""
+    return {e: from_db_ts(c) for e, c in store.con.execute(
+        "SELECT source_event_id, arg_max(commence_utc, fetched_utc) FROM reference_events "
+        "WHERE source = ? GROUP BY 1", [source]).fetchall()}
 
 
 def recent_checks(store, source, since):
@@ -149,11 +148,12 @@ def missed_checks(cluster_list, done, now, offset_list):
     return out
 
 
-def checked_slots(store, start, end):
-    """Distinct (slot, offset) checks with status checked, logged in [start, end)."""
+def checked_slots(store, source, start, end):
+    """Distinct (slot, offset) checks of one odds source with status checked, logged in [start, end)."""
     return store.con.execute(
         "SELECT count(DISTINCT (cluster_start_utc, offset_min)) FROM check_log "
-        "WHERE status = 'checked' AND ts_utc >= ? AND ts_utc < ?", [to_db_ts(start), to_db_ts(end)]).fetchone()[0]
+        "WHERE source = ? AND status = 'checked' AND ts_utc >= ? AND ts_utc < ?",
+        [source, to_db_ts(start), to_db_ts(end)]).fetchone()[0]
 
 
 def unchecked(store, source, start, end):
