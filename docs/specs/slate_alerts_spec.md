@@ -649,3 +649,29 @@ added `checks.py` to it on 2026-10-22.
     wording.
 - **D. Superseded specs are archived.** `daily_digest_spec.md` and the parked
   `phase3_combo_logger_spec.md` move to `docs/archive/`, unchanged.
+
+---
+
+## Amendment 2026-10-22: slate.py audit — logic moved to its modules (owner-approved, no behaviour change)
+
+`slate.py` is left to format and send. Every rule, threshold and wording
+above is unchanged. Only where the code lives changes:
+
+| Moved from `slate.py` | To | Note |
+|---|---|---|
+| Stage line (`stage`, its interval and constants) | `grader.py` (protected) | |
+| Paper results of picks from settlements (`paper_results`) | `grader.py` (protected) | |
+| "Pay up to" (`pay_up_to`) | `shadow.py` (protected) | GAP_v2 solved for price |
+| Fee table state (`table_state`) | `fees.py` (protected) | |
+| Recent checks, missed checks, checked-slot count, unchecked games, check history, latest listed starts, a market's sport key | `checks.py` (protected) | |
+| Result pairing, picks shown in a run, open and postponed picks, money at risk and the $30 cap | `bets.py` | |
+| Job-run queries (last finish, one run's finish) | `store.py` | |
+| Pacific day bounds | `timeutil.py` | |
+
+**Cut:**
+- two Context fields left unused by cut B;
+- the repeated fee and odds checks in "unable to check".
+
+The test-only `JARGON` list moves to the tests. Tests and mutant patterns
+follow the moved functions by name only. No assertion or expected value
+changes.
