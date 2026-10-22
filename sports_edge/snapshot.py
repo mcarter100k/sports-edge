@@ -1,6 +1,10 @@
 """The 15-minute snapshot cycle (docs/specs/snapshot_job_spec.md).
 
 python -m sports_edge.snapshot
+
+daily  (03:00 LA, or catch-up): full scan of open sports events, every market
+hourly (other :00 runs):        matched events only, every market
+near   (:15, :30, :45):         matched events only, markets resolving within 48 h
 """
 import json
 import secrets
@@ -10,23 +14,22 @@ from datetime import timedelta
 
 from . import config
 from .kalshi import KalshiClient, dec
-from .matching import RULE_VERSION, check_outcomes, kalshi_game, match
-from .odds import DevigRejected, TheOddsApi, devig_proportional
+from .odds_step import build_odds_source, odds_step
 from .shadow import run_shadow
-from .store import Store, from_db_ts, to_db_ts
+from .store import Store, to_db_ts
 from .timeutil import DISPLAY_TZ, parse_utc, utcnow
 
 JOB = "snapshot"
+DAILY_HOUR_LA = 3
 NEAR_WINDOW = timedelta(hours=48)
-FULL_CATCHUP = timedelta(minutes=55)
+DAILY_CATCHUP = timedelta(hours=24, minutes=15)
+MATCHED_STALE_AFTER = timedelta(days=2)
 SWEEP_OVERLAP = timedelta(hours=2)
 FIRST_SWEEP = timedelta(hours=26)
 LOOKUP_AFTER = timedelta(hours=6)
 LOOKUP_LIMIT = 200
 LOOKUP_MAX_AGE = timedelta(days=14)
 STILL_OPEN_WINDOW = timedelta(hours=2)   # active and seen this recently = still open
-MATCH_WINDOW_AFTER_HORIZON = timedelta(hours=8)
-LIVE_LOOKBACK = timedelta(hours=8)
 
 
 class ScanEmpty(Exception):
@@ -51,13 +54,13 @@ def resolve_by(market):
     return min(times) if times else None
 
 
-def decide_tier(store, now):
-    if now.astimezone(DISPLAY_TZ).minute < 15:
-        return "full"
-    last = store.last_success(JOB, tier="full")
-    if last is None or now - last > FULL_CATCHUP:
-        return "full"
-    return "near"
+def decide_kind(store, now):
+    la = now.astimezone(DISPLAY_TZ)
+    last_daily = store.last_success(JOB, tier="daily")
+    if (la.hour == DAILY_HOUR_LA and la.minute < 15) or last_daily is None \
+            or now - last_daily > DAILY_CATCHUP or not series_index(store):
+        return "daily"
+    return "hourly" if la.minute < 15 else "near"
 
 
 def series_index(store):
@@ -81,9 +84,7 @@ def refresh_series(store, client, now):
 
 def market_row(event, m, series, seen):
     meta = event.get("product_metadata") or {}
-    fee_type = event.get("fee_type_override") or series["fee_type"]
-    fee_mult = (event.get("fee_multiplier_override")
-                if event.get("fee_type_override") else series["fee_multiplier"])
+    override = event.get("fee_type_override") is not None or event.get("fee_multiplier_override") is not None
     return {
         "ticker": m["ticker"], "event_ticker": event["event_ticker"],
         "series_ticker": event["series_ticker"], "sport": series["sport"],
@@ -94,9 +95,9 @@ def market_row(event, m, series, seen):
         "open_time": parse_utc(m.get("open_time")), "close_time": parse_utc(m.get("close_time")),
         "expected_expiration_time": parse_utc(m.get("expected_expiration_time")),
         "occurrence_time": parse_utc(m.get("occurrence_datetime")), "resolve_by": resolve_by(m),
-        "fee_type": fee_type, "fee_multiplier": fee_mult,
+        "fee_type": series["fee_type"], "fee_multiplier": series["fee_multiplier"],
         "fee_waiver_expiration_time": parse_utc(m.get("fee_waiver_expiration_time")),
-        "first_seen_utc": seen, "last_seen_utc": seen}
+        "fee_override": override, "first_seen_utc": seen, "last_seen_utc": seen}
 
 
 def snapshot_row(run_id, tier, m, ts):
@@ -118,26 +119,41 @@ def settlement_row(m, source):
             "settlement_ts": parse_utc(m.get("settlement_ts")), "source": source}
 
 
-def scan(client, sports):
-    """Collect every page before anything is written (all-or-nothing)."""
-    events = []
-    for fetched, page in client.open_events_with_markets():
-        for ev in page:
-            if ev["series_ticker"] in sports:
-                events.append((fetched, ev))
-    return events
+def write_events(store, run_id, tier, events, sports, now, snapshot_if, snaps):
+    """Upsert markets, append snapshot rows (where snapshot_if(row) holds), record settlements.
+
+    events: [(fetched_utc, event)]. One transaction. Returns (markets, settlements added, conflicts).
+    """
+    market_rows, settles, new_snaps = [], [], {}
+    for fetched, ev in events:
+        series = sports.get(ev["series_ticker"])
+        if series is None:
+            continue
+        for m in ev.get("markets") or []:
+            row = market_row(ev, m, series, fetched)
+            market_rows.append(row)
+            if snapshot_if(row):
+                new_snaps[m["ticker"]] = {**snapshot_row(run_id, tier, m, fetched), "_sport": series["sport"]}
+            s = settlement_row(m, "scan" if tier == "daily" else "matched_fetch")
+            if s:
+                settles.append(s)
+    with store.transaction():
+        store.upsert("markets", market_rows, "ticker")
+        store.append("price_snapshots", new_snaps.values())
+        added, conflicts = store.record_settlements(settles, now)
+    snaps.update(new_snaps)
+    return len(market_rows), added, conflicts
 
 
 def sweep_settlements(store, client, now, open_tickers):
-    last_full = store.last_success(JOB, tier="full")
-    since = (last_full - SWEEP_OVERLAP) if last_full else now - FIRST_SWEEP
+    last_daily = store.last_success(JOB, tier="daily")
+    since = (last_daily - SWEEP_OVERLAP) if last_daily else now - FIRST_SWEEP
     swept = [r for r in (settlement_row(m, "settled_sweep")
                          for m in client.settled_markets(int(since.timestamp()))) if r]
     known = {t for (t,) in store.con.execute(
         "SELECT ticker FROM markets WHERE ticker IN (SELECT unnest(?))",
         [[r["ticker"] for r in swept]]).fetchall()} if swept else set()
-    rows = [r for r in swept if r["ticker"] in known]
-    added, conflicts = store.record_settlements(rows, now)
+    added, conflicts = store.record_settlements([r for r in swept if r["ticker"] in known], now)
     pending = store.con.execute("""
         SELECT m.ticker FROM markets m
         LEFT JOIN settlements s ON s.ticker = m.ticker
@@ -148,135 +164,35 @@ def sweep_settlements(store, client, now, open_tickers):
         LIMIT ?""", [to_db_ts(now - LOOKUP_AFTER), to_db_ts(now - LOOKUP_MAX_AGE),
                      to_db_ts(now - STILL_OPEN_WINDOW), LOOKUP_LIMIT + len(open_tickers)]).fetchall()
     lookups = [t for (t,) in pending if t not in open_tickers][:LOOKUP_LIMIT]
-    looked = []
-    for t in lookups:
-        m = client.market(t)
-        r = settlement_row(m, "market_lookup") if m else None
-        if r:
-            looked.append(r)
+    looked = [r for r in (settlement_row(m, "market_lookup") if m else None
+                          for m in (client.market(t) for t in lookups)) if r]
     a2, c2 = store.record_settlements(looked, now)
     return {"settlements_swept": added + a2, "settlement_conflicts": conflicts + c2,
             "settlement_lookups": len(lookups)}
 
 
-def odds_step(store, source, games, run_id, now, out, err):
-    """Match Kalshi games to reference events and price the matched ones."""
-    last = store.con.execute(
-        "SELECT max(ts_utc) FROM odds_calls WHERE endpoint = 'sports' AND http_status = 200").fetchone()[0]
-    if last and now - from_db_ts(last) < timedelta(minutes=config.odds_interval_min()):
-        return {"odds": "interval_not_due"}
-    group_map = {k: v for k, v in config.load_json_config("sport_groups.json").items()
-                 if not k.startswith("_")}
-    aliases = {k: v for k, v in config.load_json_config("team_aliases.json").items()
-               if not k.startswith("_")}
-    horizon_end = now + timedelta(hours=config.odds_horizon_h())
-    relevant = [(g, s) for g, s in games
-                if now <= g.resolve_by <= horizon_end + MATCH_WINDOW_AFTER_HORIZON]
-    tags_needed = {t for g, _ in relevant for t in g.sport_tags}
-    sports = source.list_sports()
-    unmapped = sorted({s.group for s in sports if s.active and s.group not in group_map})
-    if unmapped:
-        out(f"UNMAPPED GROUP {', '.join(unmapped)}")
-    stubs_by_tag, stub_by_id = {}, {}
-    for sp in sports:
-        tag = group_map.get(sp.group)
-        if not sp.active or sp.has_outrights or tag not in tags_needed:
-            continue
-        for stub in source.list_events(sp.key):
-            if now - LIVE_LOOKBACK <= stub.commence_utc <= horizon_end:
-                stubs_by_tag.setdefault(tag, []).append(stub)
-                stub_by_id[stub.source_event_id] = stub
-    result = match(relevant, stubs_by_tag, aliases)
-    rows = [{**m, "source": source.name, "rule_version": RULE_VERSION} for m in result.matches]
-    added, conflicts = store.record_matches(rows, now)
-    for c in store.con.execute(
-            "SELECT DISTINCT event_ticker, source_event_id FROM match_conflicts WHERE seen_utc = ?",
-            [to_db_ts(now)]).fetchall():
-        err(f"MATCH CONFLICT {c[0]} now fits {c[1]}; never compared again")
-    markets_per_event = {g.event_ticker: len(g.teams) + (1 if g.tie_market else 0) for g, _ in relevant}
-    report_unmatched(store, result.unmatched, markets_per_event, run_id, now, err)
-
-    # Price matched events, soonest first, within the daily credit budget.
-    outcomes_by_event = {}
-    for m in result.matches:
-        outcomes_by_event.setdefault(m["source_event_id"], []).append(m["ref_outcome"])
-    by_key = {}
-    for eid in outcomes_by_event:
-        stub = stub_by_id[eid]
-        if stub.commence_utc > now:   # only games that have not started are priced
-            by_key.setdefault(stub.sport_key, []).append(stub)
-    day_start = now.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-    budget = config.odds_daily_credits()
-    priced, rejected, budget_hit, extra_unmatched = 0, 0, False, []
-    for key, stubs in sorted(by_key.items(), key=lambda kv: min(s.commence_utc for s in kv[1])):
-        if store.credits_used_since(day_start) + 1 > budget:
-            out(f"ODDS BUDGET REACHED ({budget} credits/day); {key} and later sports not priced")
-            budget_hit = True
-            break
-        ids = [s.source_event_id for s in sorted(stubs, key=lambda s: s.commence_utc)]
-        ref_rows = []
-        for ref in source.fetch_moneylines(key, ids, now):
-            problem = check_outcomes(outcomes_by_event.get(ref.source_event_id, []), ref.outcomes)
-            if problem:
-                extra_unmatched.append({"event_ticker": ref.source_event_id, "sport": key,
-                                        "reason": "outcome_count", "detail": problem})
-            try:
-                fair, overround = devig_proportional(ref.outcomes)
-            except DevigRejected as exc:
-                err(f"DEVIG REJECTED {key} {ref.source_event_id}: {exc}")
-                rejected += 1
-                continue
-            for name, odds in ref.outcomes.items():
-                ref_rows.append({
-                    "fetched_utc": ref.fetched_utc, "source": source.name, "bookmaker": ref.bookmaker,
-                    "sport_key": key, "source_event_id": ref.source_event_id,
-                    "commence_utc": ref.commence_utc, "home": ref.home, "away": ref.away,
-                    "outcome": name, "decimal_odds": odds, "fair_prob": fair[name],
-                    "overround": overround, "devig_method": "proportional",
-                    "book_last_update_utc": ref.book_last_update_utc})
-            priced += 1
-        store.append("reference_odds", ref_rows)
-    priced_mismatch = []
-    for u in extra_unmatched:
-        for ev in sorted({m["event_ticker"] for m in result.matches
-                          if m["source_event_id"] == u["event_ticker"]}):
-            priced_mismatch.append({"event_ticker": ev, "sport": u["sport"],
-                                    "reason": "outcome_count", "detail": u["detail"]})
-    report_unmatched(store, priced_mismatch, markets_per_event, run_id, now, err)
-    unmatched_by_sport = Counter(u["sport"] for u in result.unmatched)
-    return {"odds": "ran", "games_considered": len(relevant), "matches_added": added,
-            "match_conflicts": conflicts, "events_matched": len(outcomes_by_event),
-            "unmatched": len(result.unmatched) + len(extra_unmatched),
-            "unmatched_by_sport": dict(unmatched_by_sport), "events_priced": priced,
-            "devig_rejected": rejected, "budget_reached": budget_hit}
+def matched_event_tickers(store, now, kind):
+    params = [to_db_ts(now - MATCHED_STALE_AFTER)]
+    near = ""
+    if kind == "near":
+        near = "AND m.resolve_by <= ?"
+        params.append(to_db_ts(now + NEAR_WINDOW))
+    return [e for (e,) in store.con.execute(f"""
+        SELECT DISTINCT o.event_ticker FROM odds_matches o
+        JOIN markets m ON m.ticker = o.market_ticker
+        LEFT JOIN settlements s ON s.ticker = m.ticker
+        WHERE s.ticker IS NULL AND m.resolve_by > ? {near}
+          AND o.event_ticker NOT IN (SELECT event_ticker FROM match_conflicts)
+        ORDER BY 1""", params).fetchall()]
 
 
-def report_unmatched(store, unmatched, markets_per_event, run_id, now, err):
-    """Print and record each (event, reason) the first time only; return how many were new."""
-    if not unmatched:
-        return 0
-    seen = set(store.con.execute(
-        "SELECT event_ticker, reason FROM unmatched WHERE event_ticker IN (SELECT unnest(?))",
-        [sorted({u["event_ticker"] for u in unmatched})]).fetchall())
-    new = [u for u in unmatched if (u["event_ticker"], u["reason"]) not in seen]
-    for u in new:
-        err(f"UNMATCHED {u['event_ticker']} sport={u['sport']} reason={u['reason']} "
-            f"markets={markets_per_event.get(u['event_ticker'], '?')} detail={u['detail']}")
-    store.append("unmatched", [{**u, "run_id": run_id, "ts_utc": now} for u in new])
-    return len(new)
-
-
-def build_odds_source(store):
-    key = config.odds_api_key()
-    if not key:
-        return None
-
-    def record(**call):
-        if call["endpoint"] == "odds" and call.get("credits_last") is None:
-            call["credits_last"] = 1   # never let a missing header stop the budget counting
-        store.append("odds_calls", [{"ts_utc": utcnow(), **call}])
-
-    return TheOddsApi(key, on_call=record)
+def matched_by_sport(store, now):
+    return dict(store.con.execute("""
+        SELECT m.sport, count(DISTINCT m.ticker) FROM odds_matches o
+        JOIN markets m ON m.ticker = o.market_ticker
+        LEFT JOIN settlements s ON s.ticker = m.ticker
+        WHERE s.ticker IS NULL AND m.resolve_by > ?
+        GROUP BY 1 ORDER BY 1""", [to_db_ts(now - MATCHED_STALE_AFTER)]).fetchall())
 
 
 def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
@@ -288,53 +204,62 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
         store.job_event(run_id, JOB, "start", started, "running")
         summary = {}
         try:
-            tier = decide_tier(store, started)
-            summary["tier"] = tier
-            if tier == "full" or not series_index(store):
+            if not client.exchange_active():
+                summary = {"tier": "exchange_closed", "kalshi_requests": client.requests}
+                store.job_event(run_id, JOB, "finish", now_fn(), "exchange_closed", summary)
+                out(f"EXCHANGE CLOSED run={run_id}: Kalshi reports exchange_active=false "
+                    f"(scheduled maintenance); nothing fetched, no alert")
+                return summary
+            kind = decide_kind(store, started)
+            summary["tier"] = kind
+            snaps = {}
+
+            def upsert_events(fetched_events, now):
+                """Targeted lookups: refresh markets only; snapshots come from the matched fetch."""
+                write_events(store, run_id, "lookup", fetched_events, series_index(store),
+                             now, lambda row: False, {})
+
+            if kind == "daily":
                 summary["series"] = refresh_series(store, client, started)
-            sports = series_index(store)
-            events = scan(client, sports)
-            n_markets = sum(len(ev.get("markets") or []) for _, ev in events)
-            if not events or not n_markets:
-                raise ScanEmpty(f"SCAN EMPTY: {len(events)} sports events, {n_markets} markets")
-            market_rows, snaps, settles, games = [], {}, [], []
-            near_cutoff = started + NEAR_WINDOW
-            for fetched, ev in events:
-                series = sports[ev["series_ticker"]]
-                game, _reason = kalshi_game(ev, series["tags"] or [series["sport"]],
-                                            min((t for t in (resolve_by(m) for m in ev.get("markets") or [])
-                                                 if t), default=None))
-                if game:
-                    games.append((game, series["sport"]))
-                for m in ev.get("markets") or []:
-                    row = market_row(ev, m, series, fetched)
-                    market_rows.append(row)
-                    if tier == "full" or (row["resolve_by"] and row["resolve_by"] <= near_cutoff):
-                        snaps[m["ticker"]] = snapshot_row(run_id, tier, m, fetched)
-                        snaps[m["ticker"]]["_sport"] = series["sport"]
-                    s = settlement_row(m, "scan")
-                    if s:
-                        settles.append(s)
-            with store.transaction():
-                store.upsert("markets", market_rows, "ticker")
-                store.append("price_snapshots", snaps.values())
-                added, conflicts = store.record_settlements(settles, started)
-            summary.update({
-                "events": len(events), "markets": n_markets, "snapshot_rows": len(snaps),
-                "sports": len({s["_sport"] for s in snaps.values()}),
-                "settlements_from_scan": added, "settlement_conflicts": conflicts,
-                "moneyline_games": len(games)})
-            if tier == "full":
+                sports = series_index(store)
+                events = [(f, ev) for f, page in client.open_events_with_markets()
+                          for ev in page if ev["series_ticker"] in sports]
+                n_markets = sum(len(ev.get("markets") or []) for _, ev in events)
+                if not events or not n_markets:
+                    raise ScanEmpty(f"SCAN EMPTY: {len(events)} sports events, {n_markets} markets")
+                _, added, conflicts = write_events(store, run_id, "daily", events, sports, started,
+                                                   lambda row: True, snaps)
                 open_tickers = {m["ticker"] for _, ev in events for m in ev.get("markets") or []
                                 if m["status"] != "finalized"}
+                summary.update({"events": len(events), "markets": n_markets,
+                                "settlements_from_scan": added, "settlement_conflicts": conflicts})
                 summary.update(sweep_settlements(store, client, started, open_tickers))
+
             source = odds_source_factory(store)
             if source is None:
                 out("ODDS NOT CONFIGURED: ODDS_API_KEY is not set; no reference comparison this run")
                 summary["odds"] = "not_configured"
             else:
-                summary.update(odds_step(store, source, games, run_id, now_fn(), out, err))
+                summary.update(odds_step(store, source, client, upsert_events, run_id, now_fn(), out, err))
+
+            if kind != "daily":
+                tickers = matched_event_tickers(store, started, kind)
+                events = [(fetched, ev) for fetched, page in
+                          client.events_by_tickers(tickers, config.kalshi_ticker_batch()) for ev in page]
+                cutoff = started + NEAR_WINDOW
+                _, added, conflicts = write_events(
+                    store, run_id, kind, events, series_index(store), started,
+                    (lambda row: True) if kind == "hourly"
+                    else (lambda row: row["resolve_by"] is not None and row["resolve_by"] <= cutoff), snaps)
+                summary.update({"matched_events": len(tickers), "events": len(events),
+                                "settlements_from_matched": added, "settlement_conflicts": conflicts})
+                if not tickers:
+                    out("matched events: 0 (no odds matches yet); unmatched markets are snapshotted daily")
+            summary["snapshot_rows"] = len(snaps)
+            summary["sports"] = len({s["_sport"] for s in snaps.values()})
+            if source is not None:
                 summary.update(run_shadow(store, run_id, snaps, now_fn(), source.name, out))
+            summary["matched_by_sport"] = matched_by_sport(store, started)
             summary["kalshi_requests"] = client.requests
         except BaseException as exc:
             summary["error"] = f"{type(exc).__name__}: {exc}"
@@ -343,6 +268,8 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
         store.job_event(run_id, JOB, "finish", now_fn(), "ok", summary)
     parts = " ".join(f"{k}={v}" for k, v in summary.items() if not isinstance(v, dict))
     out(f"SNAPSHOT OK run={run_id} {parts}")
+    mbs = summary["matched_by_sport"]
+    out("matched markets by sport: " + (", ".join(f"{k}={v}" for k, v in mbs.items()) or "none yet"))
     if summary.get("unmatched_by_sport"):
         out("unmatched by sport: " + ", ".join(
             f"{k}={v}" for k, v in sorted(summary["unmatched_by_sport"].items())))

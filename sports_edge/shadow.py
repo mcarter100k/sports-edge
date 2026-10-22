@@ -2,15 +2,26 @@
 (docs/specs/shadow_ledger_spec.md). Logs only. Never trades.
 """
 import hashlib
+import os
 from collections import Counter
 from datetime import timedelta
 from decimal import Decimal
 
 from . import config, ledger
-from .fees import FeeScheduleUnknown, fee_per_contract
+from .fees import FeeScheduleUnknown, fee_per_contract, load_table, resolve_multipliers
 from .matching import check_outcomes
 from .store import from_db_ts
 from .timeutil import iso_z
+
+# The frozen signal rule (docs/specs/shadow_ledger_spec.md). Changing any of
+# these is a new rule_id, never an edit in place.
+RULE_ID = "GAP_v1"
+RULE_DEFAULTS = {
+    "SHADOW_EDGE_THRESHOLD": "0.03",
+    "SHADOW_CONTRACTS": "100",
+    "FEE_PRECISION": "0.01",
+    "ODDS_MAX_AGE_MIN": "75",
+}
 
 SCHEMA_VERSION = "1"
 HEADER = [
@@ -22,6 +33,26 @@ HEADER = [
     "bookmaker", "source_event_id", "overround", "devig_method",
 ]
 Q6 = Decimal("0.000001")
+
+
+def _rule_value(name):
+    return os.environ.get(name) or RULE_DEFAULTS[name]
+
+
+def rule_settings():
+    return {"threshold": Decimal(_rule_value("SHADOW_EDGE_THRESHOLD")),
+            "contracts": int(_rule_value("SHADOW_CONTRACTS")),
+            "precision": Decimal(_rule_value("FEE_PRECISION")),
+            "max_age_min": int(_rule_value("ODDS_MAX_AGE_MIN"))}
+
+
+def rule_id():
+    """GAP_v1, or GAP_v1+custom(...) when any rule parameter is overridden."""
+    custom = {k: os.environ[k] for k in RULE_DEFAULTS
+              if os.environ.get(k) and os.environ[k] != RULE_DEFAULTS[k]}
+    if not custom:
+        return RULE_ID
+    return f"{RULE_ID}+custom(" + ",".join(f"{k}={v}" for k, v in sorted(custom.items())) + ")"
 
 
 def row_id(run_id, market_ticker, side):
@@ -64,15 +95,14 @@ def evaluate(snap, market, match, ref, settings):
     fair_f = ref["fair"].get(match["ref_outcome"])
     if fair_f is None:
         return [], "outcome_not_priced"
+    if market.get("fee_error"):
+        return [], "fee_unknown"
     fair = Decimal(str(fair_f)).quantize(Q6)
     rows = []
     for side, price, win_prob in (("YES", snap["yes_ask"], fair),
                                   ("NO", snap["no_ask"], Decimal(1) - fair)):
-        try:
-            fee = fee_per_contract(price, settings["contracts"], market["fee_type"],
-                                   market["fee_multiplier"], "taker", settings["precision"])
-        except FeeScheduleUnknown:
-            return [], "fee_unknown"
+        fee = fee_per_contract(price, settings["contracts"], market["m_taker"], "taker",
+                               settings["precision"])
         edge = (win_prob - price - fee).quantize(Q6)
         if edge > settings["threshold"]:
             rows.append({
@@ -83,15 +113,15 @@ def evaluate(snap, market, match, ref, settings):
 
 def run_shadow(store, run_id, snapshots, now, source_name, out):
     """snapshots: {ticker: snapshot dict} from this run. Appends qualifying rows; returns counts."""
-    settings = {
-        "threshold": config.shadow_threshold(), "contracts": config.shadow_contracts(),
-        "precision": config.fee_precision(), "max_age_min": config.odds_max_age_min()}
+    settings = rule_settings()
+    table = load_table()
     matches = store.con.execute("""
         SELECT o.market_ticker, o.event_ticker, o.source_event_id, o.ref_outcome,
                m.sport, m.competition, m.yes_sub_title, m.fee_type, m.fee_multiplier,
-               m.fee_waiver_expiration_time
+               m.fee_waiver_expiration_time, m.series_ticker, m.fee_override
         FROM odds_matches o JOIN markets m ON m.ticker = o.market_ticker
         WHERE o.source = ?""", [source_name]).fetchall()
+    fee_reasons = Counter()
     conflicted = store.conflicted_events()
     refs = latest_reference(store, source_name)
     by_event = {}
@@ -107,7 +137,7 @@ def run_shadow(store, run_id, snapshots, now, source_name, out):
             skips["outcome_count"] += len(event_matches)
             continue
         for (ticker, event_ticker, _eid, ref_outcome, sport, competition, title, fee_type,
-             fee_mult, waiver) in event_matches:
+             fee_mult, waiver, series_ticker, fee_override) in event_matches:
             if event_ticker in conflicted:
                 skips["match_conflict"] += 1
                 continue
@@ -115,14 +145,20 @@ def run_shadow(store, run_id, snapshots, now, source_name, out):
             if snap is None:
                 skips["no_snapshot_this_run"] += 1
                 continue
-            market = {"fee_type": fee_type, "fee_multiplier": fee_mult}
+            try:
+                m_taker, _m_maker = resolve_multipliers(table, series_ticker, fee_type, fee_mult,
+                                                        bool(fee_override))
+                market = {"m_taker": m_taker}
+            except FeeScheduleUnknown as exc:
+                market = {"fee_error": str(exc)}
+                fee_reasons[str(exc)] += 1
             found, reason = evaluate(snap, market, {"ref_outcome": ref_outcome}, ref, settings)
             if reason:
                 skips[reason] += 1
             for r in found:
                 rows.append({
                     **r, "row_id": row_id(run_id, ticker, r["side"]), "schema_version": SCHEMA_VERSION,
-                    "rule_id": config.rule_id(), "logged_utc": iso_z(now), "run_id": run_id,
+                    "rule_id": rule_id(), "logged_utc": iso_z(now), "run_id": run_id,
                     "snapshot_utc": iso_z(snap["ts_utc"]), "odds_fetched_utc": iso_z(ref["fetched_utc"]),
                     "book_last_update_utc": iso_z(ref["book_last_update_utc"]),
                     "commence_utc": iso_z(ref["commence_utc"]), "sport": sport,
@@ -131,7 +167,7 @@ def run_shadow(store, run_id, snapshots, now, source_name, out):
                     "yes_ask": snap.get("yes_ask"), "no_bid": snap.get("no_bid"),
                     "no_ask": snap.get("no_ask"), "contracts_assumed": settings["contracts"],
                     "threshold": settings["threshold"], "fee_type": fee_type,
-                    "fee_multiplier": fee_mult,
+                    "fee_multiplier": market["m_taker"],
                     "fee_waiver_expiration_utc": iso_z(from_db_ts(waiver)) if waiver else "",
                     "odds_source": source_name, "bookmaker": ref["bookmaker"],
                     "source_event_id": eid, "overround": ref["overround"],
@@ -139,5 +175,7 @@ def run_shadow(store, run_id, snapshots, now, source_name, out):
     written = ledger.append_rows(config.shadow_ledger_path(), HEADER, rows) if rows else 0
     if skips:
         out("shadow skips: " + ", ".join(f"{k}={v}" for k, v in sorted(skips.items())))
+    for reason, n in sorted(fee_reasons.items()):
+        out(f"FEE UNKNOWN ({n} market checks): {reason}")
     return {"shadow_rows": written, "shadow_checked": sum(1 for _ in matches), **{
         f"skip_{k}": v for k, v in skips.items()}}

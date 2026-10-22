@@ -33,7 +33,7 @@ TABLES = {
         ("open_time", "TIMESTAMP"), ("close_time", "TIMESTAMP"),
         ("expected_expiration_time", "TIMESTAMP"), ("occurrence_time", "TIMESTAMP"),
         ("resolve_by", "TIMESTAMP"), ("fee_type", "VARCHAR"), ("fee_multiplier", "DECIMAL(10,6)"),
-        ("fee_waiver_expiration_time", "TIMESTAMP"),
+        ("fee_waiver_expiration_time", "TIMESTAMP"), ("fee_override", "BOOLEAN"),
         ("first_seen_utc", "TIMESTAMP"), ("last_seen_utc", "TIMESTAMP"),
     ],
     "price_snapshots": [
@@ -61,7 +61,7 @@ TABLES = {
     "odds_matches": [
         ("market_ticker", "VARCHAR"), ("event_ticker", "VARCHAR"), ("source", "VARCHAR"),
         ("source_event_id", "VARCHAR"), ("ref_outcome", "VARCHAR"), ("rule_version", "VARCHAR"),
-        ("matched_utc", "TIMESTAMP"),
+        ("matched_utc", "TIMESTAMP"), ("sport_key", "VARCHAR"),
     ],
     "match_conflicts": [
         ("market_ticker", "VARCHAR"), ("event_ticker", "VARCHAR"), ("source", "VARCHAR"),

@@ -26,6 +26,7 @@ class KalshiGame:
 class MatchResult:
     matches: list = field(default_factory=list)      # dicts: market_ticker, event_ticker, source_event_id, ref_outcome
     unmatched: list = field(default_factory=list)    # dicts: event_ticker, sport, reason, detail
+    claimed: set = field(default_factory=set)        # reference ids that fit at least one Kalshi game
 
 
 def normalize(name):
@@ -119,6 +120,7 @@ def match(games, stubs_by_tag, aliases_by_tag):
     for ticker, (game, sport, cands, pool) in per_game.items():
         for stub, _ in cands:
             claims.setdefault(stub.source_event_id, set()).add(ticker)
+    result.claimed = set(claims)
 
     for ticker, (game, sport, cands, pool) in per_game.items():
         if not cands:

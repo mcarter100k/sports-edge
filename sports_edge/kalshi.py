@@ -130,6 +130,35 @@ class KalshiClient:
                     require(m, "ticker", "status", "close_time", where=f"market in {ev['event_ticker']}")
             yield fetched, page["events"]
 
+    def exchange_active(self):
+        data = self.get("/exchange/status")
+        require(data, "exchange_active", where="GET /exchange/status")
+        return bool(data["exchange_active"])
+
+    def events_by_tickers(self, event_tickers, batch):
+        """Yield (fetched_utc, events) for events of any status, in batches of event tickers."""
+        from .timeutil import utcnow
+        tickers = sorted(set(event_tickers))
+        for i in range(0, len(tickers), batch):
+            chunk = tickers[i:i + batch]
+            for page in self.paginate("/events", {"tickers": ",".join(chunk),
+                                                  "with_nested_markets": "true", "limit": 200}, "events"):
+                yield utcnow(), self._checked(page["events"])
+
+    def open_events_for_series(self, series_ticker):
+        """Yield (fetched_utc, events) for one series' open events."""
+        from .timeutil import utcnow
+        for page in self.paginate("/events", {"series_ticker": series_ticker, "status": "open",
+                                              "with_nested_markets": "true", "limit": 200}, "events"):
+            yield utcnow(), self._checked(page["events"])
+
+    def _checked(self, events):
+        for ev in events:
+            require(ev, "event_ticker", "series_ticker", where="event")
+            for m in ev.get("markets") or []:
+                require(m, "ticker", "status", "close_time", where=f"market in {ev['event_ticker']}")
+        return events
+
     def settled_markets(self, min_settled_ts: int):
         for page in self.paginate("/markets", {"status": "settled", "min_settled_ts": min_settled_ts,
                                                "mve_filter": "exclude", "limit": 1000}, "markets"):

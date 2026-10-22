@@ -9,7 +9,7 @@ import shutil
 import sys
 from datetime import timedelta
 
-from . import config, health, ledger
+from . import config, fees, health, ledger
 from .store import Store, from_db_ts, to_db_ts
 from .timeutil import display, iso_z, parse_utc, utcnow
 
@@ -18,6 +18,7 @@ SHORTFALL = 0.05
 MIN_SPORTS = 3
 MIN_FREE_BYTES = 5 * 1024 ** 3
 EXPECTED_TZ = "America/Los_Angeles"
+MAX_CLOSED_RUNS = 12   # Kalshi's weekly maintenance window is 8 runs
 
 
 def system_timezone():
@@ -52,15 +53,29 @@ def build_report(now=None, tz_name=None, free_bytes=None):
         expected = EXPECTED_SNAPSHOT_RUNS
         if first_run and first_run > week_ago:
             expected = int((now - first_run) / timedelta(minutes=15))
-        lines.append(f"snapshot runs (7 days): {runs_ok} ok, {runs_failed} failed, {expected} expected")
-        if expected and runs_ok < expected * (1 - SHORTFALL):
-            problems.append(f"SHORTFALL: {runs_ok} of {expected} expected snapshot runs succeeded")
-        sports = [r[0] for r in store.con.execute(
+        runs_closed = q("SELECT count(*) FROM job_runs WHERE job='snapshot' AND phase='finish' "
+                        "AND status='exchange_closed' AND ts_utc >= ?", to_db_ts(week_ago))
+        lines.append(f"snapshot runs (7 days): {runs_ok} ok, {runs_failed} failed, "
+                     f"{runs_closed} exchange closed, {expected} expected")
+        if expected and runs_ok + runs_closed < expected * (1 - SHORTFALL):
+            problems.append(f"SHORTFALL: {runs_ok + runs_closed} of {expected} expected snapshot runs completed")
+        if runs_closed > MAX_CLOSED_RUNS:
+            problems.append(f"exchange reported closed on {runs_closed} runs in 7 days (weekly window is 8)")
+        sports_all = [r[0] for r in store.con.execute(
             "SELECT DISTINCT m.sport FROM price_snapshots p JOIN markets m ON m.ticker = p.ticker "
             "WHERE p.ts_utc >= ? ORDER BY 1", [to_db_ts(day_ago)]).fetchall()]
-        lines.append(f"sports with snapshots (24 h): {len(sports)} — {', '.join(sports[:12])}")
+        sports = [r[0] for r in store.con.execute(
+            "SELECT DISTINCT m.sport FROM price_snapshots p JOIN markets m ON m.ticker = p.ticker "
+            "WHERE p.ts_utc >= ? AND p.tier IN ('near', 'hourly') ORDER BY 1", [to_db_ts(day_ago)]).fetchall()]
+        lines.append(f"sports with any snapshot (24 h): {len(sports_all)}")
+        lines.append(f"sports with matched 15-min/hourly snapshots (24 h): {len(sports)} — {', '.join(sports[:12])}")
         if len(sports) < MIN_SPORTS:
-            problems.append(f"only {len(sports)} sport(s) snapshotted in 24 h (need {MIN_SPORTS})")
+            problems.append(f"only {len(sports)} sport(s) with matched snapshots in 24 h (need {MIN_SPORTS})")
+        mbs = store.con.execute("""
+            SELECT m.sport, count(DISTINCT m.ticker) FROM odds_matches o
+            JOIN markets m ON m.ticker = o.market_ticker LEFT JOIN settlements s ON s.ticker = m.ticker
+            WHERE s.ticker IS NULL GROUP BY 1 ORDER BY 2 DESC""").fetchall()
+        lines.append("matched open markets by sport: " + (", ".join(f"{k}={v}" for k, v in mbs) or "none"))
         settled = q("SELECT count(*) FROM settlements WHERE recorded_utc >= ?", to_db_ts(week_ago))
         unmatched = q("SELECT count(*) FROM unmatched WHERE ts_utc >= ?", to_db_ts(week_ago))
         matched = q("SELECT count(*) FROM odds_matches")
@@ -82,6 +97,18 @@ def build_report(now=None, tz_name=None, free_bytes=None):
     graded = [r for r in ledger.read_rows(config.shadow_grades_path())
               if parse_utc(r["graded_utc"]) >= week_ago]
     lines.append(f"shadow rows (7 days): {len(shadow)} logged, {len(graded)} graded")
+    try:
+        table = fees.load_table()
+        if table is None:
+            lines.append("fee table: MISSING (every fee fails closed; no shadow rows possible)")
+            problems.append("fee table MISSING")
+        else:
+            lines.append(f"fee table: effective {table['source']['effective']}, "
+                         f"{len(table.get('series') or {})} series overrides, "
+                         f"{len(table.get('unconfirmed') or {})} unconfirmed (fail closed)")
+    except fees.FeeTableInvalid as exc:
+        lines.append(f"fee table: INVALID ({exc})")
+        problems.append(f"fee table INVALID: {exc}")
     db = config.db_path()
     size = db.stat().st_size if db.exists() else 0
     free = free_bytes if free_bytes is not None else shutil.disk_usage(config.data_dir()).free

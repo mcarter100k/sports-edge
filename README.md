@@ -7,11 +7,14 @@ order and never logs in to a trading account.
 
 Every 15 minutes it:
 
-1. **Records prices.** It asks Kalshi's public market data for every open
-   sports market and stores the best bid, best ask, last price and volume.
-   Markets resolving within the next 48 hours get a price row on every run;
-   everything else gets one once an hour. Sports and leagues are discovered
-   from Kalshi each run, so nothing is hardcoded.
+1. **Records prices.** Once a day (03:00 Los Angeles time) it reads every
+   open sports market from Kalshi's public market data and stores the best
+   bid, best ask, last price and volume. Sports and leagues are discovered
+   from Kalshi, so nothing is hardcoded. Markets paired with a sharp-book
+   line (see 2) are also recorded every hour, and every 15 minutes once they
+   resolve within 48 hours. Every run prints how many paired markets each
+   sport has. On Thursdays during Kalshi's maintenance (03:00–05:00 ET) runs
+   are recorded as "exchange closed" and do not alert.
 2. **Compares with sharp odds.** Once an hour it reads Pinnacle moneylines
    from The Odds API, strips out the bookmaker's margin to get a fair
    probability, and pairs each Kalshi game with the same game on Pinnacle.
@@ -21,7 +24,15 @@ Every 15 minutes it:
 3. **Logs gaps, without trading.** When Kalshi's price, after Kalshi's
    trading fee, is more than 3 cents per $1 contract away from the fair
    probability, before the game starts, it writes a row to
-   `data/shadow_ledger.csv`.
+   `data/shadow_ledger.csv`. Fees come only from `config/fee_schedule.json`,
+   which is built from Kalshi's fee schedule PDF in `docs/sources/`, with
+   every value cited. If a series' fee is not confirmed, or Kalshi's API
+   disagrees with the table, that market is skipped and the run says why.
+   A fee is never guessed.
+
+   When a sharp-book game starting within 24 hours has no Kalshi pair, it
+   looks up that sport's Kalshi series directly, in case Kalshi listed the
+   game after the daily read.
 
 Every night at 03:30 Los Angeles time it **grades**: once markets settle,
 it scores how well Kalshi's pre-game price and Pinnacle's fair price
