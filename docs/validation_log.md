@@ -12,13 +12,13 @@ Entries are cleared with a date and the evidence that reality produced.
   Until then the wrapper has run only under `scripts/reality_run.py`.
   *Proposed for replacement* by the 8:00 AM morning iMessage (see
   `docs/proposals/slate_part_b.md`).
-- **Slate and alerts, Part B not built** (added 2026-10-22). These wait on
-  owner review and the owner's machine permissions:
+- **Slate and alerts, Part B built (approved without the wake), not installed**
+  (added 2026-10-22; updated the same day). Pending until installed and observed:
   - the first 8:00 AM morning iMessage;
   - the first pre-game check iMessage;
   - the first "Don't bet now" from a real failing run;
-  - the first reply logged from the phone;
-  - the first `pmset` wake.
+  - the first reply appended by the owner's Shortcut and logged from
+    `replies.txt`.
 - **First real pick** (added 2026-10-22). This needs an odds key in `.env`
   and `config/fee_schedule.json` built from the saved fee PDF. Until both
   exist, no check can price a game.
@@ -250,3 +250,61 @@ Entries are cleared with a date and the evidence that reality produced.
 - **OBSERVED:** the live checkout `/Users/quis/sports-edge` has no `data/`,
   `logs/`, `state/` or `.env`. The live-data hash therefore compared 0 files
   before and after. It would still catch any file created there.
+
+## 2026-10-22: owner rulings before merge (items 2–8) and Part B built
+
+- **Correction (leading, rule 10):** the earlier run report and specs listed
+  the protected files from `main`'s AGENTS.md. On feat/phase1 the list was
+  narrowed in `a843253`:
+  - **Protected on this branch:** `ledger`, `fees`, `grader`, `shadow`,
+    `matching`, and the three config tables.
+  - **Of the files this work changed:** only `shadow.py`, `fees.py` and
+    `grader.py` are protected.
+  - **Now added:** `checks.py` (owner ruling 8).
+  - Recorded in the slate spec and the Part B proposal.
+- **Built** (spec `7131c7e` and correction `c32c0a6`, then the code in
+  `dcd0f04`):
+  - replies read from `iCloud Drive/sports-edge/replies.txt`; the
+    `chat.db` code was removed;
+  - the daily cap counts money at risk;
+  - a same-result pair is shown once, the cheaper;
+  - the line wording depends on how many times the sharp book was read;
+  - free-plan soccer is EPL, La Liga and the Champions League;
+  - Part B without the wake: `run_job` passes arguments, the 15-minute job
+    always runs `slate alert`, and an 8:00 `run_morning.sh` replaces the
+    digest job.
+- **Found by the reality gate, fixed:**
+  - **Unmatched replies:** the spec said an unclear reply makes the next
+    message ask for the pick number, but no code did it. Now a message is
+    sent once per such reply, and the morning message lists it.
+- **VERIFIED (Gate 1):** 337 passed, 1 skipped. Mutation checks, each
+  reverted byte-identical:
+  - **Rulings and wrappers:** 17 of 17 killed.
+  - **Unclear-reply message:** 1 of 1 killed.
+  - **Earlier sets rerun:** 36 of 40 build mutants and 10 of 12 review
+    mutants applied and were killed.
+    - The survivor is build mutant 27 (the group-level "already sent"
+      check), which is backed up by the per-text record. Removing both is
+      killed.
+    - Three stale patterns were re-aimed at the current code, and all three
+      were killed.
+    - Two cover code that no longer exists: the old cap formula and the
+      `chat.db` date filter.
+- **VERIFIED (Gate 2, `reality_run.py`, real Kalshi, real `/bin/bash`
+  wrappers, temporary folder, 0 live files changed, no failure markers):**
+  - **`run_snapshot.sh`:**
+    - the daily scan recorded 8,267 events and 94,257 markets, with 0 price
+      rows and 0 lookups;
+    - `slate alert` then ran;
+    - `health.json` recorded `snapshot` and `slate_alert` as succeeded.
+  - **`run_morning.sh` with a `replies.txt`:**
+    - the file was read and left unchanged;
+    - `skip` was logged once (as `unclear`; no picks exist), and a
+      non-reply line was ignored;
+    - after a second run, the morning text named the unmatched `took 41`;
+    - the sheet shows "money at risk today $0 of $30".
+- **NOT CHECKED:**
+  - the owner's Shortcut, on a phone;
+  - an iMessage actually sent;
+  - any odds call, check or pick (no odds key and no fee table on this
+    machine).
