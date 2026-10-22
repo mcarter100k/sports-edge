@@ -127,7 +127,7 @@ def odds_world(store, now, priced=None):
     stubs = {"basketball_nba": [stub("R1", "Philadelphia 76ers", "Cleveland Cavaliers", start),
                                 stub("R2", "Los Angeles Lakers", "Golden State Warriors", start)]}
     priced = priced or {"R1": {"Philadelphia 76ers": D("1.55"), "Cleveland Cavaliers": D("2.60")}}
-    return FakeOdds(store, [ref_sport(), ref_sport("esports_x", "Esports")], stubs, priced)
+    return FakeOdds(store, [ref_sport(), ref_sport("esports_x", "Esports")], stubs, priced, now=now)
 
 
 def test_odds_step_matches_prices_and_logs_shadow_rows(monkeypatch):
@@ -209,3 +209,56 @@ def test_odds_interval_not_due_skips_calls_but_still_compares():
     summary = run_cycle(FakeKalshi(sers, pages, later), factory, lambda: later, o, o)
     assert summary["odds"] == "interval_not_due" and made["src"].priced_calls == []
     assert "shadow_checked" in summary
+
+
+def test_unmatched_printed_once_per_event_and_reason():
+    sers, pages = world(FULL_AT)
+    for m in pages[0][0]["markets"]:
+        if m["yes_sub_title"] == "Cleveland":
+            m["yes_sub_title"] = "Cleveland C"
+    out, err, o, e = lines()
+    run_cycle(FakeKalshi(sers, pages, FULL_AT), lambda st: odds_world(st, FULL_AT), lambda: FULL_AT, o, e)
+    later = FULL_AT + timedelta(hours=1, minutes=5)
+    out2, err2, o2, e2 = lines()
+    summary = run_cycle(FakeKalshi(sers, pages, later), lambda st: odds_world(st, later), lambda: later, o2, e2)
+    assert sum(m.startswith("UNMATCHED KXNBAGAME-E1 ") for m in err) == 1
+    assert "markets=2" in next(m for m in err if m.startswith("UNMATCHED"))
+    assert not any(m.startswith("UNMATCHED") for m in err2)      # not repeated
+    assert summary["unmatched"] >= 1                              # but still counted
+    with Store.open() as s:
+        assert counts(s, "SELECT count(*) FROM unmatched") == 1
+
+
+def test_game_in_progress_is_matched_not_priced():
+    now = FULL_AT
+    sers, _ = world(now)
+    started = now - timedelta(hours=1)
+    ev = game_event("KXNBAGAME-L1", "KXNBAGAME", ["Cleveland", "Philadelphia"], started)
+    made = {}
+
+    def factory(store):
+        src = FakeOdds(store, [ref_sport()], {"basketball_nba": [
+            stub("RL", "Philadelphia 76ers", "Cleveland Cavaliers", started)]}, {}, now=now)
+        made["src"] = src
+        return src
+
+    out, err, o, e = lines()
+    summary = run_cycle(FakeKalshi(sers, [[ev]], now), factory, lambda: now, o, e)
+    assert not any(m.startswith("UNMATCHED") for m in err)
+    assert summary["events_matched"] == 1 and made["src"].priced_calls == []
+
+
+def test_missing_cost_header_still_counts_against_budget():
+    from sports_edge.snapshot import build_odds_source
+    import os
+    os.environ["ODDS_API_KEY"] = "k"
+    try:
+        with Store.open() as s:
+            src = build_odds_source(s)
+            src.on_call(sport_key="x", endpoint="odds", http_status=200, credits_last=None,
+                        credits_used=None, credits_remaining=None)
+            src.on_call(sport_key="x", endpoint="events", http_status=200, credits_last=None,
+                        credits_used=None, credits_remaining=None)
+            assert s.credits_used_since(FULL_AT - timedelta(days=3650)) == 1
+    finally:
+        del os.environ["ODDS_API_KEY"]

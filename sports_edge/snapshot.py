@@ -25,6 +25,7 @@ LOOKUP_AFTER = timedelta(hours=6)
 LOOKUP_LIMIT = 200
 LOOKUP_MAX_AGE = timedelta(days=14)
 MATCH_WINDOW_AFTER_HORIZON = timedelta(hours=8)
+LIVE_LOOKBACK = timedelta(hours=8)
 
 
 class ScanEmpty(Exception):
@@ -129,10 +130,12 @@ def scan(client, sports):
 def sweep_settlements(store, client, now, open_tickers):
     last_full = store.last_success(JOB, tier="full")
     since = (last_full - SWEEP_OVERLAP) if last_full else now - FIRST_SWEEP
-    known = {t for (t,) in store.con.execute("SELECT ticker FROM markets").fetchall()}
-    rows = [r for r in (settlement_row(m, "settled_sweep")
-                        for m in client.settled_markets(int(since.timestamp())))
-            if r and r["ticker"] in known]
+    swept = [r for r in (settlement_row(m, "settled_sweep")
+                         for m in client.settled_markets(int(since.timestamp()))) if r]
+    known = {t for (t,) in store.con.execute(
+        "SELECT ticker FROM markets WHERE ticker IN (SELECT unnest(?))",
+        [[r["ticker"] for r in swept]]).fetchall()} if swept else set()
+    rows = [r for r in swept if r["ticker"] in known]
     added, conflicts = store.record_settlements(rows, now)
     pending = store.con.execute("""
         SELECT m.ticker FROM markets m
@@ -178,7 +181,7 @@ def odds_step(store, source, games, run_id, now, out, err):
         if not sp.active or sp.has_outrights or tag not in tags_needed:
             continue
         for stub in source.list_events(sp.key):
-            if now < stub.commence_utc <= horizon_end:
+            if now - LIVE_LOOKBACK <= stub.commence_utc <= horizon_end:
                 stubs_by_tag.setdefault(tag, []).append(stub)
                 stub_by_id[stub.source_event_id] = stub
     result = match(relevant, stubs_by_tag, aliases)
@@ -188,9 +191,8 @@ def odds_step(store, source, games, run_id, now, out, err):
             "SELECT DISTINCT event_ticker, source_event_id FROM match_conflicts WHERE seen_utc = ?",
             [to_db_ts(now)]).fetchall():
         err(f"MATCH CONFLICT {c[0]} now fits {c[1]}; never compared again")
-    for u in result.unmatched:
-        err(f"UNMATCHED {u['event_ticker']} sport={u['sport']} reason={u['reason']} detail={u['detail']}")
-    store.append("unmatched", [{**u, "run_id": run_id, "ts_utc": now} for u in result.unmatched])
+    markets_per_event = {g.event_ticker: len(g.teams) + (1 if g.tie_market else 0) for g, _ in relevant}
+    report_unmatched(store, result.unmatched, markets_per_event, run_id, now, err)
 
     # Price matched events, soonest first, within the daily credit budget.
     outcomes_by_event = {}
@@ -199,7 +201,8 @@ def odds_step(store, source, games, run_id, now, out, err):
     by_key = {}
     for eid in outcomes_by_event:
         stub = stub_by_id[eid]
-        by_key.setdefault(stub.sport_key, []).append(stub)
+        if stub.commence_utc > now:   # only games that have not started are priced
+            by_key.setdefault(stub.sport_key, []).append(stub)
     day_start = now.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
     budget = config.odds_daily_credits()
     priced, rejected, budget_hit, extra_unmatched = 0, 0, False, []
@@ -231,14 +234,13 @@ def odds_step(store, source, games, run_id, now, out, err):
                     "book_last_update_utc": ref.book_last_update_utc})
             priced += 1
         store.append("reference_odds", ref_rows)
+    priced_mismatch = []
     for u in extra_unmatched:
-        kalshi_events = sorted({m["event_ticker"] for m in result.matches
-                                if m["source_event_id"] == u["event_ticker"]})
-        for ev in kalshi_events:
-            err(f"UNMATCHED {ev} sport={u['sport']} reason=outcome_count detail={u['detail']}")
-            store.append("unmatched", [{"run_id": run_id, "ts_utc": now, "event_ticker": ev,
-                                        "sport": u["sport"], "reason": "outcome_count",
-                                        "detail": u["detail"]}])
+        for ev in sorted({m["event_ticker"] for m in result.matches
+                          if m["source_event_id"] == u["event_ticker"]}):
+            priced_mismatch.append({"event_ticker": ev, "sport": u["sport"],
+                                    "reason": "outcome_count", "detail": u["detail"]})
+    report_unmatched(store, priced_mismatch, markets_per_event, run_id, now, err)
     unmatched_by_sport = Counter(u["sport"] for u in result.unmatched)
     return {"odds": "ran", "games_considered": len(relevant), "matches_added": added,
             "match_conflicts": conflicts, "events_matched": len(outcomes_by_event),
@@ -247,12 +249,29 @@ def odds_step(store, source, games, run_id, now, out, err):
             "devig_rejected": rejected, "budget_reached": budget_hit}
 
 
+def report_unmatched(store, unmatched, markets_per_event, run_id, now, err):
+    """Print and record each (event, reason) the first time only; return how many were new."""
+    if not unmatched:
+        return 0
+    seen = set(store.con.execute(
+        "SELECT event_ticker, reason FROM unmatched WHERE event_ticker IN (SELECT unnest(?))",
+        [sorted({u["event_ticker"] for u in unmatched})]).fetchall())
+    new = [u for u in unmatched if (u["event_ticker"], u["reason"]) not in seen]
+    for u in new:
+        err(f"UNMATCHED {u['event_ticker']} sport={u['sport']} reason={u['reason']} "
+            f"markets={markets_per_event.get(u['event_ticker'], '?')} detail={u['detail']}")
+    store.append("unmatched", [{**u, "run_id": run_id, "ts_utc": now} for u in new])
+    return len(new)
+
+
 def build_odds_source(store):
     key = config.odds_api_key()
     if not key:
         return None
 
     def record(**call):
+        if call["endpoint"] == "odds" and call.get("credits_last") is None:
+            call["credits_last"] = 1   # never let a missing header stop the budget counting
         store.append("odds_calls", [{"ts_utc": utcnow(), **call}])
 
     return TheOddsApi(key, on_call=record)

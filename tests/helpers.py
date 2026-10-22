@@ -71,13 +71,14 @@ class FakeKalshi:
 class FakeOdds:
     name = "the-odds-api"
 
-    def __init__(self, store, sports, stubs, priced, cost=1):
+    def __init__(self, store, sports, stubs, priced, cost=1, now=None):
         self.store, self.sports, self.stubs, self.priced, self.cost = store, sports, stubs, priced, cost
+        self.now = now   # the test clock: call times must not come from the wall clock
         self.priced_calls = []
 
     def _record(self, endpoint, key, credits):
-        from sports_edge.timeutil import utcnow
-        self.store.append("odds_calls", [{"ts_utc": utcnow(), "sport_key": key, "endpoint": endpoint,
+        assert self.now is not None, "FakeOdds needs the test clock"
+        self.store.append("odds_calls", [{"ts_utc": self.now, "sport_key": key, "endpoint": endpoint,
                                           "http_status": 200, "credits_last": credits,
                                           "credits_used": None, "credits_remaining": 400}])
 
