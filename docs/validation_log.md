@@ -497,3 +497,70 @@ Entries are cleared with a date and the evidence that reality produced.
   pull. These need an odds key, a fee table and matched games.
 - **PENDING, after merge (owner ruling):** the user-level `/rate-slip`
   skill.
+
+## 2026-10-22: feat/phase1 history rewritten (owner ruling)
+
+- **What changed:** the attribution trailer line was removed from the 22
+  commit messages that carried it. Nothing else changed:
+  - every commit's tree is byte-identical, in order (48 of 48);
+  - the final tree is `3ff3622a13c7b732d48469889c63687d9da49d13` before and
+    after;
+  - authors, committers, dates and every other message line are unchanged;
+  - `main` is untouched (`08a6bf8`).
+- **Heads:** old `a732499918456b0bdf4dffb52430e4d5853cdc8c`, new
+  `8fbefc4e80cdbab5a23543d538514a6325b094fb`.
+- **Push:** force-pushed to `origin/feat/phase1` only, with a lease on the
+  previous remote head `8a8501e`.
+- **Commit ids cited earlier in this log and in the specs are the old
+  ones.** The map from old to new, oldest first:
+
+| Old | New |
+|---|---|
+| `df857d7` | `df857d7` |
+| `52b1a11` | `52b1a11` |
+| `da878bc` | `da878bc` |
+| `0e0316a` | `0e0316a` |
+| `57108f0` | `57108f0` |
+| `76e50dd` | `76e50dd` |
+| `6438992` | `6438992` |
+| `9530fbb` | `9530fbb` |
+| `a843253` | `a843253` |
+| `c81ed81` | `c81ed81` |
+| `ea2093e` | `ea2093e` |
+| `ecf3d71` | `ecf3d71` |
+| `830a1d0` | `830a1d0` |
+| `5870c81` | `5870c81` |
+| `50de6e6` | `50de6e6` |
+| `a7c5e1c` | `a7c5e1c` |
+| `cfcd6b6` | `cfcd6b6` |
+| `fa14514` | `fa14514` |
+| `8831895` | `8831895` |
+| `be9eee1` | `be9eee1` |
+| `0565e46` | `0565e46` |
+| `23f0dd1` | `23f0dd1` |
+| `55e192c` | `55e192c` |
+| `a045cab` | `a045cab` |
+| `a6a4251` | `87f359f` |
+| `916cc84` | `ac28dc4` |
+| `e8a6486` | `b42711b` |
+| `ac87d98` | `b78f494` |
+| `4606d7a` | `8d43e75` |
+| `6233c50` | `b8a874b` |
+| `7131c7e` | `f8283c2` |
+| `c32c0a6` | `86a6e06` |
+| `dcd0f04` | `5abdca8` |
+| `251e5f4` | `f744b79` |
+| `967cb8f` | `8ace043` |
+| `95785c2` | `cbbadd7` |
+| `e0bb32d` | `7ffe6ad` |
+| `5096b94` | `8d083c7` |
+| `1029414` | `ec04540` |
+| `745609e` | `629713f` |
+| `d6ad729` | `111acd2` |
+| `c76d49b` | `2bb77de` |
+| `79aa925` | `bc2a244` |
+| `13f6537` | `621f37f` |
+| `42f744e` | `c03bcc3` |
+| `8a8501e` | `f58a409` |
+| `d304aaa` | `82428ab` |
+| `a732499` | `8fbefc4` |
