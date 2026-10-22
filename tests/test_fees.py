@@ -172,3 +172,15 @@ def test_missing_rounding_entry_is_invalid(tmp_path):
     t = json.loads(p.read_text()); del t["rounding"]; p.write_text(json.dumps(t))
     with pytest.raises(FeeTableInvalid):
         load_table(p)
+
+
+def test_combo_maker_fee_type_fails_closed_against_default_table(tmp_path):
+    # fee_model_spec.md amendment 2026-10-22: a combo maker fee is in force from
+    # 2026-08-20; a series the table does not give a maker fee must not be priced.
+    t = load_table(fee_table(tmp_path))
+    with pytest.raises(FeeScheduleUnknown, match="disagrees with table maker multiplier"):
+        resolve_multipliers(t, "KXMVESPORTSMULTIGAMEEXTENDED", "quadratic_with_combo_maker_fees", 1, False)
+    t2 = load_table(fee_table(tmp_path, series={"KXMVECOMBO": ("1", "1")}))
+    assert resolve_multipliers(t2, "KXMVECOMBO", "quadratic_with_combo_maker_fees", 1, False) == (D("1"), D("1"))
+    with pytest.raises(FeeScheduleUnknown, match="API multiplier"):
+        resolve_multipliers(t2, "KXMVECOMBO", "quadratic_with_combo_maker_fees", 2, False)

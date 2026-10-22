@@ -83,3 +83,26 @@ it is called an edge.
   or to change `notify.sh`'s limit, which is a protected edit.
 - **PENDING once built:** the first 7:30 AM firing, recorded in
   `docs/validation_log.md`.
+
+---
+
+## Amendment 2026-10-22: two definitions corrected by the reality gate (before any merge)
+
+The first reality run, on a real snapshot of 8,343 open games, showed that
+two Part A definitions above were wrong:
+
+1. **"Games watched"** counted every game in the daily full scan,
+   including categories such as Chess and "Cities". That is the catalogue,
+   not what the system watches; with the by-sport list the line ran to 738
+   characters. **Now:** distinct games snapshotted in the matched tiers
+   (15-minute and hourly), which are the games compared with reference
+   odds. That is the same tier definition as the heartbeat. When there are
+   none, the line reads "none matched to reference odds". The full-scan
+   total, by category, moves to the report file.
+2. **"Skipped: 0"** was printed when nothing had been checked: with no odds
+   key the shadow step never runs. **Now:** the runs' `shadow_checked`
+   counts are summed, and when the sum is zero the line reads "nothing
+   checked (no games with reference odds)".
+
+**Line length, measured:** 481 characters in the all-problems state, so a
+`notify.sh` banner cuts it either way. The Part B owner decision stands.
