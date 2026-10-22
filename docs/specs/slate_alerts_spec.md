@@ -907,3 +907,10 @@ board amendment above.
 - Order and limit are unchanged: biggest gap first, at most 10, then
   `+N more`.
 - Near misses, older checks and POSTPONED are unchanged.
+
+---
+
+## Amendment 2026-10-22: the morning message adds your own bets
+
+One line, before the system line: `Your own bets: N, settled N, +/−$X.`,
+as defined in `my_bets_spec.md`. It is never part of the stage line.

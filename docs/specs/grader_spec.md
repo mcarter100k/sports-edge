@@ -187,3 +187,17 @@ unchanged and never read the markout file.
   3. `no later two-sided price before any start`.
 
   Postponed rows skipped are counted on the same line when there are any.
+
+---
+
+## Amendment 2026-10-22: settling the owner's own bets (record-only; see `my_bets_spec.md`)
+
+- **Every run** settles the logged bets in `data/my_bets.csv` from the
+  `settlements` table, by each leg's recorded Kalshi market. The outcomes
+  are lost, won and void leg, as in the spec.
+- **Results** go once per bet to `data/my_bet_grades.csv`, through
+  `ledger.append_rows`.
+- **The report** adds one line: your own bets logged, settled (won, lost,
+  void), net dollars, open, and can't settle.
+- **Kept separate:** these never touch the shadow ledger, the shadow
+  grades, the markouts or the stage line.
