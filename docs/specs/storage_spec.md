@@ -63,3 +63,12 @@ record-only).
 
 `data/bet_log.csv` is a new append-only CSV ledger, written only through
 `ledger.append_rows`.
+
+---
+
+## Amendment 2026-10-22: `data/shadow_markouts.csv` (see `grader_spec.md`, "Markouts")
+
+A new append-only CSV ledger, written only through `ledger.append_rows` and
+idempotent by `row_id`: a row id already in the file is never written again.
+It is never edited, regenerated or deleted. No database table and no new
+config key are added.
