@@ -564,3 +564,31 @@ Entries are cleared with a date and the evidence that reality produced.
 | `8a8501e` | `f58a409` |
 | `d304aaa` | `82428ab` |
 | `a732499` | `8fbefc4` |
+
+## 2026-10-22: live odds gate (steps 1–2), matching fixes, and the merge waiver
+
+**Merge to main approved by owner before the final live-gate step (3:41 PM PT check). Two of three gate steps passed live (matching, paid odds call). The remaining step runs after merge; install.sh is held until it passes.**
+
+- **Setup:** the odds key is in `/Users/quis/sports-edge/.env` (gitignored, permissions 600). Every run used `reality_run.py` with a temporary data folder, a cap of `ODDS_DAILY_CREDITS=20`, and nothing sent.
+  - **Checked in every run:** 0 live files changed, and the key appears in no output or log.
+- **VERIFIED, step 1 (real daily cycle with matching, 19:39Z):**
+  - **Kalshi:** 8,663 events and 99,539 markets.
+  - **Free calls only:** 9 calls, 0 credits.
+  - **Pairing:** 16 games paired correctly in NBA, NHL, NFL, college football, EPL and La Liga, out of 741 Kalshi games considered. Checks due: 0.
+  - **The 304 unmatched games:** mostly leagues not followed, or games beyond the 24-hour listing. Four of the day's followed games failed on names alone: NHL `New York R` and `New York I`, and college football `Appalachian St.` and `Kennesaw St.`
+- **VERIFIED, step 2 (the first measured paid call, 19:45Z):**
+  - **The call:** `rate` on the owner's slip made one real NBA pull. The reported cost was 1 credit, with 498 left on the account (1 had been used before the gate).
+  - **Fair chances:** PHI 56.0% (slip 57%) and OKC 72.8% (slip 74%).
+  - **Not stored:** `reference_odds` stayed at 0 rows, as specified.
+- **Fixes from step 1, owner-approved, spec `2120124` and code `d87f5f3`:**
+  - **Aliases:** `New York R` → Rangers and `New York I` → Islanders.
+  - **"St." reads as "State":** rule version `match_v2`.
+  - **The unmatched log:** one line each only for in-scope games within the odds window; the rest as one count per reason.
+  - **Tests:** each fix pairs the right game; "Kansas" against "Kansas Jayhawks" and "Kansas State Wildcats" still refuses.
+  - **Suite:** 362 passed, 1 skipped.
+  - **Mutants:** 98 of 98 killed, from clean caches.
+- **OBSERVED (live Kalshi API, 2026-10-22):** every followed game series is `quadratic_with_maker_fees`, multiplier 1. `KXMLBGAME` and 18 other MLB series are 0.5. The fail-closed cross-check therefore prices a followed series only once the fee table, cited to a page, gives it a maker multiplier above 0.
+- **PENDING:**
+  - the 3:41 PM PT check (step 3), run against `main` after the merge;
+  - the fee table, waiting on the owner's two source files in `docs/sources/`;
+  - `install.sh`, held until step 3 passes and the owner says "install".
