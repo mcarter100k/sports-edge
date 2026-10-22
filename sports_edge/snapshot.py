@@ -24,6 +24,7 @@ FIRST_SWEEP = timedelta(hours=26)
 LOOKUP_AFTER = timedelta(hours=6)
 LOOKUP_LIMIT = 200
 LOOKUP_MAX_AGE = timedelta(days=14)
+STILL_OPEN_WINDOW = timedelta(hours=2)   # active and seen this recently = still open
 MATCH_WINDOW_AFTER_HORIZON = timedelta(hours=8)
 LIVE_LOOKBACK = timedelta(hours=8)
 
@@ -142,9 +143,10 @@ def sweep_settlements(store, client, now, open_tickers):
         LEFT JOIN settlements s ON s.ticker = m.ticker
         LEFT JOIN (SELECT DISTINCT market_ticker FROM odds_matches) o ON o.market_ticker = m.ticker
         WHERE s.ticker IS NULL AND m.resolve_by < ? AND m.resolve_by > ?
+          AND (m.status <> 'active' OR m.last_seen_utc < ?)
         ORDER BY (o.market_ticker IS NOT NULL) DESC, m.resolve_by DESC
         LIMIT ?""", [to_db_ts(now - LOOKUP_AFTER), to_db_ts(now - LOOKUP_MAX_AGE),
-                     LOOKUP_LIMIT + len(open_tickers)]).fetchall()
+                     to_db_ts(now - STILL_OPEN_WINDOW), LOOKUP_LIMIT + len(open_tickers)]).fetchall()
     lookups = [t for (t,) in pending if t not in open_tickers][:LOOKUP_LIMIT]
     looked = []
     for t in lookups:

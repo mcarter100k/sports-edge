@@ -262,3 +262,20 @@ def test_missing_cost_header_still_counts_against_budget():
             assert s.credits_used_since(FULL_AT - timedelta(days=3650)) == 1
     finally:
         del os.environ["ODDS_API_KEY"]
+
+
+def test_lookups_skip_markets_still_open():
+    from sports_edge.snapshot import sweep_settlements
+    now = FULL_AT
+    past = now - timedelta(hours=12)
+    rows = [{"ticker": t, "status": st, "resolve_by": past, "last_seen_utc": seen,
+             "first_seen_utc": seen} for t, st, seen in (
+        ("OPEN-1", "active", now - timedelta(minutes=10)),       # in progress: skip
+        ("GONE-1", "active", now - timedelta(hours=5)),          # vanished from scans: look up
+        ("CLOSED-1", "closed", now - timedelta(minutes=10)))]    # not active: look up
+    fake = FakeKalshi([], [], now, lookups={"GONE-1": {"ticker": "GONE-1", "status": "finalized",
+                                                      "result": "no", "settlement_value_dollars": "0"}})
+    with Store.open() as s:
+        s.upsert("markets", rows, "ticker")
+        res = sweep_settlements(s, fake, now, set())
+        assert res["settlement_lookups"] == 2 and res["settlements_swept"] == 1
