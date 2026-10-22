@@ -338,3 +338,28 @@ def test_unknown_sport_key_is_unmatched_reference_once():
     run_cycle(FakeKalshi(sers, pages, later),
               lambda st: odds_world(st, later, extra_stubs=extra, sports=sports), lambda: later, o2, e2)
     assert not any(m.startswith("UNMATCHED-REFERENCE H1 ") for m in err2)
+
+
+def test_budget_assumes_the_dearest_call_seen(monkeypatch):
+    # cap 3; one earlier paid call cost 3 -> the next call (worst case 3) must not be made
+    monkeypatch.setenv("ODDS_DAILY_CREDITS", "3")
+    sers, pages = world()
+    made = {}
+
+    def factory(store):
+        store.append("odds_calls", [{"ts_utc": DAILY_AT - timedelta(days=2), "sport_key": "x",
+                                     "endpoint": "odds", "http_status": 200, "credits_last": 3}])
+        made["src"] = odds_world(store, DAILY_AT)
+        return made["src"]
+
+    run_cycle(FakeKalshi(sers, pages, DAILY_AT), factory, lambda: DAILY_AT, quiet, quiet)
+    assert made["src"].priced_calls == [("basketball_nba", ["R1"])]       # 0 + 3 <= 3: allowed
+    later = DAILY_AT + timedelta(hours=1, minutes=5)
+    made2 = {}
+
+    def factory2(store):
+        made2["src"] = odds_world(store, later)
+        return made2["src"]
+
+    run_cycle(FakeKalshi(sers, pages, later), factory2, lambda: later, quiet, quiet)
+    assert made2["src"].priced_calls == []                                  # 1 + 3 > 3: refused

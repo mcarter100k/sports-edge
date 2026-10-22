@@ -175,7 +175,10 @@ def odds_step(store, source, client, upsert_events, run_id, now, out, err):
     budget = config.odds_daily_credits()
     priced, rejected, budget_hit, mismatched = 0, 0, False, []
     for key, stubs in sorted(by_key.items(), key=lambda kv: min(s.commence_utc for s in kv[1])):
-        if store.credits_used_since(day_start) + 1 > budget:
+        # Assume the dearest paid call seen so far, so the cap is never crossed.
+        worst = store.con.execute(
+            "SELECT coalesce(max(credits_last), 1) FROM odds_calls WHERE endpoint = 'odds'").fetchone()[0]
+        if store.credits_used_since(day_start) + max(1, worst) > budget:
             out(f"ODDS BUDGET REACHED ({budget} credits/day); {key} and later sports not priced")
             budget_hit = True
             break
