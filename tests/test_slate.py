@@ -329,7 +329,7 @@ def test_morning_message(checked):
     assert lines[5] == "Unchecked yesterday: none (all 1 games checked)"
     assert lines[6].startswith("System: ") and "bet log unreadable" in lines[6]
     assert not list(config.logs_dir().glob("digest_*.txt"))           # cut A: no digest report
-    assert "OPEN PICKS" in (config.sheet_dir() / "sheet.txt").read_text()
+    assert "BOARD" in (config.sheet_dir() / "sheet.txt").read_text()
 
 
 def test_unchecked_games_are_counted_by_reason(tmp_path, monkeypatch):

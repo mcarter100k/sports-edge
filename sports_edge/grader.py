@@ -5,9 +5,10 @@ python -m sports_edge.grader
 import math
 import statistics
 import sys
+from datetime import timedelta
 from decimal import Decimal
 
-from . import bets, config, ledger
+from . import bets, checks, config, ledger
 from .fees import fee_for_order
 from .kalshi import KalshiClient
 from .snapshot import new_run_id, record_failure, sweep_settlements
@@ -29,6 +30,12 @@ SHADOW_GRADE_HEADER = [
     # record-only closing line value (docs/specs/grader_spec.md amendment)
     "closing_fair_prob", "closing_ref_fetched_utc", "closing_side_fair", "clv", "fair_move", "graded_utc",
 ]
+# record-only markouts (docs/specs/grader_spec.md, "Markouts"); nothing but markout_report reads them
+MARKOUT_HEADER = [
+    "row_id", "market_ticker", "event_ticker", "side", "rule_id", "snapshot_utc", "start_utc", "price_paid",
+    "entry_mid", "next_utc", "next_mid", "markout_next", "close_utc", "close_mid", "markout_close", "graded_utc",
+]
+NEXT_WINDOW = (timedelta(minutes=10), timedelta(minutes=20))
 
 
 def brier(p, y):
@@ -145,6 +152,88 @@ def grade_shadow(store, now):
             "graded_utc": iso_z(now)})
     ledger.append_rows(config.shadow_grades_path(), SHADOW_GRADE_HEADER, out)
     return len(out), skipped
+
+
+def side_mid(yes_mid, side):
+    """The mid of the side bought, before fee: the Yes mid, or 1 - it for NO."""
+    return yes_mid if side == "YES" else Decimal(1) - yes_mid
+
+
+def markouts(store, r, start):
+    """Side mid at the next stored price 10-20 min after the row, and at the last price before the
+    start, each minus the side mid at entry. Two-sided snapshots only; blank when missing."""
+    out = {k: "" for k in MARKOUT_HEADER[8:15]}
+    if r.get("kalshi_mid") in (None, ""):
+        return out
+    entry, at = side_mid(Decimal(r["kalshi_mid"]), r["side"]), parse_utc(r["snapshot_utc"])
+    snaps = [(from_db_ts(ts), side_mid((bid + ask) / 2, r["side"])) for ts, bid, ask in store.con.execute("""
+        SELECT ts_utc, yes_bid, yes_ask FROM price_snapshots
+        WHERE ticker = ? AND ts_utc > ? AND ts_utc < ? AND yes_bid > 0 AND yes_bid <= yes_ask AND yes_ask < 1
+        ORDER BY ts_utc""", [r["market_ticker"], to_db_ts(at), to_db_ts(start)]).fetchall()]
+    found = {"next": next((s for s in snaps if NEXT_WINDOW[0] <= s[0] - at <= NEXT_WINDOW[1]), None),
+             "close": snaps[-1] if snaps else None}
+    out["entry_mid"] = entry
+    for name, snap in found.items():
+        if snap:
+            out.update({f"{name}_utc": iso_z(snap[0]), f"{name}_mid": snap[1], f"markout_{name}": snap[1] - entry})
+    return out
+
+
+def grade_markouts(store, now, source):
+    """Measure each shadow row once its game has started (idempotent by row_id). Postponed rows are
+    skipped and counted. Returns (rows written, postponed rows skipped)."""
+    path = config.shadow_markouts_path()
+    done = {r["row_id"] for r in ledger.read_rows(path)}
+    starts = checks.latest_starts(store, source)
+    out, postponed = [], 0
+    for r in ledger.read_rows(config.shadow_ledger_path()):
+        if r["row_id"] in done:
+            continue
+        at_check = parse_utc(r["commence_utc"])
+        start = starts.get(r["source_event_id"]) or at_check
+        if start - at_check >= bets.POSTPONED_AFTER:
+            postponed += 1
+            continue
+        if now < start:
+            continue
+        out.append({**{k: r[k] for k in MARKOUT_HEADER[:6]}, "start_utc": iso_z(start), "price_paid": r["price_paid"],
+                    **markouts(store, r, start), "graded_utc": iso_z(now)})
+    if out:
+        ledger.append_rows(path, MARKOUT_HEADER, out)
+    return len(out), postponed
+
+
+def markout_report(store, postponed):
+    """One line. Unit: the result (two ways to back one team are one), counted in games."""
+    logged = ledger.read_rows(config.shadow_ledger_path())
+    measured = {m["row_id"]: m for m in ledger.read_rows(config.shadow_markouts_path())}
+    skipped = f"; {postponed} postponed rows skipped" if postponed else ""
+    teams = {}
+    for e in {r["event_ticker"] for r in logged}:
+        titles = [t for (t,) in store.con.execute(
+            "SELECT yes_sub_title FROM markets WHERE event_ticker = ? ORDER BY ticker", [e]).fetchall()]
+        teams[e] = {"titles": [t for t in titles if t != "Tie"], "tie": "Tie" in titles}
+    first = {}       # each result's earliest first-fire row: {row_id: game}
+    for rs in bets.results(logged, lambda r: bets.result_key(r, teams[r["event_ticker"]])).values():
+        pick = min(rs, key=lambda x: (x["snapshot_utc"], x["row_id"]))
+        first[pick["row_id"]] = pick["event_ticker"]
+    parts = []
+    for name, words in (("markout_next", "next price 10-20 min later"), ("markout_close", "last price before start")):
+        games = {}
+        for rid, event in first.items():
+            if measured.get(rid, {}).get(name):
+                games.setdefault(event, []).append(Decimal(measured[rid][name]))
+        if games:
+            n = len(games)
+            mean = statistics.fmean(float(sum(v) / len(v)) for v in games.values())
+            parts.append(f"{words} {mean:+.4f} over {n} games"
+                         + (f" (INSUFFICIENT: under {INSUFFICIENT_N})" if n < INSUFFICIENT_N else ""))
+    if parts:
+        return ["markouts (Kalshi mid of the side bought, before fee, minus the mid at entry; record only): "
+                + " · ".join(parts) + skipped]
+    cause = ("no shadow rows logged yet" if not logged else "no logged game has started yet" if not measured
+             else "no later two-sided price before any start")
+    return [f"markouts: 0 measured ({cause}){skipped}"]
 
 
 def insufficient(n):
@@ -371,15 +460,17 @@ def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
             summary.update(sweep_settlements(store, client, now, set()))
             n_cal, cal_skips, settled_matched = calibrate(store, source, now)
             n_sh, sh_skips = grade_shadow(store, now)
+            n_mk, mk_postponed = grade_markouts(store, now, source)
             matched = store.con.execute(
                 "SELECT count(*) FROM odds_matches WHERE source = ?", [source]).fetchone()[0]
-            summary.update({"calibration_graded": n_cal, "shadow_graded": n_sh,
+            summary.update({"calibration_graded": n_cal, "shadow_graded": n_sh, "markouts_measured": n_mk,
                             "matched_markets": matched, "matched_and_settled": settled_matched,
                             **{f"cal_skip_{k}": v for k, v in cal_skips.items()},
                             **{f"shadow_skip_{k}": v for k, v in sh_skips.items()}})
             lines = [f"GRADER OK run={run_id} " + " ".join(f"{k}={v}" for k, v in summary.items())]
             lines += calibration_report(matched, settled_matched)
             lines += shadow_report()
+            lines += markout_report(store, mk_postponed)
             lines += bets_report(store)
         except BaseException as exc:
             summary["error"] = f"{type(exc).__name__}: {exc}"

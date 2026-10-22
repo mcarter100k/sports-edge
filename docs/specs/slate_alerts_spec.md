@@ -760,3 +760,150 @@ exit 0.
   notification.
 - **Unchanged:** `SPORTS_EDGE_NOTIFY=log` still records without delivering,
   in tests and reality runs.
+
+---
+
+## Amendment 2026-10-22: the board (owner-approved; replaces OPEN PICKS)
+
+**Why.** OPEN PICKS showed each pick from its latest ledger row, not from its
+game's latest check. On the paid plan, a gap logged at the 60-minute check
+that closed by the 15-minute check stayed on the sheet. The board shows only
+what each game's latest check found.
+
+**Where.** The board is the sheet's first section, right after the header
+lines (built time, stage line, newest price, bet log) and before TODAY. It
+replaces OPEN PICKS. POSTPONED stays as its own section. The board is also
+printed on its own by `python -m sports_edge.slate board`.
+
+**Heading:** `BOARD (price gaps as of each game's check, <built time> PT)`,
+for example `BOARD (price gaps as of each game's check, 4:12 PM PT)`.
+
+### Which check counts
+
+- **A game's latest check** is its newest `check_log` row that is not
+  `superseded`. The board uses that check only if its status is `checked`.
+  A game whose latest check is `no_price`, `no_credits` or `fee_unknown`
+  has no gaps on the board, even if an earlier check had some.
+- **Started and postponed** use the game's latest listed start
+  (`checks.latest_starts`), not the start stored on the row.
+  - **Started:** the latest listed start is at or before now. The game
+    leaves the board.
+  - **Postponed:** the latest listed start is 60 minutes or more after the
+    start recorded at the check (`bets.POSTPONED_AFTER`). The game leaves
+    the board and is listed under POSTPONED, as before.
+  - With no listed start, the start recorded at the check is used.
+- **Current or older.** A check is current only if all three of the alert
+  tests pass:
+  - its run finished `ok`;
+  - `health.json` does not show the snapshot job failing;
+  - now − the run's finish time is 15 minutes or less (`slate.FRESH`).
+
+  A check that fails any test is not current. Its gaps are listed, without
+  numbers, under "Older checks, don't bet" (below).
+
+### Current gaps
+
+- **Rows:** the ledger rows written by the current check's run
+  (`run_id`) for that game.
+- **One per result:** "Yes on A" and "No on B" are one result in a
+  two-team game with no Tie market. The board shows the cheaper row
+  (`bets.cheaper`), as the alerts do.
+- **Order:** biggest gap first (the row's stored gap after the fee).
+- **Limit:** 10 lines, then `+N more`.
+- **Each line** is the pick message's text on one line, with the pick's
+  number (`#n`), the same fields, the same line wording and the same reply
+  hint. These are picks, so they keep their numbers.
+
+### Near misses (never picks)
+
+A near miss is a result whose gap was positive but under the 3¢ bar at the
+same current check. It is shown so the owner can see how close the market
+came. It is never written to any file, never numbered, never alerted and
+never graded.
+
+- **Arithmetic:** GAP_v2's own, by calling `shadow.evaluate` with the bar set
+  to 0 and no order book. That means:
+  - contracts = floor($10 ÷ best ask);
+  - gap = the side's fair chance − best ask − taker fee per contract, using
+    the fee table's multiplier and precision for that market
+    (`fees.resolve_multipliers`, `fees.table_precision`);
+  - the best level alone must cover the contracts. No book walk is tried,
+    so a side the best level cannot fill is not a near miss.
+- **Inputs:** the check's own stored price (the `price_snapshots` row of
+  each matched market with the check's `run_id`) and the game's latest
+  sharp-book read (`shadow.latest_reference`). `evaluate`'s own tests apply
+  unchanged: active market, two-sided quote, read no more than 15 minutes
+  from the price, price before the start, outcome priced, fee known. A game
+  whose outcomes fail `matching.check_outcomes`, or whose Kalshi event is in
+  `match_conflicts`, has no near misses.
+- **Bounds:** 0 ≤ gap < 3¢, compared on the unrounded gap. The 3¢ is the
+  live rule's bar (`shadow.rule_settings`).
+- **Not a twin of a gap:** a result already among the current gaps is never
+  also a near miss. In a two-team game, if "Yes on A" is a gap, "No on B"
+  (the same result) is not a near miss.
+- **One per result** (the cheaper), biggest gap first, at most 5.
+- **Only current checks** have near misses.
+- **Each line ends with `not a pick`**, for example:
+  `Boston over New York (Yes on Boston) · NHL · 7:00 PM PT · now 51¢ · fair 52.5¢ · gap 1.2¢ after fee · not a pick`
+
+### Older checks, don't bet
+
+Gaps from a game's latest check that is not current, one per result, biggest
+gap first, at most 10, then `+N more`. Each line has no number and ends with
+the reason:
+- `old price, don't bet` when the check is more than 15 minutes old;
+- `system problem, don't bet` when its run did not finish `ok` or the
+  snapshot job is failing.
+
+### Top line and empty board
+
+- **Daily cap.** When the daily cap is reached, the board's first line is
+  `Daily cap reached — no more bets today.` The gaps are still listed below
+  it, as a record.
+- **An empty board names its cause**, as `none (<cause>)`. The first that
+  applies:
+  1. `odds not set up`, `no fee table` or `fee table invalid` (the same
+     causes the morning message uses);
+  2. `no checked game still to start`;
+  3. `only older checks, see below`;
+  4. `checked, no price gaps of 3¢ or more`.
+
+  Near misses and older checks are still listed under an empty board.
+
+### The command
+
+`python -m sports_edge.slate board` prints the board and writes nothing: no
+reply ingest, no bet log, no sent state, no sheet, no log. Its output follows
+the jargon rule.
+
+### Unchanged
+
+The pick rule, the alerts, pick numbers, replies, the ledger and the grader.
+`bets.open_picks` is reduced to the postponed list (`bets.postponed_picks`).
+
+### Pre-registered variants: markouts added (record-only)
+
+Added to the variants list above, before any data:
+- **Markouts:** how the Kalshi price of the side bought moved after a row
+  was logged, at the next stored price 10–20 minutes later and at the last
+  price before the start. Defined in `grader_spec.md` ("Markouts"). They
+  gate nothing, and nothing a person reads shows them except the grader
+  report.
+- **No 5-minute markout** (owner decision): Kalshi prices are stored every
+  15 minutes, so a 5-minute later price does not exist.
+
+---
+
+## Amendment 2026-10-22: board gaps under the daily cap have no numbers (owner ruling)
+
+This replaces the "Daily cap" bullet of "Top line and empty board" in the
+board amendment above.
+
+- When the daily cap is reached, the board's first line is
+  `Daily cap reached — no more bets today.`
+- The current gaps are still listed under it as a record, but **without pick
+  numbers or a reply hint**, like older checks. Each line ends with
+  `cap reached, don't bet`.
+- Order and limit are unchanged: biggest gap first, at most 10, then
+  `+N more`.
+- Near misses, older checks and POSTPONED are unchanged.

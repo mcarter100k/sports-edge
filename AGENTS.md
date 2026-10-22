@@ -42,8 +42,9 @@ before merge.
   the old rule are never relabelled.
 
 **Data is evidence — append-only, never edited by hand:**
-`data/shadow_ledger.csv`, the `price_snapshots`, `settlements`,
-`reference_odds` and `job_runs` tables, and everything under `logs/`.
+`data/shadow_ledger.csv`, `data/shadow_markouts.csv`, the `price_snapshots`,
+`settlements`, `reference_odds` and `job_runs` tables, and everything under
+`logs/`.
 Nobody edits, regenerates or deletes them. Every CSV append goes through
 `sports_edge/ledger.py` (lock, header check, fsync). A wrong row is fixed by
 a dated exclusion entry, never by deleting it.

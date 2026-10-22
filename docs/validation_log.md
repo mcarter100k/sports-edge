@@ -714,3 +714,87 @@ protected list.
   - 0 live files changed, no failure markers.
 - **PENDING:** the next live daily run (3:00 AM PT Fri Oct 23) writing price
   rows for any game it matches.
+
+## 2026-10-22: board and markouts specs (feat/board), and the live venv
+
+- **Specs committed before any code:** `c150e91` (the board, near misses,
+  older checks, record-only markouts, `data/shadow_markouts.csv`) and
+  `f148864` (board gaps under the daily cap are listed without numbers).
+  All other spec choices were approved by the owner.
+- **Accepted for now (owner ruling):** markouts use the game's latest listed
+  start (`checks.latest_starts`). The grader's closing-line value uses the
+  start stored on the row (`commence_utc`). The two differ only when a start
+  moves by under 60 minutes. A move of 60 minutes or more makes the row
+  postponed, and markouts skip it.
+- **The live checkout had no `venv/`** before the 3:41 PM PT check.
+  `scripts/common.sh` runs `$PROJ/venv/bin/python`, so every wrapper would
+  have failed to start.
+  - **Fix (owner-directed, ~2:00 PM PT):** created
+    `/Users/quis/sports-edge/venv` with Homebrew Python 3.14.7 (the same
+    interpreter as the phase1 worktree's venv) from `requirements-dev.txt`.
+    Packages match the phase1 venv: duckdb 1.5.6, pytest 9.1.1, iniconfig
+    2.3.1, packaging 26.3, pluggy 1.7.0, Pygments 2.21.0. `venv/` is
+    gitignored, and `main` stayed clean at `8220c82`.
+  - **OBSERVED:** the suite in the live checkout with the new venv: 362
+    passed, 1 skipped. No cache files were left.
+  - **OBSERVED:** `common.sh` sourced without `SPORTS_EDGE_PYTHON` resolves
+    `PY=/Users/quis/sports-edge/venv/bin/python`, which runs Python 3.14.7
+    with duckdb 1.5.6. Neither `.env` nor the shell sets
+    `SPORTS_EDGE_PYTHON`.
+  - **PENDING:** the 3:41 PM PT check itself, run with this venv.
+
+## 2026-10-22: the board and markouts built (feat/board); grader.py held for owner review
+
+**Owner waiver:** Step 2 started after the install, before the 3:41 PM PT
+check. Code `6405d61` (the board) and `b0c3d16` (markouts, `grader.py`),
+built to specs `c150e91` and `f148864`. Who-moved-first was dropped by the
+review and is not built.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 389 passed, 1 skipped (27 new tests).
+  - New mutants: 35 of 35 killed, from clean caches, each restored
+    byte-identical.
+  - Standing set rerun on this branch: 98 of 98 killed (65 + 13 + 20).
+- **OBSERVED, Gate 2** (`scripts/reality_run.py --code <worktree>`, live
+  Kalshi API; 0 live files changed and no failure markers in every run):
+  - `slate board` on a copy of the live data printed
+    `BOARD (price gaps as of each game's check, 2:19 PM PT)` and
+    `none (no fee table)`.
+  - `run_grader.sh` on a copy of the live data: `GRADER OK … markouts_measured=0`
+    and `markouts: 0 measured (no shadow rows logged yet)`.
+  - `run_snapshot.sh` on an empty folder: `SNAPSHOT OK` (99,653 markets, 21
+    games matched), then `SLATE ALERT OK messages=0`. The sheet opens with
+    the BOARD, reading `none (no fee table)`.
+- **Finding: `--code` alone does not change the code a wrapper runs.**
+  `common.sh` changes into `/Users/quis/sports-edge` before `python -m`, and
+  Python puts the current folder ahead of `PYTHONPATH`. The first grader
+  gate run therefore ran `main`'s code: its output had no markouts line.
+  The runs above set `SPORTS_EDGE_PROJ=<worktree>`,
+  `SPORTS_EDGE_PYTHON=/Users/quis/sports-edge/venv/bin/python` and
+  `SPORTS_EDGE_NO_ENV_FILE=1`; the markouts line then appeared. Wrapper
+  gates on earlier branches may have run `main`'s code (NOT CHECKED).
+- **Finding: a first daily run stores no prices for markets it matches.**
+  The empty-folder run above matched 44 markets and wrote 0
+  `price_snapshots` rows. The live 2:15 PM PT run matched the same 44. The
+  snapshot spec says a game matched in a run is snapshotted in that run.
+  PENDING: the 2:30 PM PT live run's price rows for these markets.
+- **PENDING:**
+  - the first real board gap (needs the fee table);
+  - the first real near miss on the board;
+  - the first markout row in `data/shadow_markouts.csv` (needs a logged
+    row whose game has started);
+  - owner review of `grader.py` before merge.
+
+## 2026-10-22: grader.py approved; feat/board merged to main
+
+- **Owner review:** `grader.py` on `feat/board` (markouts, `b0c3d16`) was
+  approved by the owner after the branch was pushed to `origin`.
+- **Merged** into `main` with a merge commit. Every validation-log entry
+  from both sides is kept (resolved earlier in `d285ccf`).
+- **Gate 2 on the merged code** (`d285ccf`, fixed `reality_run.py`, 3:06 PM
+  PT): `slate board` printed `none (no fee table)`, and the grader wrapper
+  printed `markouts: 0 measured (no shadow rows logged yet)`. 0 live files
+  changed, no failure markers.
+- **PENDING:** the first scheduled run on the merged code. The sheet should
+  open with the BOARD, and the 3:30 AM PT grader should print the markouts
+  line.

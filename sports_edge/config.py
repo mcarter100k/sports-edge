@@ -45,6 +45,10 @@ def shadow_grades_path() -> Path:
     return data_dir() / "shadow_grades.csv"
 
 
+def shadow_markouts_path() -> Path:
+    return data_dir() / "shadow_markouts.csv"
+
+
 def fee_table_path() -> Path:
     value = os.environ.get("SPORTS_EDGE_FEE_TABLE")
     return Path(value) if value else REPO_ROOT / "config" / "fee_schedule.json"

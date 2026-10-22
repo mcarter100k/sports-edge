@@ -252,21 +252,19 @@ def picks_in_run(rows, run_id, outcome_of, event_ids, now):
     return sorted(out, key=lambda p: p[0])
 
 
-def open_picks(rows, day, outcome_of, now, starts):
-    """([(number, row shown at the result's latest check)] for games not started,
-    [(number, latest listed start)] for results whose game moved 60+ minutes later: void)."""
+def postponed_picks(rows, day, outcome_of, starts):
+    """[(number, latest listed start)] for results whose game moved 60+ minutes later: void.
+    Open picks are on the board (board.py)."""
     latest_run = {}
     for r in sorted(rows, key=lambda r: r["logged_utc"]):
         latest_run[outcome_of(r)] = r["run_id"]
-    open_, postponed = [], []
+    postponed = []
     for key, (n, _) in sorted(day_picks(rows, day, outcome_of).items(), key=lambda kv: kv[1][0]):
         r = shown_in_run(rows, latest_run[key], outcome_of)[key]
         latest = starts.get(r["source_event_id"])
         if latest and latest - parse_utc(r["commence_utc"]) >= POSTPONED_AFTER:
             postponed.append((n, latest))
-        elif parse_utc(r["commence_utc"]) > now:
-            open_.append((n, r))
-    return open_, postponed
+    return postponed
 
 
 def money_at_risk(taken, day):
