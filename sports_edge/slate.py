@@ -121,13 +121,15 @@ def pay_up_to(win, multiplier, precision, stake, threshold):
 def wording(row, teams, limit=NAME_MAX):
     """(who the pick backs, as words; the name 'toward' refers to)."""
     title, yes = row["outcome"], row["side"] == "YES"
-    names = [_short(t, limit) for t in teams["titles"]]
-    me = _short(title, limit)
-    opp = next((t for t in names if t != me), "?")
+
+    def cut(names):   # shorten, unless that would make two different names read the same
+        short = [_short(t, limit) for t in names]
+        return short if len(set(short)) == len(set(names)) else list(names)
     if title == "Tie":
-        a, b = (names + ["?", "?"])[:2]
+        a, b = (cut(teams["titles"]) + ["?", "?"])[:2]
         return (f"Draw: {a} vs {b} (Yes on Tie)", "a draw") if yes else \
             (f"No draw: {a} vs {b} (No on Tie)", "no draw")
+    me, opp = cut([title, next((t for t in teams["titles"] if t != title), "?")])
     if yes:
         return f"{me} over {opp} (Yes on {me})", me
     if teams["tie"]:
@@ -240,6 +242,16 @@ class Context:
             "SELECT status, ts_utc FROM job_runs WHERE run_id = ? AND phase = 'finish'", [run_id]).fetchone()
         return (row[0], from_db_ts(row[1])) if row else (None, None)
 
+    def run_compared(self, run_id):
+        """Reference ids the run's shadow step actually compared (rule 8: checked is not compared)."""
+        row = self.store.con.execute(
+            "SELECT summary FROM job_runs WHERE run_id = ? AND phase = 'finish'", [run_id]).fetchone()
+        return set(json.loads(row[0] or "{}").get("compared_events", [])) if row else set()
+
+    def run_pick_count(self, run_id):
+        """Distinct picks (repeats included) the run wrote: more than one means replies need a number."""
+        return len({bets.bet_key(r) for r in self.ledger if r["run_id"] == run_id})
+
     def latest_starts(self):
         return {e: from_db_ts(c) for e, c in self.store.con.execute("""
             SELECT r.source_event_id, r.commence_utc FROM reference_events r
@@ -292,6 +304,8 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
                          f"{where}")
         else:
             picks = ctx.picks_of_run(run_id, checked)
+            compared = ctx.run_compared(run_id) & checked
+            uncompared = [r for r in by["checked"] if r["source_event_id"] not in compared]
             age = minutes(now - min((parse_utc(p[2]["snapshot_utc"]) for p in picks), default=run_end))
             if picks and ctx.cap_reached:
                 texts.append(f"Daily cap reached — no more bets today. ({len(picks)} price gaps logged "
@@ -300,7 +314,8 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
                 for n, again, r in picks:
                     league = ctx.league(next(x["sport_key"] for x in rows
                                              if x["source_event_id"] == r["source_event_id"]))
-                    args = (r, n, again, ctx.teams(r["event_ticker"]), league, now, len(picks) > 1)
+                    args = (r, n, again, ctx.teams(r["event_ticker"]), league, now,
+                            ctx.run_pick_count(run_id) > 1)
                     text = pick_text(*args)
                     if len(f"{text}\n{ctx.footer()}") > MESSAGE_MAX:
                         text = pick_text(*args, compact=True)
@@ -308,8 +323,12 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
                 combo = combo_line([(n, r) for n, _, r in picks if isinstance(n, int)], ctx.table)
                 if combo:
                     texts.append(combo)
-            else:
-                texts.append(f"{where}: checked, no price gaps · prices {age} min old")
+            elif compared:
+                texts.append(f"{slot(ctx, cstart, [r['sport_key'] for r in by['checked'] if r['source_event_id'] in compared])}"
+                             f": checked, no price gaps · prices {age} min old")
+            if uncompared:
+                texts.append(f"Don't bet now: prices not checked (could not compare). "
+                             f"{slot(ctx, cstart, [r['sport_key'] for r in uncompared])}")
     if by.get("no_price"):
         texts.append(f"{slot(ctx, cstart, [r['sport_key'] for r in by['no_price']])}: "
                      f"no sharp price available, not checked.")
@@ -322,7 +341,7 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
             texts.append(f"Don't bet now: prices not checked (fee not confirmed for {', '.join(leagues)}). "
                          f"{slot(ctx, cstart, [r['sport_key'] for r in by['fee_unknown']])}")
     if by.get("no_credits"):
-        later = checks.clusters(checks.slate_games(ctx.store, SOURCE, cstart, day_window(now)[1]))
+        later = [c for c in checks.plan(ctx.store, SOURCE, now, day_window(now)[1]) if c.start_utc >= cstart]
         extra.append((f"{display_date(now)}|nocredits",
                       [f"Out of odds credits today: {len(later)} later time slots not checked — don't bet them."]))
     return [(f"{iso_z(cstart)}|{offset}|{run_id}", texts)] + [(k, t) for k, t in extra if k not in sent]
@@ -353,9 +372,9 @@ def alert_messages(ctx, sent):
     status, _ = ctx.last_snapshot()
     if ctx.snapshot_failing or status == "failed":
         done = {(r["source_event_id"], r["offset_min"]) for r in rows}
-        for c in checks.clusters(checks.slate_games(store, SOURCE, now, now + timedelta(hours=24))):
+        for c in checks.plan(store, SOURCE, now, now + timedelta(hours=24)):
             ready = [o for o in checks.offsets() if checks.check_time(c, o) <= now]
-            if not ready:
+            if not ready or all(g.commence_utc <= now for g in c.games):
                 continue
             key = f"{iso_z(c.start_utc)}|{min(ready)}|missed"
             if key in seen_keys or any((g.source_event_id, min(ready)) in done for g in c.games):
@@ -420,7 +439,7 @@ def problems(ctx):
 
 def today_line(ctx, now):
     start, end = day_window(now)
-    cl = checks.clusters(checks.slate_games(ctx.store, SOURCE, start, end))
+    cl = checks.plan(ctx.store, SOURCE, start, end)
     if not cl:
         why = " (odds not set up)" if not config.odds_api_key() else ""
         return "Today: no matched games" + why
@@ -492,7 +511,9 @@ def unchecked_line(ctx, y0, y1):
         label = {"no_credits": "out of credits", "fee_unknown": "fee not confirmed", "no_price": "no sharp price",
                  "superseded": "not running", None: "not running"}[status.get(g.source_event_id)]
         why[label] = why.get(label, 0) + 1
-    slots = len(checks.clusters(missed))
+    missed_ids = {g.source_event_id for g in missed}
+    slots = sum(1 for c in checks.plan(ctx.store, SOURCE, y0, y1)
+                if any(g.source_event_id in missed_ids for g in c.games))
     return (f"Unchecked yesterday: {len(missed)} games in {slots} time slots ("
             + ", ".join(f"{k} {v}" for k, v in sorted(why.items())) + ")")
 
@@ -523,7 +544,7 @@ def sheet_lines(ctx, now, digest_lines):
                 if ctx.replies.get("readable") else " · daily cap not tracked"),
              "", "TODAY (Pacific time)"]
     start, end = day_window(now)
-    cl = checks.clusters(checks.slate_games(store, SOURCE, start, end))
+    cl = checks.plan(store, SOURCE, start, end)
     logged = {}
     for eid, off, st, ts in store.con.execute(
             "SELECT source_event_id, offset_min, status, ts_utc FROM check_log WHERE source = ? AND ts_utc >= ? "
@@ -634,12 +655,17 @@ def run_alert(now=None, send=imessage.send, out=print):
         sheet = sheet_lines(ctx, now, digest_lines)
     count = 0
     for key, texts in msgs:
-        for text in texts:
+        for i, text in enumerate(texts):
+            part = f"{key}#{i}"
+            if part in sent:         # already delivered before a failure partway through this group
+                continue
             full = f"{text}\n{ctx.footer()}"
             if len(full) > MESSAGE_MAX:
                 raise ValueError(f"alert is {len(full)} characters, over {MESSAGE_MAX}: {full}")
             send(full)
             count += 1
+            sent[part] = iso_z(now)
+            save_sent(sent, now)
         sent[key] = iso_z(now)
         save_sent(sent, now)
     path = write_sheet(sheet)
@@ -677,8 +703,8 @@ def wake_times(now=None):
     """(wake, first, last) over check times still ahead in the next 24 h, or None."""
     now = now or utcnow()
     with Store.open(lock_wait_s=120) as store:
-        games = checks.slate_games(store, SOURCE, now, now + timedelta(hours=24))
-    times = [checks.check_time(c, o) for c in checks.clusters(games) for o in checks.offsets()]
+        cl = checks.plan(store, SOURCE, now, now + timedelta(hours=24))
+    times = [checks.check_time(c, o) for c in cl for o in checks.offsets()]
     ahead = sorted(t for t in times if t > now)
     if not ahead:
         return None

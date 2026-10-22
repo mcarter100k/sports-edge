@@ -21,6 +21,9 @@ NOW = parse_utc("2026-10-23T03:00:00Z")          # 8 PM PDT, Oct 22
     ("took #3 42", ("took", 3, D("0.42"))),
     ("took 3 42", ("took", 3, D("0.42"))),
     ("took 3 at 42", ("took", 3, D("0.42"))),
+    ("took 42.3", ("took", None, D("0.423"))),                 # a walked average, as the hint writes it
+    ("took 12 64.3", ("took", 12, D("0.643"))),
+    ("took 0.5", ("took", None, D("0.5"))), ("took 1", ("took", None, D("0.01"))),
     ("  SKIP ", ("skip", None, None)),
     ("skip 3", ("skip", 3, None)),
     ("skip #3", ("skip", 3, None)),
@@ -121,3 +124,39 @@ def test_unreadable_messages_database_is_reported_not_hidden(monkeypatch, tmp_pa
 def test_without_a_number_nothing_is_read():
     assert bets.ingest_replies(NOW) == {"readable": False, "error": "IMESSAGE_TO not set", "logged": 0,
                                         "unclear": 0}
+
+
+def test_unnumbered_reply_follows_the_latest_check_even_when_it_repeats_an_earlier_pick(tmp_path, monkeypatch):
+    """Review finding 4: run C repeats only #1, so "took 42" is #1, not the newer #2."""
+    monkeypatch.setenv("IMESSAGE_TO", "+15551234567")
+    db = tmp_path / "chat.db"
+    monkeypatch.setenv("SPORTS_EDGE_MESSAGES_DB", str(db))
+    ta, tb, tc = NOW - timedelta(minutes=90), NOW - timedelta(minutes=60), NOW - timedelta(minutes=30)
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, [
+        pick_row("a", "E1-CLE", "YES", ta, "run-A"), pick_row("b", "E2-BOS", "YES", tb, "run-B", "E2"),
+        pick_row("a3", "E1-CLE", "YES", tc, "run-C")])
+    chat_db(db, "+15551234567", [(tc + timedelta(minutes=2), "took 42", 1)])
+    bets.ingest_replies(NOW)
+    row = logged()["G1"]
+    assert (row["row_id"], row["pick_no"], row["action"]) == ("a", "1", "took")
+
+
+def test_numbered_reply_after_midnight_finds_the_evening_pick(tmp_path, monkeypatch):
+    """Review finding 8."""
+    monkeypatch.setenv("IMESSAGE_TO", "+15551234567")
+    db = tmp_path / "chat.db"
+    monkeypatch.setenv("SPORTS_EDGE_MESSAGES_DB", str(db))
+    evening = parse_utc("2026-10-23T06:50:00Z")                       # 11:50 PM PDT Oct 22
+    ledger.append_rows(config.shadow_ledger_path(), HEADER, [pick_row("z", "E9-LAL", "NO", evening, "run-Z", "E9")])
+    after_midnight = evening + timedelta(minutes=15)
+    chat_db(db, "+15551234567", [(after_midnight, "took 1 42", 1)])
+    bets.ingest_replies(after_midnight + timedelta(minutes=1))
+    row = logged()["G1"]
+    assert (row["row_id"], row["pick_date"], row["pick_no"]) == ("z", "2026-10-22", "1")
+
+
+def test_old_messages_in_the_chat_are_never_read(two_checks):
+    """Review finding 6: nanosecond dates must be compared as nanoseconds."""
+    db, t1, _ = two_checks
+    chat_db(db, "+15551234567", [(NOW - timedelta(days=3), "skip", 1), (t1 + timedelta(minutes=5), "took 42", 1)])
+    assert bets.ingest_replies(NOW)["logged"] == 1 and set(logged()) == {"G2"}

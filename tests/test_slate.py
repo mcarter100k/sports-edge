@@ -34,9 +34,9 @@ def world(cheap=True):
     return [series("KXNBAGAME")], [[ev]]
 
 
-def run_at(now, sers, pages):
+def run_at(now, sers, pages, priced=PRICED):
     odds = lambda st: FakeOdds(st, [ref_sport()], {"basketball_nba": [
-        stub("R1", "Philadelphia 76ers", "Cleveland Cavaliers", START)]}, PRICED, now=now)
+        stub("R1", "Philadelphia 76ers", "Cleveland Cavaliers", START)]}, priced, now=now)
     return run_cycle(FakeKalshi(sers, pages, now), odds, lambda: now, quiet, quiet)
 
 
@@ -360,3 +360,76 @@ def test_morning_names_a_missing_fee_table(monkeypatch):
     monkeypatch.setenv("ODDS_API_KEY", "k")
     text = slate.run_morning(parse_utc("2026-10-23T15:00:00Z"), lambda t: None, quiet)
     assert "Yesterday: nothing checked (no fee table)" in text
+
+
+def test_shortened_names_that_would_collide_are_shown_in_full():
+    """Review finding 5."""
+    teams = {"titles": ["Los Angeles L", "Los Angeles C"], "tie": False}
+    who, backed = slate.wording({"outcome": "Los Angeles L", "side": "YES"}, teams, limit=slate.NAME_MIN)
+    assert who == "Los Angeles L over Los Angeles C (Yes on Los Angeles L)" and backed == "Los Angeles L"
+    who, _ = slate.wording({"outcome": "Manchester City", "side": "NO"},
+                           {"titles": ["Manchester City", "Manchester United"], "tie": True}, limit=slate.NAME_MIN)
+    assert who == "Manchester United or a draw vs Manchester City (No on Manchester City)"
+
+
+def test_a_checked_game_that_could_not_be_compared_is_not_called_gap_free(tmp_path):
+    """Review finding 7: an outcome mismatch is fetched (checked) but never compared."""
+    fee_table(tmp_path)
+    sers, pages = world()
+    run_at(DAILY_AT, sers, pages)
+    run_at(CHECK_AT, sers, pages, priced={"R1": {"Philadelphia 76ers": D("1.6"), "Cleveland Cavaliers": D("3.0"),
+                                                 "Draw": D("15")}})
+    health.record_success("snapshot", CHECK_AT)
+    sent = alert(CHECK_AT + timedelta(minutes=1))
+    assert [m.split("\n")[0] for m in sent] == [
+        "Don't bet now: prices not checked (could not compare). 8:00 AM PT · NBA 1"]
+
+
+def test_a_failed_send_partway_never_resends_what_already_went_out(tmp_path):
+    """Review, lower priority: per-text send state."""
+    fee_table(tmp_path)
+    sers, pages = world()
+    pages[0][0]["markets"][1].update({"no_ask_dollars": "0.2000", "no_bid_dollars": "0.1900"})
+    run_at(DAILY_AT, sers, pages)
+    run_at(CHECK_AT, sers, pages)
+    health.record_success("snapshot", CHECK_AT)
+    got = []
+
+    def flaky(text):
+        if len(got) == 1:
+            raise slate.imessage.SendFailed("Messages not running")
+        got.append(text)
+
+    with pytest.raises(slate.imessage.SendFailed):
+        slate.run_alert(CHECK_AT + timedelta(minutes=1), flaky, quiet)
+    rest = alert(CHECK_AT + timedelta(minutes=2))
+    assert [m[:2] for m in got] == ["#1"] and [m[:2] for m in rest] == ["#2"]
+
+
+def test_hint_asks_for_the_number_when_one_run_checks_two_slots(tmp_path, monkeypatch):
+    """Review finding 4: each message has one pick, but the run wrote two, so replies need the number."""
+    fee_table(tmp_path)
+    monkeypatch.setenv("ODDS_PLAN", "paid")
+    sers, pages = world()
+    later = START + timedelta(minutes=35)
+    ev2 = game_event("KXNBAGAME-E7", "KXNBAGAME", ["Boston", "Miami"], later)
+    ev2["markets"][0].update({"yes_ask_dollars": "0.2000", "yes_bid_dollars": "0.1900"})
+    ev2["markets"][1].update({"yes_bid_dollars": "0.6200", "yes_ask_dollars": "0.6300", "no_bid_dollars": "0.3700",
+                              "no_ask_dollars": "0.3800"})
+    pages[0].append(ev2)
+    priced = {**PRICED, "R7": {"Miami Heat": D("1.55"), "Boston Celtics": D("2.60")}}
+
+    def run(now):
+        odds = lambda st: FakeOdds(st, [ref_sport()], {"basketball_nba": [
+            stub("R1", "Philadelphia 76ers", "Cleveland Cavaliers", START),
+            stub("R7", "Miami Heat", "Boston Celtics", later)]}, priced, now=now)
+        run_cycle(FakeKalshi(sers, pages, now), odds, lambda: now, quiet, quiet)
+
+    run(DAILY_AT)
+    both = START - timedelta(minutes=10)        # slot 1's 15-minute check and slot 2's 60-minute check
+    run(both)
+    health.record_success("snapshot", both)
+    sent = alert(both + timedelta(minutes=1))
+    picks = [m for m in sent if m.startswith("#")]
+    assert len(picks) == 2
+    assert '"took 1 20" or "skip 1"' in picks[0] and '"took 2 20" or "skip 2"' in picks[1]

@@ -212,11 +212,16 @@ def price_due_checks(store, source, run_id, now, out, err):
     Every due game gets one check_log row. Returns counts plus checked_events:
     the reference ids priced this run (the shadow step compares only those).
     """
-    games = checks.slate_games(store, source.name, now, now + timedelta(hours=config.odds_horizon_h()))
-    due = checks.due_checks(checks.clusters(games), checks.logged_checks(store, source.name,
-                                                                        now - CHECK_LOOKBACK),
+    plan = checks.plan(store, source.name, now, now + timedelta(hours=config.odds_horizon_h()))
+    due = checks.due_checks(plan, checks.logged_checks(store, source.name, now - CHECK_LOOKBACK),
                             now, checks.offsets())
     log, status = [], {}
+
+    def flush():
+        """check_log rows are written as soon as their fetch is stored, so a later failure in
+        this run can never leave a paid-for check unlogged (and paid for again next run)."""
+        store.append("check_log", log)
+        log.clear()
 
     def record(c, g, offset, st):
         status[(g.source_event_id, offset)] = st
@@ -234,6 +239,7 @@ def price_due_checks(store, source, run_id, now, out, err):
             record(c, g, offset, "fee_unknown")
         else:
             groups.setdefault((c.start_utc, g.sport_key), []).append((c, g, offset))
+    flush()
 
     day_start = now.astimezone(DISPLAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
     budget = config.odds_daily_credits()
@@ -248,6 +254,7 @@ def price_due_checks(store, source, run_id, now, out, err):
             budget_hit = True
             for c, g, offset in members:
                 record(c, g, offset, "no_credits")
+            flush()
             continue
         ids = [g.source_event_id for _, g, _ in members]
         outcomes = {}
@@ -287,8 +294,8 @@ def price_due_checks(store, source, run_id, now, out, err):
             source, [r for r in refs if r.source_event_id in priced], now))
         for c, g, offset in members:
             record(c, g, offset, "checked" if g.source_event_id in priced else "no_price")
+        flush()
         checked |= priced
-    store.append("check_log", log)
     if mismatched:
         report_unmatched(store, mismatched, {}, run_id, now, err)
     counts = Counter(st for (_, o), st in status.items())

@@ -16,6 +16,7 @@ BET_LOG_HEADER = ["logged_utc", "message_guid", "message_utc", "pick_date", "pic
                   "market_ticker", "event_ticker", "side", "action", "price", "contracts", "raw_text"]
 STAKE = Decimal("10")
 APPLE_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
+NS_DATES_ABOVE = 10 ** 12          # chat.db dates above this are nanoseconds, below it seconds
 _NUMBERS = re.compile(r"(?:\s*(?:at\s+)?#?(?:\d*\.\d+|\d+)\s*(?:c|¢)?)*\s*")
 _NUMBER = re.compile(r"(#)?(\d*\.\d+|\d+)\s*(c|¢)?")
 
@@ -51,11 +52,9 @@ def day_picks(rows, day):
 # Reply grammar -------------------------------------------------------------------------
 
 def _price(token, cents_mark):
+    """1 or more is cents (42, 42.3); below 1 is dollars (.42, 0.42); c or ¢ is always cents."""
     value = Decimal(token)
-    if "." in token and not cents_mark:
-        price = value
-    else:
-        price = value / 100
+    price = value / 100 if (cents_mark or value >= 1) else value
     return price if Decimal("0.01") <= price <= Decimal("0.99") else None
 
 
@@ -100,7 +99,7 @@ def decode_attributed_body(blob):
 
 
 def _apple_time(value):
-    seconds = value / 1e9 if value > 1e12 else value
+    seconds = value / 1e9 if value > NS_DATES_ABOVE else value
     return APPLE_EPOCH + timedelta(seconds=seconds)
 
 
@@ -124,8 +123,10 @@ def read_messages(handle, since, path=None):
             rows = con.execute(f"""
                 SELECT m.guid, m.date, m.text, m.attributedBody FROM message m
                 JOIN chat_message_join j ON j.message_id = m.ROWID
-                WHERE j.chat_id IN ({marks}) AND (m.date >= ? OR m.date >= ?)
-                ORDER BY m.date""", [*wanted, since_ns, int(since_ns / 1e9)]).fetchall()
+                WHERE j.chat_id IN ({marks})
+                  AND ((m.date > ? AND m.date >= ?) OR (m.date <= ? AND m.date >= ?))
+                ORDER BY m.date""", [*wanted, NS_DATES_ABOVE, since_ns, NS_DATES_ABOVE,
+                                     int(since_ns / 1e9)]).fetchall()
         finally:
             con.close()
     except sqlite3.Error as exc:
@@ -163,24 +164,38 @@ def ingest_replies(now, ledger_rows=None):
 
 
 def log_row(guid, when, text, parsed, rows, now):
-    """The bet_log row for one reply: which pick it names, or 'unclear'."""
+    """The bet_log row for one reply: which pick it names, or 'unclear'.
+
+    Numbered: the most recently messaged pick with that number, numbered on the reply's
+    Pacific day or the day before. Unnumbered: the latest check run that wrote rows,
+    only if it wrote exactly one pick (repeats included).
+    """
     action, number, price = parsed
-    day = display_date(when)
-    picks = day_picks([r for r in rows if parse_utc(r["logged_utc"]) <= when], day)
-    pick = None
+    before = [r for r in rows if parse_utc(r["logged_utc"]) <= when]
+    by_id = {r["row_id"]: r for r in before}
+    pick, day, no = None, display_date(when), ""
     if number is not None:
-        pick = next((p for n, p in picks.values() if n == number), None)
-    elif picks:
-        latest_run = max((r for _, r in picks.values()), key=lambda r: r["logged_utc"])["run_id"]
-        in_run = [p for _, p in picks.values() if p["run_id"] == latest_run]
-        pick = in_run[0] if len(in_run) == 1 else None
+        found = []
+        for d in (display_date(when), display_date(when - timedelta(days=1))):
+            for key, (n, first) in day_picks(before, d).items():
+                if n == number:
+                    latest = max(r["logged_utc"] for r in before if bet_key(r) == key)
+                    found.append((latest, d, n, first))
+        if found:
+            _, day, no, pick = max(found, key=lambda f: f[0])
+    elif before:
+        latest_run = max(before, key=lambda r: r["logged_utc"])["run_id"]
+        keys = {bet_key(r) for r in before if r["run_id"] == latest_run}
+        if len(keys) == 1:
+            pick = by_id[first_fire_ids(before)[keys.pop()]]
+            day = display_date(parse_utc(pick["logged_utc"]))
+            no = day_picks(before, day)[bet_key(pick)][0]
     if pick is None:
         action = "unclear"
-    no = next((n for n, p in picks.values() if pick is not None and p["row_id"] == pick["row_id"]), "")
+    took = price is not None and action == "took"
     return {"logged_utc": iso_z(now), "message_guid": guid, "message_utc": iso_z(when), "pick_date": day,
             "pick_no": no, "row_id": pick["row_id"] if pick else "",
             "market_ticker": pick["market_ticker"] if pick else "",
             "event_ticker": pick["event_ticker"] if pick else "", "side": pick["side"] if pick else "",
-            "action": action, "price": price if (price is not None and action == "took") else "",
-            "contracts": int(STAKE // price) if (price is not None and action == "took") else "",
-            "raw_text": (text or "")[:200]}
+            "action": action, "price": price if took else "",
+            "contracts": int(STAKE // price) if took else "", "raw_text": (text or "")[:200]}

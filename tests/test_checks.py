@@ -68,3 +68,33 @@ def test_slate_games_use_the_latest_start_keep_scope_and_drop_conflicts():
                                       "source_event_id": "R9", "ref_outcome": "X", "seen_utc": T0}])
         games = checks.slate_games(s, "the-odds-api", T0 - timedelta(hours=1), T0 + timedelta(hours=5))
     assert [(g.source_event_id, g.commence_utc) for g in games] == [("R1", T0 + timedelta(hours=2))]
+
+
+def seed_games(store, starts):
+    for eid, start in starts.items():
+        store.record_matches([{"market_ticker": f"{eid}-X", "event_ticker": f"E-{eid}", "source": "the-odds-api",
+                               "source_event_id": eid, "ref_outcome": "X", "rule_version": "v",
+                               "sport_key": "basketball_nba"}], start)
+        store.append("reference_events", [{"fetched_utc": start - timedelta(hours=5), "source": "the-odds-api",
+                                           "sport_key": "basketball_nba", "source_event_id": eid,
+                                           "commence_utc": start, "home": "H", "away": "A"}])
+
+
+def test_a_started_game_keeps_anchoring_its_slot():
+    """Review finding 2: slots must not shift when the first game of a slot starts."""
+    four = parse_utc("2026-10-22T23:00:00Z")          # 4:00 PM PDT
+    starts = {"g400": four, "g430": four + timedelta(minutes=30), "g500": four + timedelta(minutes=60),
+              "g530": four + timedelta(minutes=90)}
+    with Store.open() as s:
+        seed_games(s, starts)
+        now = four + timedelta(seconds=5)
+        plan = checks.plan(s, "the-odds-api", now, now + timedelta(hours=24))
+    assert [[g.source_event_id for g in c.games] for c in plan] == [["g400", "g430"], ["g500", "g530"]]
+    assert due_checks(plan, {("g430", 30): "checked"}, now, (30,)) == []      # 5:00 slot waits for 4:30
+
+
+def test_slots_never_span_pacific_midnight():
+    late = parse_utc("2026-10-23T06:50:00Z")           # 11:50 PM PDT
+    cl = clusters([game("x", 0), Game("y", "basketball_nba", late + timedelta(minutes=20), "H", "A", "E-y"),
+                   Game("w", "basketball_nba", late, "H", "A", "E-w")])
+    assert [[g.source_event_id for g in c.games] for c in cl] == [["x"], ["w"], ["y"]]

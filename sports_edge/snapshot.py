@@ -278,7 +278,7 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
             record_failure(store, run_id, JOB, now_fn(), summary)
             raise
         store.job_event(run_id, JOB, "finish", now_fn(), "ok", summary)
-    parts = " ".join(f"{k}={v}" for k, v in summary.items() if not isinstance(v, dict))
+    parts = " ".join(f"{k}={v}" for k, v in summary.items() if not isinstance(v, (dict, list)))
     out(f"SNAPSHOT OK run={run_id} {parts}")
     mbs = summary["matched_by_sport"]
     out("matched markets by sport: " + (", ".join(f"{k}={v}" for k, v in mbs.items()) or "none yet"))

@@ -57,9 +57,17 @@ def test_no_side_logged_when_fair_well_below():
 
 
 def test_threshold_is_inclusive_at_three_cents():
-    assert [r["side"] for r in ev(snap(), ref(0.467052))[0]] == ["YES"]   # gap rounds to exactly 0.030000
-    assert ev(snap(), ref(0.467052))[0][0]["edge"] == D("0.030000")
-    assert ev(snap(), ref(0.467051))[0] == []                                # 0.029999
+    # 20 contracts at 0.50: fee 0.07*20*0.25 = 0.35 exactly, 0.0175 a contract; fair 0.5475 -> gap exactly 0.03
+    at_50 = snap(yes_ask="0.50", no_ask="0.51")
+    rows = ev(at_50, ref(0.5475))[0]
+    assert [r["side"] for r in rows] == ["YES"] and rows[0]["edge"] == D("0.030000")
+    assert ev(at_50, ref(0.547499))[0] == []
+
+
+def test_threshold_compares_the_unrounded_gap():
+    # at 0.42 the fee is 0.3922/23 a contract, so fair 0.467052 leaves 0.029999826...: it would round to 0.030000
+    assert ev(snap(), ref(0.467052))[0] == []
+    assert [r["side"] for r in ev(snap(), ref(0.467053))[0]] == ["YES"]
 
 
 @pytest.mark.parametrize("s,r,reason", [

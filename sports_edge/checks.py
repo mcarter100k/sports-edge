@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from . import config
 from .store import from_db_ts, to_db_ts
+from .timeutil import display_date, pacific_midnight
 
 CLUSTER_SPAN = timedelta(minutes=30)
 OFFSETS_MIN = {"free": (30,), "paid": (60, 15)}
@@ -58,14 +59,22 @@ def slate_games(store, source, start, end):
 
 
 def clusters(games):
-    """Anchor on the earliest game; every game starting within 30 min of the anchor joins it."""
+    """Per Pacific day: anchor on the day's earliest game; every game starting within
+    30 min of the anchor joins it, and the next game anchors the next slot."""
     out = []
     for g in sorted(games, key=lambda g: (g.commence_utc, g.source_event_id)):
-        if out and g.commence_utc - out[-1].start_utc <= CLUSTER_SPAN:
+        if out and display_date(g.commence_utc) == display_date(out[-1].start_utc) \
+                and g.commence_utc - out[-1].start_utc <= CLUSTER_SPAN:
             out[-1].games.append(g)
         else:
             out.append(Cluster(g.commence_utc, [g]))
     return out
+
+
+def plan(store, source, start, end):
+    """Day clusters for games from Pacific midnight of `start` up to `end`. Games that
+    have already started are included, so they keep anchoring their slots."""
+    return clusters(slate_games(store, source, pacific_midnight(start), end))
 
 
 def logged_checks(store, source, since):

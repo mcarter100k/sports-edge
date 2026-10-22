@@ -168,8 +168,8 @@ def evaluate(snap, market, match, ref, settings, book=None):
         if contracts < 1:
             continue
         fee = fee_per_contract(price, contracts, market["m_taker"], "taker", market["precision"])
-        edge = (win_prob - price - fee).quantize(Q6)
-        if edge < settings["threshold"]:
+        gap = win_prob - price - fee          # the rule compares the unrounded gap; the row stores it to 6 places
+        if gap < settings["threshold"]:
             continue     # a walk can only raise the average price, so it is never tried
         depth = depth_for(side, snap)
         paid, detail = price, f"{_num(price)}x{contracts}"
@@ -179,13 +179,13 @@ def evaluate(snap, market, match, ref, settings, book=None):
                 depth_skips += 1
                 continue
             paid, fee, detail = walked
-            edge = (win_prob - paid - fee).quantize(Q6)
-            if edge < settings["threshold"]:
+            gap = win_prob - paid - fee
+            if gap < settings["threshold"]:
                 depth_skips += 1
                 continue
         rows.append({
             "side": side, "price_paid": paid.quantize(Q6), "kalshi_implied_prob": paid.quantize(Q6),
-            "fair_prob": fair, "fee_per_contract": fee.quantize(Q6), "edge": edge,
+            "fair_prob": fair, "fee_per_contract": fee.quantize(Q6), "edge": gap.quantize(Q6),
             "depth_contracts": depth, "contracts_assumed": contracts, "fill_detail": detail})
     return rows, None, depth_skips
 
@@ -246,7 +246,7 @@ def run_shadow(store, run_id, snapshots, now, source_name, out, checked_events=(
     by_event = {}
     for row in matches:
         by_event.setdefault(row[2], []).append(row)
-    skips, rows = Counter(), []
+    skips, rows, compared = Counter(), [], set()
     for eid, event_matches in by_event.items():
         if eid not in checked_events:
             skips["not_checked_this_run"] += len(event_matches)
@@ -286,6 +286,8 @@ def run_shadow(store, run_id, snapshots, now, source_name, out, checked_events=(
                                                   book)
             if reason:
                 skips[reason] += 1
+            else:
+                compared.add(eid)
             if depth_skips:
                 skips["insufficient_depth"] += depth_skips
             for r in found:
@@ -313,5 +315,5 @@ def run_shadow(store, run_id, snapshots, now, source_name, out, checked_events=(
         out("shadow skips: " + ", ".join(f"{k}={v}" for k, v in sorted(skips.items())))
     for reason, n in sorted(fee_reasons.items()):
         out(f"FEE UNKNOWN ({n} market checks): {reason}")
-    return {"shadow_rows": written, "shadow_checked": len(matches), **{
+    return {"shadow_rows": written, "shadow_checked": len(matches), "compared_events": sorted(compared), **{
         f"skip_{k}": v for k, v in skips.items()}}

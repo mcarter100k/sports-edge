@@ -504,3 +504,40 @@ def test_budget_assumes_the_dearest_call_seen(monkeypatch, tmp_path):
 
     summary2 = run_cycle(FakeKalshi(sers, pages, second), factory, lambda: second, quiet, quiet)
     assert made["src"].priced_calls == [] and summary2["check_no_credits"] == 1   # 1 + 3 > 3: refused
+
+
+def test_a_failure_after_a_paid_fetch_never_pays_for_that_check_again(tmp_path):
+    """Review finding 1: check_log is written per fetched group, before later groups can fail."""
+    fee_table(tmp_path)
+    sers, pages = world()
+    sers.append(series("KXNHLGAME", ("Hockey",)))
+    pages[0].append(game_event("KXNHLGAME-H1", "KXNHLGAME", ["Boston", "New York"], START))
+    extra = {"icehockey_nhl": [stub("H1", "Boston Bruins", "New York Rangers", START, "icehockey_nhl")]}
+    sports = [ref_sport(), ref_sport("icehockey_nhl", "Ice Hockey")]
+    priced = {"R1": {"Philadelphia 76ers": D("1.55"), "Cleveland Cavaliers": D("2.60")},
+              "H1": {"Boston Bruins": D("1.9"), "New York Rangers": D("2.0")}}
+    daily_with_odds(FakeKalshi(sers, pages, DAILY_AT), extra_stubs=extra, sports=sports, priced=priced)
+
+    def odds(now, fail_hockey):
+        def factory(store):
+            src = odds_world(store, now, extra_stubs=extra, sports=sports, priced=priced)
+            real = src.fetch_moneylines
+
+            def fetch(key, ids, at):
+                if fail_hockey and key == "icehockey_nhl":
+                    raise RuntimeError("odds API timeout")
+                return real(key, ids, at)
+            src.fetch_moneylines = fetch
+            made["src"] = src
+            return src
+        return factory
+
+    made = {}
+    with pytest.raises(RuntimeError):
+        run_cycle(FakeKalshi(sers, pages, CHECK_AT), odds(CHECK_AT, True), lambda: CHECK_AT, quiet, quiet)
+    later = CHECK_AT + timedelta(minutes=15)
+    run_cycle(FakeKalshi(sers, pages, later), odds(later, False), lambda: later, quiet, quiet)
+    assert made["src"].priced_calls == [("icehockey_nhl", ["H1"])]          # basketball not paid for twice
+    with Store.open() as s:
+        assert sorted(s.con.execute("SELECT source_event_id, status FROM check_log").fetchall()) == [
+            ("H1", "checked"), ("R1", "checked")]
