@@ -853,3 +853,19 @@ Added to the variants list above, before any data:
   report.
 - **No 5-minute markout** (owner decision): Kalshi prices are stored every
   15 minutes, so a 5-minute later price does not exist.
+
+---
+
+## Amendment 2026-10-22: board gaps under the daily cap have no numbers (owner ruling)
+
+This replaces the "Daily cap" bullet of "Top line and empty board" in the
+board amendment above.
+
+- When the daily cap is reached, the board's first line is
+  `Daily cap reached — no more bets today.`
+- The current gaps are still listed under it as a record, but **without pick
+  numbers or a reply hint**, like older checks. Each line ends with
+  `cap reached, don't bet`.
+- Order and limit are unchanged: biggest gap first, at most 10, then
+  `+N more`.
+- Near misses, older checks and POSTPONED are unchanged.
