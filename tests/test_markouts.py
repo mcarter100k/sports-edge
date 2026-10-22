@@ -134,3 +134,23 @@ def test_grades_and_the_stage_line_are_identical_with_and_without_markouts(monke
         grader.grade_markouts(s, START, SRC)                 # the markout file exists before grading
     assert "1 of 100 games with a closing price" in without[1][1]          # the stage line has a game to count
     assert run() == without and len(measured()) == 2
+
+
+def test_a_zero_says_when_every_logged_game_is_postponed():
+    later = START + timedelta(minutes=60)
+    with Store.open() as s:
+        seed(s, [lrow("void", "E1-CLE", "YES")], CLE, {"R1": later})
+        assert grader.grade_markouts(s, later, SRC) == (0, 1)
+        assert grader.markout_report(s, 1) == ["markouts: 0 measured (all logged games postponed); 1 postponed rows skipped"]
+        seed(s, [lrow("open", "E2-BOS", "YES", start=later + timedelta(hours=2))], [])
+        assert grader.markout_report(s, 1) == ["markouts: 0 measured (no logged game has started yet); "
+                                               "1 postponed rows skipped"]
+
+
+def test_a_row_measured_before_its_game_was_postponed_is_not_counted():
+    with Store.open() as s:
+        seed(s, [lrow("y", "E1-CLE", "YES")], CLE, {"R1": START})
+        assert grader.grade_markouts(s, START, SRC) == (1, 0)
+        s.append("reference_events", [{"fetched_utc": START, "source": SRC, "sport_key": "nba", "source_event_id": "R1",
+                                       "commence_utc": START + timedelta(minutes=90), "home": "h", "away": "a"}])
+        assert grader.grade_markouts(s, START + timedelta(hours=2), SRC) == (0, 0)
