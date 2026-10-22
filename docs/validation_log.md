@@ -798,3 +798,25 @@ review and is not built.
 - **PENDING:** the first scheduled run on the merged code. The sheet should
   open with the BOARD, and the 3:30 AM PT grader should print the markouts
   line.
+
+## 2026-10-22: markout zero cause for all-postponed rows (grader.py, held for owner review)
+
+Spec `c25c87d`, code `6025d55`.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 404 passed, 1 skipped (2 new tests).
+  - Mutants: 3 of 3 killed (the new cause removed, the cause shown when
+    only some rows are postponed, measured rows counted as postponed). The
+    board and markout set (35 of 35) and the standing set (98 of 98) were
+    rerun on this branch. All were restored byte-identical, from clean
+    caches.
+- **OBSERVED, Gate 2:** the grader wrapper on a copy of the live data, run
+  through the fixed `reality_run.py`, ran this branch's code. It printed
+  `markouts: 0 measured (no shadow rows logged yet)`, with 0 live files
+  changed and no failure markers.
+- **Finding:** the postponed count already left out rows in
+  `shadow_markouts.csv`, because a measured row is skipped first. A test
+  now fixes this. A postponed row is never written, so the same row is
+  counted again each night.
+- **PENDING:** the new cause on live data (needs a logged game that is
+  postponed); owner review of `grader.py` before merge.
