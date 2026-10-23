@@ -1112,3 +1112,45 @@ conflicts.
   - Boston College vs Georgia Tech and Bowling Green vs Buffalo pairing in
     the live data after about 12:30 PT, when their kickoff enters the 24 h
     horizon.
+
+## 2026-10-23: fee table live, first priced check, iMessage delivery
+
+- **The fee table** (`feat/fee-table`) was approved by the owner and merged
+  at `3a1200e`.
+  - **VERIFIED:** the live checkout reads `table_state: ok`, the suite
+    passes (608), and the post-merge gate changed 0 live files.
+  - **Cleared from PENDING at the top** (the "First real pick" entry):
+    `config/fee_schedule.json` now exists. A real pick still needs a gap of
+    at least 3 cents after the fee.
+- **VERIFIED, the first priced check ever** (live 12:45 PT run on `main`):
+  - `checks_due=1 events_priced=1 check_checked=1`, with no `FEE UNKNOWN`
+    line, for Bulls vs Bucks (1:10 PT, 30 min before);
+  - `reference_odds` went from 0 rows to 2, the first Pinnacle price ever
+    stored, for 1 odds credit;
+  - `shadow_rows=0`: no side cleared 3 cents after the fee. A manual scan of
+    all 44 of the day's sides at 10:35 PT found every one 0.9–3.5 cents
+    over fair after the fee.
+- **iMessage** (`IMESSAGE_TO` set in `.env` on 2026-10-23):
+  - **Test 1, direct send:** the first try timed out after 30 s while the
+    macOS Automation prompt was unanswered (logged `FAILED
+    (TimeoutExpired)`). After the owner granted it, the send was logged
+    `sent`, and the owner's iPhone screenshot shows it delivered.
+  - **Test 2, the morning job** run through launchd (`launchctl
+    kickstart`): `SLATE MORNING OK`, logged `sent`, and the owner's
+    screenshot shows it delivered. No second permission prompt was needed.
+  - **Test 3, the live 12:45 PT slate alert:** `SLATE ALERT OK messages=1`,
+    logged `sent`. The owner reported receiving "1:10 PM PT · NBA 1:
+    checked, no price gaps · prices 0 min old · Practice · … · Bet log
+    unreadable: cap not tracked".
+  - **A note on the phone's display:** messages to the owner's own number
+    appear twice (sent and received bubbles). `imessage.log` shows one send
+    each.
+  - **Cleared from PENDING at the top** (Slate and alerts, Part B): the
+    first 8:00 AM morning iMessage (sent by a launchd run of the morning
+    job) and the first pre-game check iMessage.
+  - **Still PENDING:**
+    - the first "Don't bet now" from a real failing run;
+    - the first reply logged from `replies.txt` (Apple Shortcut not set
+      up; messages read "Bet log unreadable");
+    - the first scheduled 8:00 AM morning iMessage, as distinct from the
+      manual launchd run.
