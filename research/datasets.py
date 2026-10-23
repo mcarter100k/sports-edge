@@ -166,3 +166,30 @@ def open_dataset(folder):
     for table, e in manifest["tables"].items():
         con.execute(f"CREATE VIEW \"{table}\" AS SELECT * FROM read_parquet('{folder / e['file']}')")
     return con
+
+
+def main(argv=None):
+    """python -m research.datasets freeze <name> <table>=<parquet> ...
+       python -m research.datasets export-live <name> [table ...]
+       python -m research.datasets verify <dataset dir>"""
+    import sys
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) >= 3 and argv[0] == "freeze":
+        tables = dict(a.split("=", 1) for a in argv[2:])
+        folder = freeze(argv[1], tables, source={"kind": "files", "tables": tables})
+    elif len(argv) >= 2 and argv[0] == "export-live":
+        folder = export_live(argv[1], argv[2:] or None)
+    elif len(argv) == 2 and argv[0] == "verify":
+        folder = Path(argv[1])
+        verify(folder)
+    else:
+        print(main.__doc__, file=sys.stderr)
+        return 2
+    m = read_manifest(folder)
+    print(f"DATASET OK {folder} id={m['dataset_id']} manifest_sha256={file_sha256(folder / MANIFEST)} "
+          + " ".join(f"{t}={e['rows']}" for t, e in sorted(m["tables"].items())))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

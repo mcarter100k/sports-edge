@@ -52,7 +52,7 @@ class Fake:
         if path == "/markets":
             return 200, json.dumps({"markets": LIVE, "cursor": ""}).encode()
         if path == "/historical/markets":
-            if q.get("cursor") == "":
+            if not q.get("cursor"):             # the client drops an empty cursor
                 return 200, json.dumps({"markets": HIST[:0], "cursor": "p2"}).encode()
             return 200, json.dumps({"markets": HIST, "cursor": ""}).encode()
         if path == "/markets/candlesticks":
@@ -204,3 +204,56 @@ def test_worker_pool_fetches_each_historical_market_once_and_errors_surface(monk
     with pytest.raises(KalshiError):
         backfill.fetch_candles(bad[0], "KXNBAGAME", [("historical", m) for m in more], "run2", lambda s: None,
                                pool=bad)
+
+
+def test_shared_throttle_spaces_requests_across_threads():
+    import threading
+    slept, lock = [], threading.Lock()
+
+    def sleep(s):
+        with lock:
+            slept.append(s)
+
+    th = backfill.SharedThrottle(5, clock=lambda: 100.0, sleep=sleep)   # time stands still
+    threads = [threading.Thread(target=th.wait) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    # One request goes at once; the other 19 are each given their own slot, 0.2 s apart.
+    assert sorted(round(s, 9) for s in slept) == [round(0.2 * k, 9) for k in range(1, 20)]
+
+
+def test_shared_throttle_sleeps_until_the_next_slot():
+    t = {"now": 10.0}
+    slept = []
+    th = backfill.SharedThrottle(4, clock=lambda: t["now"], sleep=slept.append)
+    th.wait()
+    th.wait()
+    th.wait()
+    assert slept == [pytest.approx(0.25), pytest.approx(0.5)]
+
+
+def test_polite_client_paces_every_request_through_the_shared_throttle():
+    waits = []
+
+    class Th:
+        def wait(self):
+            waits.append(1)
+
+    api = backfill.PoliteClient(KalshiClient(transport=Fake(), sleep=lambda s: None, max_rps=1000),
+                                now_fn=lambda: NOON, sleep=lambda s: None, throttle=Th())
+    api.get("/markets", {"series_ticker": "X"})
+    list(api.paginate("/historical/markets", {"series_ticker": "X"}, "markets"))
+    assert len(waits) == 3
+
+
+def test_weather_listing_drops_markets_closing_before_the_scope_date(monkeypatch):
+    old = market("KXHIGHNY-25OCT20-T60", "KXHIGHNY-25OCT20", "2025-10-19T14:00:00Z", "2025-10-21T05:00:00Z")
+    new = market("KXHIGHNY-25OCT22-T60", "KXHIGHNY-25OCT22", "2025-10-21T14:00:00Z", "2025-10-23T05:00:00Z")
+    monkeypatch.setattr(sys.modules[__name__], "LIVE", [old, new])
+    monkeypatch.setattr(sys.modules[__name__], "HIST", [])
+    api = backfill.PoliteClient(KalshiClient(transport=Fake(), sleep=lambda s: None, max_rps=1000),
+                                now_fn=lambda: NOON, sleep=lambda s: None)
+    found = backfill.list_markets(api, "KXHIGHNY", "run", lambda s: None)
+    assert [m["ticker"] for _, m in found] == [new["ticker"]]

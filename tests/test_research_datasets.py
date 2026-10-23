@@ -108,3 +108,15 @@ def test_live_package_never_imports_research():
     for path in (REPO / "sports_edge").rglob("*.py"):
         text = path.read_text()
         assert not re.search(r"^\s*(from|import)\s+research\b", text, re.M), path
+
+
+def test_cli_freeze_and_verify(tmp_path, capsys):
+    import duckdb
+    p = tmp_path / "t.parquet"
+    duckdb.connect().execute(f"COPY (SELECT 1 AS x) TO '{p}' (FORMAT parquet)")
+    assert datasets.main(["freeze", "cli", f"t={p}"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("DATASET OK") and "t=1" in out
+    folder = Path(out.split()[2])
+    assert datasets.main(["verify", str(folder)]) == 0
+    assert datasets.main(["bogus"]) == 2

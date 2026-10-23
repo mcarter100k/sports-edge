@@ -77,9 +77,17 @@ Kalshi's public market data. GET only, through `sports_edge.kalshi.KalshiClient`
   `/historical/markets/{ticker}/candlesticks`.
 - **Window per market:** [max(open, close − 14 days), close].
 
-**Politeness.** At most `RESEARCH_MAX_RPS` requests a second (default 8), shared across `RESEARCH_WORKERS` worker threads (default 4; each has its own client at RESEARCH_MAX_RPS / workers, because one request at a time is bounded by its network round trip, not the limit).
-No requests from 30 s before to 4 min after each quarter hour, when the
-live snapshot job runs. The client's retry on 429 and 5xx applies.
+**Politeness.**
+- At most `RESEARCH_MAX_RPS` requests a second in total (default 5), enforced
+  by **one limiter shared by all worker threads**, so workers never burst
+  together.
+- `RESEARCH_WORKERS` threads (default 6) keep requests in flight, because
+  one request at a time is bounded by its round trip of about 1.2 s.
+- **Amended 2026-10-22:** per-worker limits that added up to 8 a second
+  burst past Kalshi's limit and returned HTTP 429.
+- No requests from 30 s before to 4 min after each quarter hour, while the
+  live snapshot job runs.
+- The client's retry on 429 and 5xx applies.
 
 **Storage.**
 - Raw responses are appended to `backfill/raw/<series>/*.jsonl.gz`.
