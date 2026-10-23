@@ -419,7 +419,7 @@ def test_a_failed_send_partway_never_resends_what_already_went_out(tmp_path):
     with pytest.raises(slate.imessage.SendFailed):
         slate.run_alert(CHECK_AT + timedelta(minutes=1), flaky, quiet)
     rest = alert(CHECK_AT + timedelta(minutes=2))
-    assert [m[:2] for m in got] == ["#1"] and [m[:5] for m in rest] == ["#2 Bo"]       # combo line parked
+    assert [m[:2] for m in got] == ["#1"] and [m[:5] for m in rest] == ["#2 Bo", "Combo"]   # combo line unparked
 
 
 def test_hint_asks_for_the_number_when_one_run_checks_two_slots(tmp_path, monkeypatch):

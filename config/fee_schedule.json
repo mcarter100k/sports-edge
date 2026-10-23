@@ -19,6 +19,10 @@
     "balance_precision": "0.0001",
     "cite": "p.1 Fee Rounding, Overview: \"Direct member balances are aligned to $0.0001 (0.01c)\"; trade fee \"rounded up to the nearest $0.000001\""
   },
+  "combo": {
+    "taker": "1",
+    "cite": "p.2 Standard fees, \"Combos (excluding uncorrelated NFL): maker fees - 50% of taker, fee multiplier 1, $0.07 - $1.75 taker fees\"; uncorrelated NFL combos fall under \"Most markets: fee multiplier 1\". Taker multiplier 1 for every combo."
+  },
   "series": {
     "KXEPLGAME": {
       "taker": "1",

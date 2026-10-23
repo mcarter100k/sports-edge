@@ -102,6 +102,9 @@ def validate_table(table, repo_root=None):
     for ticker, reason in (table.get("unconfirmed") or {}).items():
         if not str(reason).strip():
             raise FeeTableInvalid(f"unconfirmed.{ticker} needs a reason")
+    if "combo" in table:
+        _need_cite(table["combo"], "combo")
+        Decimal(str(table["combo"]["taker"]))
     return table
 
 
@@ -119,6 +122,17 @@ def table_precision(table):
     if table is None:
         raise FeeScheduleUnknown("no fee table yet (config/fee_schedule.json)")
     return Decimal(str(table["rounding"]["balance_precision"]))
+
+
+def combo_taker_multiplier(table):
+    """Taker multiplier for combos (alerts only), or FeeScheduleUnknown. Never guessed."""
+    if table is None:
+        raise FeeScheduleUnknown("no fee table yet (config/fee_schedule.json)")
+    if "combo" in (table.get("unconfirmed") or {}):
+        raise FeeScheduleUnknown(f"combo: unconfirmed ({table['unconfirmed']['combo']})")
+    if "combo" not in table:
+        raise FeeScheduleUnknown("combo: no confirmed entry in the fee table")
+    return Decimal(str(table["combo"]["taker"]))
 
 
 def resolve_multipliers(table, series_ticker, api_fee_type, api_multiplier, has_override):

@@ -242,3 +242,28 @@ day, which shows "No upcoming fee changes scheduled".
 - An unconfirmed series raises.
 - A series with API maker fees but no row raises.
 - MLB's taker fee at p = 0.5 for 100 contracts is half the standard fee.
+
+---
+
+## Amendment 2026-10-23b: the combo taker fee key, unparked (PROPOSED, owner review)
+
+**The key.** The fee table carries
+`"combo": {"taker": "1", "cite": "<page and section>"}`, cited to p.2 of
+`docs/sources/kalshi-fees-2026-10-23.pdf`:
+- "Combos (excluding uncorrelated NFL): maker fees - 50% of taker, fee
+  multiplier 1, $0.07 - $1.75 taker fees";
+- uncorrelated NFL combos fall under "Most markets: fee multiplier 1".
+
+So the taker multiplier is 1 for every combo.
+
+**The rest is restored as before the park:**
+- `fees.combo_taker_multiplier(table)` returns the multiplier. It raises
+  `FeeScheduleUnknown` when there is no table, no `combo` entry, or `combo`
+  is under `unconfirmed`.
+- `validate_table` requires a cite on the entry.
+- Its only user is the slate's combo line (`slate_alerts_spec.md`,
+  amendment 2026-10-23). Combos are never ledger rows.
+
+**Not added:** a combo maker multiplier. The system never rests orders.
+Kalshi's "50% of taker" maker rate is recorded here for completeness only.
+

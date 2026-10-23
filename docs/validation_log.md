@@ -1154,3 +1154,54 @@ conflicts.
       up; messages read "Bet log unreadable");
     - the first scheduled 8:00 AM morning iMessage, as distinct from the
       manual launchd run.
+
+## 2026-10-23: combo alerts (feat/combo-alerts, held for owner review)
+
+Spec amendments `1a2954f` (combo line with payout and the owner's target;
+combo taker fee key), code `b07fdf3`. Touches protected files
+(`sports_edge/fees.py`, `config/fee_schedule.json`), so it is **not merged**.
+
+- **What it does:** when one check (or the board's current gaps) has picks
+  in two or more different games, one extra line prices a combo of the
+  first pick in each game: the highest cent X whose cost after the combo
+  taker fee is no more than the product of the legs' fair prices, the
+  payout that cost buys (rounded down to 0.1×), and whether it meets the
+  owner's target (`COMBO_TARGET_PAYOUT`, default 4). Legs are never padded
+  to reach the target. No combo line once the daily cap is reached. The
+  shadow ledger, the signal rule and `rule_id` are unchanged.
+- **Fee table:** a `combo` entry, taker multiplier 1, cited to p.2 of the
+  2026-10-23 fee page ("Combos (excluding uncorrelated NFL) … fee
+  multiplier 1, $0.07 - $1.75 taker fees"; uncorrelated NFL combos fall
+  under "Most markets: fee multiplier 1"). The $0.07–$1.75 range is per
+  100 contracts, the same formula as every other entry. Without a confirmed
+  entry the line reads "fee unconfirmed — no price".
+- **VERIFIED, Gate 1:**
+  - 14 tests in `tests/test_combo_line.py`, including a pinned line, the
+    target boundary at 3.4×/3.5×, the two-game rule, no padding, the fee
+    failing closed, the cite check, the check message on a real two-game
+    run, and the cap in alerts and on the board.
+  - 11 of 11 single-line mutants killed (two-game rule, one leg per game,
+    cap check in alerts and on the board, target boundary, price at fair,
+    payout rounding, fee fail-closed, cite required, unconfirmed refused,
+    default target).
+  - Suite: 622 passed.
+- **OBSERVED, Gate 2** (`scripts/reality_run.py --code <worktree>`,
+  1:35–1:37 PM PT, before the 1:45 live run):
+  - `slate board` on a copy of the live data: exit 0, "none (no checked
+    game still to start)", 21 live files hashed, 0 changed, no markers.
+  - `slate alert` on a copy of the live data: `SLATE ALERT OK messages=0
+    groups=2`, 0 live files changed, no markers.
+  - The branch's fee code on the real `config/fee_schedule.json`: the table
+    validates with the `combo` key; combo taker multiplier 1, precision
+    0.0001. Every stored sports series still resolves from its real stored
+    fee type (KXNBAGAME, KXNFLGAME, KXNCAAFGAME 1/1; KXMLBGAME 0.5/0.5).
+    With synthetic fairs of 0.55 × 0.55 (not market data), the real table
+    gives "Combo #1+#2: accept a quote at 28¢ or less (pays 3.4× or more),
+    else let it expire. Your 4× target: below." 0 live files changed.
+  - **Not reached:** no live check had gaps in two games, so no combo line
+    was produced from real prices.
+- **NOT CHECKED:** `run_snapshot.sh` on this branch. With an empty folder
+  it could spend a shared odds credit on a check that falls due. The step it
+  changes (`slate alert`) was run directly above.
+- **PENDING:** the first real combo line, from a check with price gaps in
+  two or more games, after this branch is approved and merged.
