@@ -28,8 +28,9 @@ rules, and what it does not mean.
   - **The non-claim comes only from the worst-case bound.** B assumes all
     124 rule-4-excluded games with a price had gone the worst possible way.
   - **A reverse bias of tradeable size is not ruled out.** The widened
-    interval contains +0.0225. A favorite-longshot bias larger than 0.0065
-    lies outside it. That is a reading of the interval, not the registered
+    interval contains +0.0225. A favorite-longshot bias larger than about
+    0.0082 lies outside it: 0.0065, plus the 0.0017 that the exclusions not
+    covered by B (rule 7 and the candle window, below) could add. That is a reading of the interval, not the registered
     "ruled out" statement, which belongs to the not-rejected path.
   - **The four sports are not separate evidence.** All are positive
     (+0.009 to +0.014), but they are the same data split up, and none is
@@ -38,8 +39,9 @@ rules, and what it does not mean.
     bucket, 0.00–0.05, is overpriced: priced 0.0270, won 0.0123. 234 of its
     243 games are football. Most buckets from 0.15 to 0.45 are underpriced.
     A pooled Δ near zero or positive can hide both.
-  - **The exploratory 5 h and 8 h runs are not replications.** They use
-    almost the same games (10,082 and 9,838, against 10,048), priced a few
+  - **The exploratory 5 h and 8 h runs are not replications.** They very
+    likely use almost the same games (INFERRED from the counts; the overlap
+    was not computed) (10,082 and 9,838, against 10,048), priced a few
     hours apart, so their agreement (+0.0117, +0.0129) is close to
     automatic.
 
@@ -71,7 +73,7 @@ because the weather series' multiplier is not in a cited fee table.
 **Weather, by price bucket** (sum of (y − p), brackets priced under 0.50,
 13,471 brackets, total −148.4):
 
-| Bucket | Brackets | Σ(y − p) | Σ(y − bid) | Median half-spread | Share with bid 0.01 |
+| Bucket | Brackets (not independent) | Σ(y − p) | Σ(y − bid) | Median half-spread | Share with bid 0.01 |
 |---|---|---|---|---|---|
 | 0.00–0.05 | 4,770 | −66.6 | −36.9 | 0.005 | 46% |
 | 0.05–0.10 | 1,934 | −48.6 | −28.4 | 0.005 | 1% |
@@ -83,9 +85,9 @@ because the weather series' multiplier is not in a cited fee table.
 **What the table shows:**
 - **The deficit sits in the brackets priced under 0.30.** Brackets from
   0.30 to 0.50 run the other way.
-- **Much of the lowest bucket is pinned at the tick floor.** Nearly half of
-  it has a bid of 0.01, so its mid is set by the quote format, not by a
-  view.
+- **Nearly half of the lowest bucket (46%) is quoted at the tick floor**
+  (bid 0.01). That may hold its mid up (INFERRED). Nothing here measures
+  how much of the deficit the floor causes.
 - **Selling earns the bid, not the mid.** Like for like, per bracket (a
   plain average over the 13,471 brackets, not the per-city-day Δ):
   - mean (y − mid) is −0.0110;
@@ -94,7 +96,9 @@ because the weather series' multiplier is not in a cited fee table.
   - after the fee at multiplier 1, the same seller **loses 0.56 cents per
     bracket** on average.
 
-  Across all brackets under 0.50, there was nothing to earn after costs.
+  This is a point estimate after the modelled fee, with no interval, and
+  the brackets are not independent (several share one city-day). It
+  points the conservative way.
 - **The brackets under 0.30 are the obvious post-hoc candidate.** A seller
   at the bid there shows +1.06 cents per bracket before fees, and +0.55
   cents after the fee at multiplier 1 (10,672 brackets).

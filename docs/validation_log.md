@@ -974,3 +974,38 @@ a7ca1ab Pre-registration revision 4: answers the third review (approved); claim-
   six minor findings are answered in `result_note.md` and by the committed
   post-result script.
 
+- **Correction to the line above:** the second result review listed
+  **nine** minor findings, not six.
+  - Findings 1–6 were answered at `8ee60c7`.
+  - Findings 7 and 9 (interval reading and labels) are answered in
+    `result_note.md` in the next commit, together with the re-check's
+    finding 4 (point-estimate wording).
+  - Finding 8 is answered by the clean rerun below.
+- **The re-check review: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_result_r3.md`).
+- **VERIFIED, clean rerun (2026-10-23):** the study was run from a fresh
+  detached worktree at `586ca79`, with 0 uncommitted files (`git status
+  --short` empty). It printed `sha256=b8f8cd29c21c6ec0233fb3dab9029efd3369f89fe364a2517da62e9e3766a1eb`,
+  identical to the committed `result.md`. `git diff --stat 1e2e506 HEAD --
+  research/registry/2026-10-kalshi-calibration/result.md` is empty.
+- **OBSERVED, the post-result script's output** (command `python -m
+  research.studies.kalshi_calibration_postresult --dataset
+  ~/sports-edge-research/datasets/kalshi-backfill/34babdc762e232b0`, script
+  as committed at `8ee60c7`; report only, computed after the result was
+  read):
+
+```
+rule-5 sports exclusions 88; market closed > 14 d after t: 6 {'Baseball': 5, 'Football': 1}
+rule-5 sports exclusions 88; market closed > 14 d - 6 h after t: 6 {'Baseball': 5, 'Football': 1}
+weather brackets under 0.50: 13471; per bracket: mean (y - mid) -0.0110, mean (y - bid) -0.0018
+bucket | n | sum(y - mid) | sum(y - bid) | median half-spread | share bid 0.01 | seller at bid after fee, per bracket
+0.00-0.05 | 4770 | -66.6 | -36.9 | 0.0050 | 0.46 | +0.0064
+0.05-0.10 | 1934 | -48.6 | -28.4 | 0.0050 | 0.01 | +0.0108
+0.10-0.20 | 2183 | -59.2 | -36.4 | 0.0050 | 0.00 | +0.0086
+0.20-0.30 | 1785 | -30.8 | -11.0 | 0.0050 | 0.00 | -0.0064
+0.30-0.40 | 1598 | +17.3 | +35.3 | 0.0050 | 0.00 | -0.0377
+0.40-0.50 | 1201 | +39.5 | +53.5 | 0.0050 | 0.00 | -0.0616
+seller at the bid, all under 0.50: +0.0018 per bracket before fees, -0.0056 after the fee at multiplier 1 (13471 brackets)
+seller at the bid, under 0.30 (post-hoc slice): +0.0106 per bracket before fees, +0.0055 after the fee at multiplier 1 (10672 brackets)
+```
+
