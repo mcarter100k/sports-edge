@@ -231,3 +231,25 @@ def test_settings_deny_rules_and_hook_wiring():
     (entry,) = s["hooks"]["PreToolUse"]
     assert set(entry["matcher"].split("|")) == {"Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"}
     assert entry["hooks"][0]["command"].endswith('/.claude/hooks/guard.py"')
+
+
+def test_heredoc_bodies_are_text_not_commands(repos):
+    doc = "cat > /tmp/notes.md <<'EOF'\nthe editor's rule: never run git add -A\nrm data/x\nEOF\necho done"
+    assert bash(doc, repos["main"]) == (0, "")
+    py = "python3 - <<'EOF'\nprint('git add -A > data/x')\nEOF"
+    assert bash(py, repos["main"]) == (0, "")
+
+
+def test_the_line_opening_a_heredoc_is_still_checked(repos):
+    assert bash("cat > data/x.csv <<EOF\nhello\nEOF", repos["main"])[0] == 2
+    assert bash("cat <<'EOF' > logs/a.log\nhello\nEOF", repos["main"])[0] == 2
+
+
+def test_commands_after_a_heredoc_are_still_checked(repos):
+    assert bash("cat > /tmp/a <<EOF\nx\nEOF\ngit add -A", repos["main"])[0] == 2
+    assert bash("cat > /tmp/a <<-EOF\n\tx\n\tEOF\nrm data/x", repos["main"])[0] == 2
+
+
+def test_an_unclosed_heredoc_swallows_the_rest_as_text(repos):
+    # bash itself reads to the end as the body, so nothing after the opening line runs
+    assert bash("cat > /tmp/a <<EOF\ngit add -A", repos["main"]) == (0, "")
