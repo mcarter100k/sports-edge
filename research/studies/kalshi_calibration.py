@@ -44,6 +44,7 @@ SD_ASSUMED = 0.50                        # the upper bound of sqrt(p(1 - p))
 WEATHER_SD = 0.0709                      # from prices at t (pre-registration section 6)
 DELTA = 0.02
 FEE_AT_HALF = 0.07 * 0.25                # taker fee per contract at p = 0.5, multiplier assumed 1
+FOLLOWUP = 0.0225                        # registered: FEE_AT_HALF + the pre-run median half-spread (0.0050)
 MIN_UNITS = 20
 EDGES_DOG = [0, .05, .10, .15, .20, .25, .30, .35, .40, .45, .50]
 EDGES_ALL = [0, .05, .10, .20, .30, .40, .50, .60, .70, .80, .90, .95, 1.0]
@@ -274,6 +275,34 @@ def survives(res, bound):
     return res["lo"] - bound > 0 or res["hi"] + bound < 0
 
 
+def claim(res, bound, rejected):
+    """(claimed, reason) for a test that the z test (primary) or BH (secondary) did or did not reject."""
+    if not rejected:
+        return False, "not rejected"
+    if survives(res, bound):
+        return True, "claimed"
+    if res["lo"] <= 0 <= res["hi"]:
+        return False, "rejected by the z test, not claimed: the bootstrap interval itself includes 0"
+    return False, "rejected, not claimed: the interval widened by the exclusion bound B includes 0"
+
+
+def primary_verdict(res, bound):
+    rejected = res["p"] is not None and res["p"] < ALPHA
+    claimed, reason = claim(res, bound, rejected)
+    if claimed:
+        return "REJECT H0, claimed: the 95% interval widened by B excludes 0"
+    if rejected:
+        return f"H0 {reason}"
+    return (f"DO NOT REJECT H0. A pooled underdog excess outside [{f(res['lo'] - bound)}, {f(res['hi'] + bound)}] "
+            f"(the 95% interval widened by B) is ruled out; this does not show calibration bucket by bucket (see "
+            f"the descriptive tables)")
+
+
+def followup_met(res, bound):
+    rejected = res["p"] is not None and res["p"] < ALPHA
+    return claim(res, bound, rejected)[0] and abs(res["mean"]) >= FOLLOWUP
+
+
 def run(folder, out_path):
     folder = Path(folder)
     manifest = datasets.verify(folder)
@@ -326,7 +355,6 @@ def run(folder, out_path):
     rejected, adjusted = stats.benjamini_hochberg([family[k]["p"] if testable[k] else 1.0 for k in FAMILY], Q)
     bh = dict(zip(FAMILY, zip(rejected, adjusted)))
     half = statistics.median(r["half_spread"] for r in srows)
-    followup = FEE_AT_HALF + half
 
     n_need = stats.n_for_effect(SD_ASSUMED, DELTA, ALPHA, 0.8)
     L = [f"# Result: Kalshi calibration by price bucket and sport", "",
@@ -354,21 +382,15 @@ def run(folder, out_path):
           f"| Sports (pooled) | {primary['n']} | {primary['clusters']} | {f(primary['mean'])} | "
           f"{f(primary['se'], sign=False)} | [{f(primary['lo'])}, {f(primary['hi'])}] | {f(primary['p'], sign=False)} "
           f"| {f(bound['pooled'], sign=False)} |", ""]
-    if primary["p"] is not None and primary["p"] < ALPHA:
-        verdict = ("REJECT H0, claimed: the 95% interval widened by B excludes 0" if survives(primary, bound["pooled"])
-                   else "H0 rejected at α = 0.05 but NOT claimed: the interval widened by the exclusion bound B "
-                        "includes 0")
-    else:
-        verdict = (f"DO NOT REJECT H0. A pooled underdog excess outside [{f(primary['lo'])}, {f(primary['hi'])}] "
-                   f"is ruled out; this does not show calibration bucket by bucket (see the descriptive tables)")
+    verdict = primary_verdict(primary, bound["pooled"])
     L += [f"Decision: **{verdict}**.", "",
           f"Power (stated before the run): with sd {SD_ASSUMED}, |Δ| = {DELTA} needs {n_need} games; {primary['n']} "
           f"were scored, so the smallest effect detectable at 80% power is "
           f"{stats.detectable_effect(SD_ASSUMED, primary['n']):.4f}, before any design effect from clustering.", "",
-          f"Follow-up threshold (registered): |Δ| ≥ fee at p = 0.5 with multiplier 1 ({FEE_AT_HALF:.4f}) + median "
-          f"half-spread of the scored games ({half:.4f}) = {followup:.4f}. "
-          + ("Met." if abs(primary["mean"]) >= followup and primary["p"] is not None and primary["p"] < ALPHA
-             and survives(primary, bound["pooled"]) else "Not met."), "",
+          f"Follow-up threshold (registered before the run): |Δ| ≥ {FOLLOWUP:.4f} (fee at p = 0.5 with multiplier 1, "
+          f"{FEE_AT_HALF:.4f}, plus the pre-run median half-spread, 0.0050). "
+          + ("Met." if followup_met(primary, bound["pooled"]) else "Not met.")
+          + f" Run-time median half-spread of the scored games, for reference: {half:.4f}.", "",
           "## Secondary family (Benjamini–Hochberg, q = 0.05, always five tests)", "",
           "| group | units | dates | Δ | SE | 95% interval | p | BH adjusted p | exclusion bound B | rejected and claimed |",
           "|---|---|---|---|---|---|---|---|---|---|"]
@@ -381,10 +403,10 @@ def run(folder, out_path):
             L.append(f"| {k} | {n} | {cl} | {f(res['mean']) if res else 'n/a'} | n/a | n/a | n/a | {f(adj, sign=False)} "
                      f"| n/a | INSUFFICIENT (not testable or N < 20) |")
             continue
-        claim = "yes" if rej and survives(res, bound[k]) else ("rejected, not claimed (bound)" if rej else "no")
+        claimed, reason = claim(res, bound[k], rej)
         L.append(f"| {k} | {res['n']} | {res['clusters']} | {f(res['mean'])} | {f(res['se'], sign=False)} | "
                  f"[{f(res['lo'])}, {f(res['hi'])}] | {f(res['p'], sign=False)} | {f(adj, sign=False)} | "
-                 f"{f(bound[k], sign=False)} | {claim} |")
+                 f"{f(bound[k], sign=False)} | {'yes' if claimed else reason} |")
     L += ["",
           "Weather Δ is, per city-day, the mean of (y − p) over brackets priced under 0.50 at local midnight. It is "
           "driven mostly by whether the winning bracket is one of them: when it is, the value is (1 − Σp) / k. "

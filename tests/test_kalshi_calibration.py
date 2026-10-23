@@ -15,7 +15,7 @@ def naive(dt):
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def make_dataset(tmp, flip=False):
+def make_dataset(tmp, flip=False, hockey_one_date=False):
     rng = random.Random(1)
     markets, candles, outcomes = [], [], []
 
@@ -49,6 +49,16 @@ def make_dataset(tmp, flip=False):
         y = 1 if rng.random() < p else 0
         outcome(a, "void" if d == 3 else ("yes" if y else "no"))
         outcome(b, "no" if y else "yes")
+    if hockey_one_date:                               # 25 hockey games, all decided on one date
+        for g in range(25):
+            exp = T0 + timedelta(days=60, minutes=g)
+            ev = f"KXNHLGAME-H{g:02d}"
+            for side in ("AAA", "BBB"):
+                markets.append((f"{ev}-{side}", ev, "KXNHLGAME", "Hockey", "binary", naive(exp - timedelta(days=5)),
+                                naive(exp - timedelta(minutes=20)), naive(exp)))
+            candle(f"{ev}-AAA", exp - timedelta(hours=4, minutes=30), 0.40, 0.42)
+            outcome(f"{ev}-AAA", "yes" if g % 2 else "no")
+            outcome(f"{ev}-BBB", "no" if g % 2 else "yes")
     # a three-market game (excluded)
     ev = "KXNBAGAME-THREE"
     for s in ("A", "B", "C"):
@@ -160,3 +170,78 @@ def test_family_always_has_five_tests(tmp_path):
     rows = [line for line in family.splitlines() if line.startswith("| ") and not line.startswith("| group")]
     assert [r.split("|")[1].strip() for r in rows] == ["Football", "Basketball", "Hockey", "Baseball", "Weather"]
     assert sum("INSUFFICIENT" in r for r in rows) == 3
+
+
+def test_the_exclusion_bound_is_printed(tmp_path):
+    ds = make_dataset(tmp_path)
+    study.run(ds, tmp_path / "a.md")
+    primary = section((tmp_path / "a.md").read_text(), "Primary test")
+    assert "exclusion bound B" in primary and primary.count("| 0.0221 |") == 1
+
+
+def test_a_single_date_group_enters_the_family_as_insufficient(tmp_path):
+    ds = make_dataset(tmp_path, hockey_one_date=True)
+    study.run(ds, tmp_path / "a.md")
+    family = section((tmp_path / "a.md").read_text(), "Secondary family")
+    hockey = next(line for line in family.splitlines() if line.startswith("| Hockey"))
+    assert hockey.startswith("| Hockey | 25 | 1 |") and "INSUFFICIENT" in hockey and "| 1.0000 |" in hockey
+
+
+def test_claim_reasons_and_verdicts():
+    rejected_clear = {"p": 0.001, "lo": -0.05, "hi": -0.03, "mean": -0.04}
+    assert study.claim(rejected_clear, 0.01, True) == (True, "claimed")
+    assert study.primary_verdict(rejected_clear, 0.01).startswith("REJECT H0, claimed")
+    assert study.followup_met(rejected_clear, 0.01)
+    killed_by_bound = {"p": 0.01, "lo": -0.03, "hi": -0.005, "mean": -0.017}
+    assert study.claim(killed_by_bound, 0.01, True)[1].startswith("rejected, not claimed: the interval widened")
+    assert study.primary_verdict(killed_by_bound, 0.01).startswith("H0 rejected, not claimed")
+    assert not study.followup_met(killed_by_bound, 0.01)
+    disagree = {"p": 0.04, "lo": -0.02, "hi": 0.001, "mean": -0.01}      # z test rejects, bootstrap interval does not
+    assert "bootstrap interval itself includes 0" in study.claim(disagree, 0.0, True)[1]
+    null = {"p": 0.4, "lo": -0.01, "hi": 0.02, "mean": 0.005}
+    v = study.primary_verdict(null, 0.003)
+    assert v.startswith("DO NOT REJECT H0") and "[-0.0130, +0.0230]" in v
+    small = {"p": 0.001, "lo": -0.03, "hi": -0.015, "mean": -0.02}       # claimed but under the follow-up threshold
+    assert study.claim(small, 0.0, True)[0] and not study.followup_met(small, 0.0)
+
+
+def test_a_tested_price_that_reads_later_data_stops_the_run(tmp_path, monkeypatch):
+    import pytest
+    from research import harness
+    ds = make_dataset(tmp_path)
+
+    def leaky(self, con, ticker, t):
+        row = con.execute("SELECT max(yes_bid) FROM quotes WHERE ticker = ?", [ticker]).fetchone()
+        return row[0]
+
+    monkeypatch.setattr(study.FilteredMid, "predict", leaky)
+    with pytest.raises(harness.LeakageError):
+        study.run(ds, tmp_path / "a.md")
+    assert not (tmp_path / "a.md").exists()
+
+
+def test_a_leak_on_an_excluded_decision_also_stops_the_run(tmp_path, monkeypatch):
+    # Game 5 is excluded by the timing guard; its price enters only the exclusion bound, so only the study's
+    # own all-decision check (not the harness score of scored games) can catch a leak there.
+    import pytest
+    from research import harness
+    ds = make_dataset(tmp_path)
+    honest = study.FilteredMid.predict
+
+    def leaky(self, con, ticker, t):
+        if ticker == "KXNBAGAME-G05-AAA":
+            return con.execute("SELECT max(yes_bid) FROM quotes WHERE ticker = ?", [ticker]).fetchone()[0]
+        return honest(self, con, ticker, t)
+
+    monkeypatch.setattr(study.FilteredMid, "predict", leaky)
+    with pytest.raises(harness.LeakageError):
+        study.run(ds, tmp_path / "a.md")
+
+
+def test_the_tested_price_applies_the_spread_rule():
+    from research import harness
+    t = datetime(2026, 3, 1, 12, tzinfo=timezone.utc)
+    con = harness.build({"quotes": "SELECT 'W' AS ticker, TIMESTAMP '2026-03-01 11:00:00' AS ts_utc, 0.40 AS yes_bid, "
+                                   "0.60 AS yes_ask UNION ALL SELECT 'N', TIMESTAMP '2026-03-01 11:00:00', 0.45, 0.47"})
+    assert study.FilteredMid().predict(con, "W", t) is None
+    assert abs(study.FilteredMid().predict(con, "N", t) - 0.46) < 1e-12
