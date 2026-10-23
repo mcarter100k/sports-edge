@@ -1044,3 +1044,26 @@ Spec amendment `57de872`, code `8d5411d`.
   - an append into `data/` is blocked;
   - the documentation heredoc that the old guard blocked is allowed, and
     its file was written.
+
+## 2026-10-22: CORRECTION, college football match coverage
+
+The research-base entry above says the 31 unmatched college games "are
+games absent from the reference listing". **That is wrong.**
+
+- **Where the wrong claim came from:** `reference_events`, which stores
+  only games starting within the 24 h odds horizon.
+- **What the full listing shows** (OBSERVED,
+  `/v4/sports/americanfootball_ncaaf/events`, `x-requests-last: 0`): 67
+  college games, including the missed Akron vs Kent State, Baylor vs
+  Kansas, Boston College vs Georgia Tech and Bowling Green vs Buffalo
+  (Saturday 2026-10-24).
+- **The actual cause** (OBSERVED, `markets`): those Kalshi games carry a
+  placeholder `expected_expiration_time = occurrence_time = 2026-10-24
+  03:00Z`, about 14 h before the real kickoff. So matching rule 4 cannot
+  pass.
+- **Week 43 counts:** Kalshi lists 104 college games; 45 match a reference
+  game uniquely on names; 27 of those start after Kalshi's expected
+  expiration; 8 were matched.
+- **Options and a recommendation:** branch `proposal/college-scope`.
+- **The same correction** is in the alias batch spec (branch
+  `feat/alias-batch-1`, commit `dad1a60`).
