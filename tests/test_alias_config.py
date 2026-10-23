@@ -63,6 +63,6 @@ def test_a_basketball_title_never_reaches_a_football_team():
     # even in the Basketball pool, the Basketball alias for "Los Angeles C" names the Clippers only
     r = match([(la_game(), "Basketball")], {"Basketball": [chargers]}, ALIASES)
     assert r.matches == [] and r.unmatched[0]["reason"] == "name_mismatch"
-    # a Football reference game is never in a Basketball game's pool
+    # a Football reference game is never in a Basketball game's pool: the game is skipped, not even refused
     r = match([(la_game(), "Basketball")], {"Football": [chargers]}, ALIASES)
-    assert r.matches == []
+    assert r.matches == [] and r.unmatched == []

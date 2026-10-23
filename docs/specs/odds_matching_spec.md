@@ -218,7 +218,7 @@ followed leagues failed rule 5 on names alone:
 - **`UNMATCHED-REFERENCE` lines** (in-scope reference games with no Kalshi
   game) are unchanged.
 
-## Amendment 2026-10-22: Kalshi placeholder times (rule version `match_v3`, PROPOSED, owner review)
+## Amendment 2026-10-22: Kalshi placeholder times (rule version `match_v3`, owner-approved, merged 2026-10-23)
 
 **The problem (observed 2026-10-22).** Kalshi lists many Saturday college
 games with a placeholder time. For example, KXNCAAFGAME-26OCT23AKRKENT has
@@ -315,7 +315,7 @@ Earlier rows keep `match_v2`; nothing is relabelled.
 - **The listing window:** a placeholder event 20 h past its `resolve_by`
   is still a candidate; a non-placeholder event is not.
 
-## Amendment 2026-10-22, revised 2026-10-23: alias batch 1, NBA shared-city teams (PROPOSED, owner review)
+## Amendment 2026-10-22, revised 2026-10-23: alias batch 1, NBA shared-city teams (owner-delegated review 2026-10-23; independent re-review APPROVE)
 
 **Revision 2026-10-23.** The independent review
 (`docs/reviews/2026-10-23_alias_batch_1.md`, REVISE) found that the four NFL
@@ -345,7 +345,7 @@ least once, before rule version `match_v3`:
 
 There were also 280 Kalshi games in series that had never paired: 124
 soccer, 79 basketball, 75 hockey and 2 football. Most are leagues outside
-`config/slate_sports.json`.
+`config/slate_sports.json` (INFERRED from the series names; not counted).
 
 **The college football misses were not alias problems.** They came from
 Kalshi placeholder times, and the amendment above (rule version
@@ -358,7 +358,7 @@ plus a letter when two teams share a city. Observed Kalshi titles
 
 | Sport tag | Kalshi title | Seen in | Reference name | In this batch |
 |---|---|---|---|---|
-| Basketball | `Los Angeles C` | KXNBAGAME-26OCT23LACLAL, logged UNMATCHED name_mismatch | `Los Angeles Clippers` | yes |
+| Basketball | `Los Angeles C` | KXNBAGAME-26OCT23LACLAL; `unmatched` row 2026-10-22T23:45:06Z, name_mismatch, in_window=5 | `Los Angeles Clippers` | yes |
 | Basketball | `Los Angeles L` | KXNBAGAME-26OCT23LACLAL (same game) | `Los Angeles Lakers` | yes |
 | Football | `Los Angeles C` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Chargers` | no: no UNMATCHED line yet |
 | Football | `Los Angeles R` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Rams` | no: no UNMATCHED line yet |
@@ -370,8 +370,11 @@ plus a letter when two teams share a city. Observed Kalshi titles
   no credits). OBSERVED; the listing itself was not saved, because
   `reference_events` stores only matched games.
 - **Without these aliases, the game fails rule 5:** `los angeles clippers`
-  does not start with `los angeles c` followed by a space. A game between
-  the two Los Angeles NBA teams could never pair.
+  does not start with `los angeles c` followed by a space. No Lakers or
+  Clippers game could pair: Kalshi uses these titles in every game of the
+  two teams, not only when they meet (OBSERVED 2026-10-23 in `markets`:
+  KXNBAGAME-26OCT25LACOKC and KXNBAGAME-26OCT25LALUTA as well as the
+  derby), so the batch affects every Lakers and Clippers game.
 - **The sport tag scopes each alias,** so Basketball `Los Angeles C` can
   never reach a Football team.
 - **Each alias still fails safe:** it maps one exact Kalshi title to one
