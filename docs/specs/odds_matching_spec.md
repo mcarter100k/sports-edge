@@ -239,13 +239,30 @@ There are also 280 Kalshi games in series that have never paired: 124
 soccer, 79 basketball, 75 hockey and 2 football. Most are leagues outside
 `config/slate_sports.json`.
 
-**The college football misses are not alias problems.** The reference
-listing held only 8 NCAAF games in total (commence 2026-10-22 23:00Z to
-2026-10-24 02:30Z). None of the 31 missed Kalshi games, for example Akron
-vs Kent St. or Baylor vs Kansas, appears in it under any name. The reason
-recorded is `name_mismatch` because other games were in the time window.
-No alias can fix a game the reference source does not list. Kalshi's
-"St." form already matches through the `st` = `state` rule.
+**The college football misses are not alias problems; they are a timing
+problem** (corrected 2026-10-22).
+
+**The correction.** An earlier draft of this amendment said these games
+were absent from the reference listing. That was wrong. It was read from
+`reference_events`, which stores only games starting within the odds
+horizon (24 h). The full listing (`/events`, 0 credits, 2026-10-22) has 67
+NCAAF games, including the missed Akron vs Kent State, Baylor vs Kansas,
+Boston College vs Georgia Tech and Bowling Green vs Buffalo, all Saturday
+2026-10-24 between 17:00Z and 19:30Z.
+
+**The cause: Kalshi placeholder times.**
+- **The placeholder:** those Kalshi games carry
+  `expected_expiration_time = occurrence_time = 2026-10-24 03:00Z`. That
+  is the end of the ticker's date, Oct 23, in Eastern time, about 14 hours
+  before the real kickoff.
+- **Why they fail:** rule 4 requires the reference start within
+  [resolve_by − 8 h, resolve_by]. The real kickoff is after resolve_by, so
+  no game can fit.
+- **Why it says name_mismatch:** the reason recorded is `name_mismatch`
+  only because Friday games were in that wrong window.
+- **The fix belongs elsewhere:** a change to rule 4 for placeholder times,
+  proposed separately. Kalshi's "St." form already matches through the
+  `st` = `state` rule.
 
 **The real abbreviation cases.** Kalshi shortens a team name to the city
 plus a letter when two teams share a city. The observed Kalshi titles
