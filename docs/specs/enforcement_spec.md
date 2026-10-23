@@ -3,7 +3,7 @@
 Status: Milestone 1, owner-directed 2026-10-22. Not a protected file.
 
 **Why.** AGENTS.md states the rules for evidence and protected files. This
-makes the editor refuse the actions those rules forbid, so an assistant
+makes the editor refuse the actions those rules forbid, so an editing
 session cannot break them by mistake. It is a guard against accidents, not a
 security boundary: a program started from the shell (for example
 `python -c`) can still write anywhere the user can.
