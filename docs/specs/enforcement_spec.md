@@ -66,8 +66,14 @@ newlines, and each part is checked:
    by any `cd <dir>` earlier in the same command.
 3. Writes by the same commands to a PROTECTED file outside a feature
    worktree are blocked.
-4. If the command cannot be split (unbalanced quotes, heredocs), a plain
-   pattern scan applies rules 1 and 2 to the raw text.
+4. If the command cannot be split (unbalanced quotes), a plain pattern scan
+   applies rules 1 and 2 to the raw text.
+5. **Heredoc bodies are text, not commands** (amended 2026-10-22). Every
+   body (`<<WORD` or `<<'WORD'` … a line holding only `WORD`; `<<-`
+   allows leading tabs) is removed before the steps above. The line that
+   opens the heredoc stays, so `cat > data/x <<EOF` is still blocked by
+   its redirection target. Before this amendment, a heredoc that only
+   wrote documentation mentioning bulk staging was blocked.
 
 **Fail closed.** Unreadable input, or any error inside the guard, blocks
 the call with the error as the reason.
