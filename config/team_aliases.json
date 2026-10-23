@@ -1,5 +1,15 @@
 {
   "_doc": "Per Kalshi sport tag: {kalshi yes_sub_title: reference team name}. Add an entry only after inspecting an UNMATCHED name_mismatch line.",
+  "Basketball": {
+    "Los Angeles C": "Los Angeles Clippers",
+    "Los Angeles L": "Los Angeles Lakers"
+  },
+  "Football": {
+    "Los Angeles C": "Los Angeles Chargers",
+    "Los Angeles R": "Los Angeles Rams",
+    "New York G": "New York Giants",
+    "New York J": "New York Jets"
+  },
   "Hockey": {
     "New York R": "New York Rangers",
     "New York I": "New York Islanders"
