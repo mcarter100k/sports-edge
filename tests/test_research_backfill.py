@@ -1,5 +1,6 @@
 """Kalshi-only research backfill (docs/specs/research_spec.md), against a fake transport."""
 import json
+import sys
 import urllib.parse
 from datetime import datetime, timezone
 
@@ -175,3 +176,31 @@ def test_partial_chunk_is_not_read_as_complete(tmp_path):
     assert not list(tmp_path.glob("candles_x_*.jsonl.gz"))
     w.close()
     assert len(list(tmp_path.glob("candles_x_*.jsonl.gz"))) == 1
+
+
+def test_worker_pool_fetches_each_historical_market_once_and_errors_surface(monkeypatch):
+    many = [market(f"KXNBAGAME-26JUN{i:02d}H-HHH", f"KXNBAGAME-26JUN{i:02d}H", "2026-06-01T00:00:00Z",
+                   "2026-06-05T00:00:00Z") for i in range(1, 11)]
+    monkeypatch.setattr(sys.modules[__name__], "HIST", many)
+    fakes = [Fake() for _ in range(3)]
+    pool = [backfill.PoliteClient(KalshiClient(transport=f, sleep=lambda s: None, max_rps=1000),
+                                  now_fn=lambda: NOON, sleep=lambda s: None) for f in fakes]
+    calls = backfill.fetch_candles(pool[0], "KXNBAGAME", [("historical", m) for m in many], "run", lambda s: None,
+                                   pool=pool)
+    assert calls == 10
+    hits = sorted(p.split("/")[3] for f in fakes for p, _ in f.calls)
+    assert hits == sorted(m["ticker"] for m in many)
+    assert all(f.calls for f in fakes), "every worker took part"
+    assert backfill.done_tickers("KXNBAGAME") == {m["ticker"] for m in many}
+
+    class Boom(Fake):
+        def __call__(self, url, timeout):
+            return 400, b'{"error": "bad"}'
+
+    bad = [backfill.PoliteClient(KalshiClient(transport=Boom(), sleep=lambda s: None, max_rps=1000),
+                                 now_fn=lambda: NOON, sleep=lambda s: None)]
+    more = [market("KXNBAGAME-26JUN30Z-ZZZ", "KXNBAGAME-26JUN30Z", "2026-06-01T00:00:00Z", "2026-06-05T00:00:00Z")]
+    from sports_edge.kalshi import KalshiError
+    with pytest.raises(KalshiError):
+        backfill.fetch_candles(bad[0], "KXNBAGAME", [("historical", m) for m in more], "run2", lambda s: None,
+                               pool=bad)

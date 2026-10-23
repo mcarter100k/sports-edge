@@ -14,10 +14,12 @@ import gzip
 import json
 import math
 import os
+import queue
 import sys
 import tempfile
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -184,13 +186,24 @@ def done_tickers(series):
     return done
 
 
-def fetch_candles(api, series, markets, run_stamp, out, limit=None):
+def historical_candles(api, m):
+    lo, hi = window(m)
+    quoted = urllib.parse.quote(m["ticker"], safe="")
+    params = {"start_ts": lo, "end_ts": hi, "period_interval": PERIOD_MIN}
+    resp = api.get(f"/historical/markets/{quoted}/candlesticks", params)
+    return {"fetched_utc": iso_z(utcnow()), "source": "historical", "tickers": [m["ticker"]],
+            "returned": [m["ticker"]], "params": params, "response": resp}
+
+
+def fetch_candles(api, series, markets, run_stamp, out, limit=None, pool=None):
+    """pool: a list of clients for historical calls, one per worker thread (default [api])."""
     done = done_tickers(series)
     todo = [(src, m) for src, m in markets if m["ticker"] not in done]
     if limit is not None:
         todo = todo[:limit]
     writer = ChunkWriter(backfill_dir() / "raw" / series, f"candles_{run_stamp}")
     calls = 0
+    pool = pool or [api]
     try:
         for lo, hi, tickers in batches([m for src, m in todo if src == "live"]):
             params = {"market_tickers": ",".join(tickers), "start_ts": lo, "end_ts": hi,
@@ -200,32 +213,46 @@ def fetch_candles(api, series, markets, run_stamp, out, limit=None):
             writer.write({"fetched_utc": iso_z(utcnow()), "source": "live", "tickers": tickers,
                           "returned": sorted(got), "params": params, "response": resp})
             calls += 1
-        for src, m in todo:
-            if src != "historical":
-                continue
-            lo, hi = window(m)
-            quoted = urllib.parse.quote(m["ticker"], safe="")
-            params = {"start_ts": lo, "end_ts": hi, "period_interval": PERIOD_MIN}
-            resp = api.get(f"/historical/markets/{quoted}/candlesticks", params)
-            writer.write({"fetched_utc": iso_z(utcnow()), "source": "historical", "tickers": [m["ticker"]],
-                          "returned": [m["ticker"]], "params": params, "response": resp})
-            calls += 1
-            if calls % 1000 == 0:
-                out(f"{series}: {calls} candle calls")
+        hist = [m for src, m in todo if src == "historical"]
+        slices = [hist[i::len(pool)] for i in range(len(pool))]
+        with ThreadPoolExecutor(max_workers=len(pool)) as ex:
+            # Each worker walks its own slice with its own client; results come back to this thread,
+            # which alone writes.
+            results = queue.Queue()
+
+            def work(client, part):
+                for m in part:
+                    results.put(historical_candles(client, m))
+
+            futures = [ex.submit(work, c, part) for c, part in zip(pool, slices)]
+            while any(not f.done() for f in futures) or not results.empty():
+                try:
+                    rec = results.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                writer.write(rec)
+                calls += 1
+                if calls % 1000 == 0:
+                    out(f"{series}: {calls} candle calls")
+            for f in futures:
+                f.result()          # re-raise a worker's error after its stored results are written
     finally:
         writer.close()
     out(f"{series}: {len(todo)} markets fetched in {calls} calls ({len(done)} already stored)")
     return calls
 
 
-def fetch(series_list, out, limit=None, rps=None, client=None, now_fn=utcnow, sleep=time.sleep):
-    client = client or KalshiClient(max_rps=rps or float(os.environ.get("RESEARCH_MAX_RPS", "8")))
-    api = PoliteClient(client, now_fn=now_fn, sleep=sleep)
+def fetch(series_list, out, limit=None, rps=None, client=None, now_fn=utcnow, sleep=time.sleep, workers=None):
+    rps = rps or float(os.environ.get("RESEARCH_MAX_RPS", "8"))
+    n = workers or (1 if client else int(os.environ.get("RESEARCH_WORKERS", "4")))
+    clients = [client] if client else [KalshiClient(max_rps=rps / n) for _ in range(n)]
+    pool = [PoliteClient(c, now_fn=now_fn, sleep=sleep) for c in clients]
+    api = pool[0]
     run_stamp = stamp(utcnow())
     for series in series_list:
         markets = list_markets(api, series, run_stamp, out)
-        fetch_candles(api, series, markets, run_stamp, out, limit)
-    out(f"BACKFILL FETCH OK requests={client.requests}")
+        fetch_candles(api, series, markets, run_stamp, out, limit, pool=pool)
+    out(f"BACKFILL FETCH OK requests={sum(c.requests for c in clients)} workers={n}")
 
 
 # Normalize --------------------------------------------------------------------
