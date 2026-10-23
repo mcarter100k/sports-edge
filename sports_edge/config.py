@@ -5,6 +5,7 @@ directory with environment variables alone.
 """
 import json
 import os
+from decimal import Decimal
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -135,6 +136,11 @@ def sheet_dir() -> Path:
 
 def imessage_to():
     return os.environ.get("IMESSAGE_TO") or None
+
+
+def combo_target_payout():
+    """The owner's payout target for combo lines, per dollar staked (shown, never pursued). Default 4."""
+    return Decimal(os.environ.get("COMBO_TARGET_PAYOUT") or "4")
 
 
 def load_json_config(name):

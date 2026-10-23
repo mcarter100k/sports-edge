@@ -218,11 +218,119 @@ followed leagues failed rule 5 on names alone:
 - **`UNMATCHED-REFERENCE` lines** (in-scope reference games with no Kalshi
   game) are unchanged.
 
-## Amendment 2026-10-22: alias batch 1, NBA and NFL shared-city teams (PROPOSED, owner review)
+## Amendment 2026-10-22: Kalshi placeholder times (rule version `match_v3`, PROPOSED, owner review)
 
-**Match coverage before this batch** (`python -m research.studies.match_coverage`,
-on a copy of the live data, 2026-10-22 8:5x PM PT). Kalshi series that have
-paired at least once:
+**The problem (observed 2026-10-22).** Kalshi lists many Saturday college
+games with a placeholder time. For example, KXNCAAFGAME-26OCT23AKRKENT has
+`expected_expiration_time = occurrence_time = 2026-10-24 03:00Z`. That is
+23:00 Eastern on the ticker's date (Oct 23). The game kicks off at
+2026-10-24 17:00Z, 14 h after `resolve_by`. Rule 4 (reference start within
+[resolve_by − 8 h, resolve_by]) can never pass. In week 43, 27 of the 45
+college games that match a reference game uniquely by names were blocked
+this way. See `docs/proposals/college_scope.md`.
+
+**1. The detection rule (exact).** A Kalshi game event is a
+*placeholder event* only if all of the following hold:
+1. **Ticker date:** its event ticker carries a date as the first
+   `-YYMMMDD` token after the series prefix, for example `-26OCT23` =
+   2026-10-23. Digits may follow (a start time, as in `-26OCT231430`); the
+   date is the first seven characters.
+2. **The same placeholder in every market:** every market of the event
+   has `expected_expiration_time` equal to `occurrence_time`, and that
+   value is the same for all of them.
+3. **The placeholder value:** that value is exactly 23:00:00 in
+   America/New_York on the ticker date, converted to UTC: 03:00Z under
+   daylight time, 04:00Z under standard time. The conversion is
+   `timeutil.eastern_to_utc`.
+
+An event that fails any part is not a placeholder event, and rule 4 applies
+unchanged.
+
+**2. The widened window, only after the normal window finds nothing.** For
+a placeholder event:
+- **Normal first:** candidates are first sought with rule 4 as written.
+- **Widen only on an empty result:** only if that finds **no** candidate are
+  candidates sought again with the time rule
+  [resolve_by − 8 h, resolve_by + 32 h]. That covers the ticker's date and
+  the following day in every US time zone.
+- **Why two steps:** a genuine game whose real end happens to be 23:00 ET
+  (an 8 p.m. start) matches in the normal window exactly as today. A
+  false detection can therefore never turn a good match into an
+  ambiguous one, for example two MLB games between the same teams on
+  consecutive days.
+
+**3. Every uniqueness rule is kept.** Rules 1, 2, 3, 5 and 6 apply to the
+widened candidates exactly as before:
+- both Kalshi teams must match two distinct reference teams;
+- exactly one reference game may fit the Kalshi event;
+- that reference game may fit no other Kalshi event.
+
+Two candidates in the widened window refuse as `ambiguous`, and a
+reference game also claimed by another event refuses.
+
+**4. The game time is the reference start.** Once matched, a placeholder
+event's time comes from the reference game everywhere downstream. That is
+already true:
+- check scheduling and clusters use the reference listing's latest start
+  (`checks.latest_starts`);
+- the pre-game rule uses the reference read's `commence_utc`
+  (`shadow.evaluate`);
+- markouts use the latest listed start.
+
+Kalshi's `resolve_by` is used only to choose which matched markets are
+snapshotted (`snapshot.matched_event_tickers`: resolve_by > now − 2 days;
+near tier: resolve_by ≤ now + 48 h). A placeholder that is too early keeps
+the market snapshotted at least as long as before, and 2 days covers a
+real start 14 h later.
+
+**5. The listing window.** The odds step rebuilds candidate Kalshi games
+from markets resolving in [now, now + horizon + 8 h]. For placeholder
+events only, the lower bound becomes now − 32 h. A placeholder event
+therefore stays a candidate until its widened window has passed. Without
+this, a Saturday game would be considered only for the ~10 hours when both
+its placeholder and its reference listing are in range.
+
+**6. Logging.** An unmatched placeholder event's detail gains
+`placeholder=1`. Reasons are unchanged (`no_candidate`, `name_mismatch`,
+`ambiguous`), with `in_window` counted over the window that was searched
+last.
+
+**7. Rule version:** matches recorded from now on carry `match_v3`.
+Earlier rows keep `match_v2`; nothing is relabelled.
+
+**8. Tests the implementation must have:**
+- **A placeholder event pairs correctly:** the Akron vs Kent State case,
+  placeholder 03:00Z, reference start 14 h later.
+- **A non-placeholder event with a wrong time still refuses:** the same
+  teams and reference game, with the Kalshi time at 02:00Z (not 23:00 ET).
+- **Two candidate games still refuse:** a placeholder event with two
+  reference games of the same teams inside the widened window gives
+  `ambiguous`.
+- **A false detection cannot break a normal match:** an event whose real
+  end is 23:00 ET, with a same-day candidate and a next-day duplicate,
+  matches the same-day game.
+- **Detection:** EDT (03:00Z) and EST (04:00Z) both detected; a minute off,
+  occurrence ≠ expected, markets disagreeing, or no date in the ticker are
+  not detected.
+- **The listing window:** a placeholder event 20 h past its `resolve_by`
+  is still a candidate; a non-placeholder event is not.
+
+## Amendment 2026-10-22, revised 2026-10-23: alias batch 1, NBA shared-city teams (PROPOSED, owner review)
+
+**Revision 2026-10-23.** The independent review
+(`docs/reviews/2026-10-23_alias_batch_1.md`, REVISE) found that the four NFL
+aliases in the first draft had no `UNMATCHED name_mismatch` line behind
+them, which this spec requires before any alias is added (the
+`config/team_aliases.json` paragraph under the rules). They are removed from
+this batch and wait for that line. The batch is now the two NBA aliases. The
+review's other findings are answered below and in
+`tests/test_alias_config.py`.
+
+**Match coverage before this batch** (OBSERVED,
+`python -m research.studies.match_coverage` on a copy of the live data,
+evening of 2026-10-22 PT; the exact minute was not recorded). The counts
+are games (distinct event tickers), for Kalshi series that had paired at
+least once, before rule version `match_v3`:
 
 | Series | Reference key | Matched games | Never matched | Rate | Reasons |
 |---|---|---|---|---|---|
@@ -235,67 +343,68 @@ paired at least once:
 | KXNHLGAME | icehockey_nhl | 14 | 0 | 100% | |
 | **Total** | | **39** | **32** | **55%** | |
 
-There are also 280 Kalshi games in series that have never paired: 124
+There were also 280 Kalshi games in series that had never paired: 124
 soccer, 79 basketball, 75 hockey and 2 football. Most are leagues outside
 `config/slate_sports.json`.
 
-**The college football misses are not alias problems; they are a timing
-problem** (corrected 2026-10-22).
+**The college football misses were not alias problems.** They came from
+Kalshi placeholder times, and the amendment above (rule version
+`match_v3`, merged 2026-10-23) handles them. The NCAAF row shows the state
+before that change.
 
-**The correction.** An earlier draft of this amendment said these games
-were absent from the reference listing. That was wrong. It was read from
-`reference_events`, which stores only games starting within the odds
-horizon (24 h). The full listing (`/events`, 0 credits, 2026-10-22) has 67
-NCAAF games, including the missed Akron vs Kent State, Baylor vs Kansas,
-Boston College vs Georgia Tech and Bowling Green vs Buffalo, all Saturday
-2026-10-24 between 17:00Z and 19:30Z.
+**The shared-city abbreviations.** Kalshi shortens a team name to the city
+plus a letter when two teams share a city. Observed Kalshi titles
+(`yes_sub_title` in `markets`, game series only; OBSERVED 2026-10-23):
 
-**The cause: Kalshi placeholder times.**
-- **The placeholder:** those Kalshi games carry
-  `expected_expiration_time = occurrence_time = 2026-10-24 03:00Z`. That
-  is the end of the ticker's date, Oct 23, in Eastern time, about 14 hours
-  before the real kickoff.
-- **Why they fail:** rule 4 requires the reference start within
-  [resolve_by − 8 h, resolve_by]. The real kickoff is after resolve_by, so
-  no game can fit.
-- **Why it says name_mismatch:** the reason recorded is `name_mismatch`
-  only because Friday games were in that wrong window.
-- **The fix belongs elsewhere:** a change to rule 4 for placeholder times,
-  proposed separately. Kalshi's "St." form already matches through the
-  `st` = `state` rule.
+| Sport tag | Kalshi title | Seen in | Reference name | In this batch |
+|---|---|---|---|---|
+| Basketball | `Los Angeles C` | KXNBAGAME-26OCT23LACLAL, logged UNMATCHED name_mismatch | `Los Angeles Clippers` | yes |
+| Basketball | `Los Angeles L` | KXNBAGAME-26OCT23LACLAL (same game) | `Los Angeles Lakers` | yes |
+| Football | `Los Angeles C` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Chargers` | no: no UNMATCHED line yet |
+| Football | `Los Angeles R` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Rams` | no: no UNMATCHED line yet |
+| Football | `New York G` | KXNFLGAME-26OCT25NYGHOU | `New York Giants` | no: no UNMATCHED line yet |
+| Football | `New York J` | KXNFLGAME-26NOV01LVNYJ | `New York Jets` | no: no UNMATCHED line yet |
 
-**The real abbreviation cases.** Kalshi shortens a team name to the city
-plus a letter when two teams share a city. The observed Kalshi titles
-(`yes_sub_title` in `markets`, game series only):
-
-| Sport tag | Kalshi title | Seen in | Reference name |
-|---|---|---|---|
-| Basketball | `Los Angeles C` | KXNBAGAME (KXNBAGAME-26OCT23LACLAL, UNMATCHED name_mismatch) | `Los Angeles Clippers` |
-| Basketball | `Los Angeles L` | KXNBAGAME (same game) | `Los Angeles Lakers` |
-| Football | `Los Angeles C` | KXNFLGAME | `Los Angeles Chargers` |
-| Football | `Los Angeles R` | KXNFLGAME | `Los Angeles Rams` |
-| Football | `New York G` | KXNFLGAME | `New York Giants` |
-| Football | `New York J` | KXNFLGAME | `New York Jets` |
-
-- **The reference names were observed,** not assumed, in The Odds API
-  `/v4/sports/{basketball_nba,americanfootball_nfl}/events` on 2026-10-22
-  (`x-requests-last: 0`, no credits).
-- **Without these aliases, each fails rule 5:** for example
-  `los angeles clippers` does not start with `los angeles c` followed by a
-  space. A single game between the two Los Angeles NBA teams, or a Giants
-  or Jets game, could never pair.
+- **The NBA reference names were observed,** not assumed, in The Odds API
+  `/v4/sports/basketball_nba/events` on 2026-10-22 (`x-requests-last: 0`,
+  no credits). OBSERVED; the listing itself was not saved, because
+  `reference_events` stores only matched games.
+- **Without these aliases, the game fails rule 5:** `los angeles clippers`
+  does not start with `los angeles c` followed by a space. A game between
+  the two Los Angeles NBA teams could never pair.
 - **The sport tag scopes each alias,** so Basketball `Los Angeles C` can
-  never reach the Chargers, nor Football `Los Angeles C` the Clippers.
+  never reach a Football team.
 - **Each alias still fails safe:** it maps one exact Kalshi title to one
   exact reference name, so it can only add a pairing between those two
   names. Rules 2–6 (sport, time, distinct teams, unique both ways) still
-  apply.
+  apply, and anything ambiguous is still refused and logged `UNMATCHED`.
+- **The NFL titles** are added in a later batch, each only after its game
+  logs an `UNMATCHED name_mismatch` line (the Giants game on 2026-10-25 is
+  the first expected). Until then those games are refused, never compared.
+
+**Overlapping keys between sport tags.** `matching.py` merges the alias
+tables of a game's tags with `dict.update`, so if two tag tables shared a
+key with different targets, the last tag would win silently. No two tag
+tables share a key in this batch. A test now fails if any two tag tables
+in `config/team_aliases.json` share a key with different targets, so a
+later batch that needs one (for example the Football `Los Angeles C`)
+must first change how `matching.py` resolves it, under its own spec.
 
 **Not in this batch:** the MLB shared-city titles (`Chicago C`,
 `Chicago WS`, `Los Angeles A`, `Los Angeles D`, `New York M`,
-`New York Y`). They appear in Kalshi's MLB futures series, but no MLB game
-listing with those teams has been observed in the reference source yet.
-They wait for an observed listing, per the rule above.
+`New York Y`). They wait for an `UNMATCHED name_mismatch` line, like the
+NFL titles.
 
-**Rule version:** unchanged, `match_v2`. Aliases are configuration, as in
+**Tests** (`tests/test_alias_config.py`):
+- the alias file equals the exact expected table, so a swapped or changed
+  entry fails;
+- each alias is needed (the pair does not match without it);
+- the Los Angeles NBA game pairs through the real `match()` path with the
+  real alias file, with each Kalshi title on the right reference team, in
+  both home/away orders;
+- a Basketball game titled `Los Angeles C` does not pair with a Football
+  reference game of the Chargers through `match()`;
+- no two sport tags share an alias key with different targets.
+
+**Rule version:** unchanged, `match_v3`. Aliases are configuration, as in
 the NHL amendment.

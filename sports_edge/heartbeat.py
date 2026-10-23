@@ -28,12 +28,15 @@ def system_timezone():
         return "unknown"
 
 
+BACKUP_MAX_AGE = timedelta(hours=48)   # docs/specs/backup_spec.md
+
+
 def build_report(now=None, tz_name=None, free_bytes=None):
     now = now or utcnow()
     week_ago, day_ago = now - timedelta(days=7), now - timedelta(days=1)
     lines, problems = [], []
     state = health.read_state()
-    for job in ("snapshot", "grader"):
+    for job in ("snapshot", "grader", "backup"):
         s = state.get(job, {})
         last_ok = parse_utc(s.get("last_success_utc"))
         fails = s.get("consecutive_failures", 0)
@@ -42,6 +45,8 @@ def build_report(now=None, tz_name=None, free_bytes=None):
             problems.append(f"{job} failing ({fails} in a row): {s.get('last_reason', '')[:80]}")
         elif last_ok is None:
             problems.append(f"{job} has never succeeded")
+        elif job == "backup" and now - last_ok > BACKUP_MAX_AGE:
+            problems.append(f"backup last succeeded {display(last_ok)} (over 48 h ago)")
 
     with Store.open(lock_wait_s=120) as store:
         q = lambda sql, *a: store.con.execute(sql, list(a)).fetchone()[0]
