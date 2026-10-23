@@ -1216,3 +1216,51 @@ combo taker fee key), code `b07fdf3`. Touches protected files
   live files hashed, 0 changed, no failure markers.
 - **PENDING:** the first live snapshot run on `main` with this code, and the
   first real combo line.
+
+## 2026-10-23: alias batch 1, NBA shared-city teams (feat/alias-batch-1)
+
+**Owner delegation** (2026-10-23): the owner asked for this item to be
+handled ("handle these 3 items"). The review was done by the independent
+read-only reviewer in fresh sessions:
+- **First review: REVISE** (`docs/reviews/2026-10-23_alias_batch_1.md`).
+  Three major findings: the tests could not catch a swapped NFL alias; the
+  spec was out of date against `main` (`match_v3`); and the four NFL aliases
+  had no `UNMATCHED name_mismatch` line behind them, which the spec requires
+  before an alias is added.
+- **Revision:** the NFL aliases were dropped and wait for that line; `main`
+  was merged in; the tests now pin the table and run the real `match()`
+  path in both home/away orders.
+- **Re-review: APPROVE** (`docs/reviews/2026-10-23_alias_batch_1_r2.md`).
+  Its five minor findings were answered in `d779be2`. The most important:
+  Kalshi uses `Los Angeles C` / `Los Angeles L` in **every** Clippers and
+  Lakers game (OBSERVED: KXNBAGAME-26OCT25LACOKC, KXNBAGAME-26OCT25LALUTA),
+  so before this batch no Lakers or Clippers game could pair.
+- **A process slip, recorded:** both first-round reviewers briefly saw
+  merge-conflict markers in their worktrees. A merge from `main` was
+  started while they were reading, then aborted within seconds. Each
+  review says its line numbers come from the clean branch state.
+
+- **VERIFIED, Gate 1:**
+  - 6 alias tests.
+  - 5 of 5 mutants of the alias file killed, each by at least two tests:
+    C/L swapped, an alias removed, a Football `Los Angeles C` added, the
+    Basketball `Los Angeles C` retargeted to the Chargers, an unnecessary
+    alias added.
+  - Suite on the branch with `main` merged: 628 passed.
+- **VERIFIED, Gate 2** (`run_snapshot.sh` through `scripts/reality_run.py`
+  on empty folders, production horizon, `ODDS_DAILY_CREDITS=0`,
+  2:03–2:10 PM PT):
+  - **Branch:** `SNAPSHOT OK tier=daily matches_added=111
+    match_conflicts=0 events_matched=53`. KXNBAGAME-26OCT23LACLAL paired:
+    `-LAC -> Los Angeles Clippers`, `-LAL -> Los Angeles Lakers`.
+  - **`main` (the control):** `events_matched=52`, with
+    KXNBAGAME-26OCT23LACLAL refused as `name_mismatch` (in_window=11).
+  - Both: 0 ambiguous, 0 match conflicts, `match_v3`, odds calls `events`
+    8 and `sports` 1 for 0 credits, `checks_due=0`, 21 live files hashed
+    and 0 changed, no failure markers.
+- **PENDING:**
+  - the first live run on `main` pairing a Lakers or Clippers game (Clippers
+    at Oklahoma City and Lakers at Utah, 2026-10-25);
+  - the NFL titles (`Los Angeles C`/`R`, `New York G`/`J`), each after its
+    game logs an `UNMATCHED name_mismatch` line; the Giants game on
+    2026-10-25 is the first expected.
