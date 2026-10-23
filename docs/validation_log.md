@@ -912,3 +912,10 @@ Spec `c25c87d`, code `6025d55`.
     `DATASET OK … manifest_sha256=db0b979f…`;
   - the committed `dataset_manifest.json` is byte-identical to the frozen
     manifest.
+- **Short re-check review of the post-approval script change: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg_r4.md`).
+  Its two minor findings, both wording or record only, are answered in
+  `prereg.md`.
+- **VERIFIED for the run commit (2026-10-23):**
+  - `586ca79` (script) precedes `a7ca1ab` (revision 4) in `git log`;
+  - `git diff 334c293 586ca79 -- research/harness.py` is empty.

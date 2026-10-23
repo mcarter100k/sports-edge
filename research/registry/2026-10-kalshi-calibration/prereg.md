@@ -134,8 +134,8 @@ outcomes):
 
 **Sports t.** Kalshi gives no start time.
 - **Live check:** on 39 matched live games (2026-10-22), expected
-  expiration minus the Pinnacle start was 160–180 min. MLB was represented
-  by about one game, and EPL and La Liga are outside this study.
+  expiration minus the Pinnacle start was 160–180 min. MLB was 1 of the 39
+  games, and EPL and La Liga (1 each) are outside this study.
 - **Historical check** (timing fields only), close_utc − expected_expiration_utc
   per game, in hours:
 
@@ -183,8 +183,8 @@ finding 4):
   ended.
 - **MLB, the weakest case** (46% of the sample): the 7.0% of MLB markets
   (328 games) whose expected expiration is off the 5-minute grid fall on
-  minutes ending in 2 or 3. That fits first pitches such as 7:07 plus
-  3 h. Their close − expected (median −0.06 h, p5 −0.54, p95 +0.69) matches
+  minutes ending in 2 or 3. That fits first pitches at odd minutes plus a
+  fixed offset of about 2 h 55 min (7:07 + 2:55 = 10:02). Their close − expected (median −0.06 h, p5 −0.54, p95 +0.69) matches
   the other MLB games. Only 6.7% sit within 2 minutes of the close, whereas
   a rewrite to the end of play would put nearly all there.
 - **The live sample of 34** is NHL 22, NCAAF 6, NBA 4, NFL 2 and MLB 0.
