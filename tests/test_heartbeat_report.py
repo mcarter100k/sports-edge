@@ -24,6 +24,7 @@ def seed_healthy(s, sports=("Basketball", "Soccer", "Hockey"), runs=None):
                                   "ticker": f"T{i}", "status": "active"} for i in range(len(sports))])
     health.record_success("snapshot", NOW - timedelta(minutes=10))
     health.record_success("grader", NOW - timedelta(hours=12))
+    health.record_success("backup", NOW - timedelta(hours=12))
 
 
 def test_healthy(monkeypatch, tmp_path):
@@ -100,3 +101,31 @@ def test_exchange_closed_runs_count_as_completed_but_too_many_are_flagged(monkey
         s.con.execute("UPDATE job_runs SET status = 'exchange_closed' WHERE run_id IN ('r10','r11','r12','r13','r14')")
     lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
     assert attention and any("exchange reported closed on 13 runs" in ln for ln in lines)
+
+
+def test_backup_never_run_or_stale_is_flagged(monkeypatch, tmp_path):
+    monkeypatch.setenv("ODDS_API_KEY", "k")
+    fee_table(tmp_path)
+    with Store.open() as s:
+        seed_healthy(s)
+    health.record_success("backup", NOW - timedelta(hours=49))
+    lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
+    assert attention and any("backup last succeeded" in ln and "over 48 h ago" in ln for ln in lines), lines
+    health.record_success("backup", NOW - timedelta(hours=47))
+    lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
+    assert lines[0] == "healthy", lines
+
+
+def test_backup_without_any_success_is_flagged(monkeypatch, tmp_path):
+    import json
+    from sports_edge import config
+    monkeypatch.setenv("ODDS_API_KEY", "k")
+    fee_table(tmp_path)
+    with Store.open() as s:
+        seed_healthy(s)
+    path = config.state_dir() / "health.json"
+    state = json.loads(path.read_text())
+    state.pop("backup")
+    path.write_text(json.dumps(state))
+    lines, attention = build_report(NOW, "America/Los_Angeles", BIG)
+    assert attention and any("backup has never succeeded" in ln for ln in lines), lines
