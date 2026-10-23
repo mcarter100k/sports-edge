@@ -101,7 +101,11 @@ because the weather series' multiplier is not in a cited fee table.
   points the conservative way.
 - **The brackets under 0.30 are the obvious post-hoc candidate.** A seller
   at the bid there shows +1.06 cents per bracket before fees, and +0.55
-  cents after the fee at multiplier 1 (10,672 brackets).
+  cents after the fee at multiplier 1 (10,672 brackets). This too is a
+  point estimate, with no interval, and the brackets are not independent.
+  - The after-fee gain is in the buckets under 0.20 (+0.64, +1.08 and
+    +0.86 cents per bracket). The 0.20–0.30 bucket loses 0.64 cents per
+    bracket after the fee.
   - This slice was chosen after seeing the table, so it is a hypothesis,
     not evidence.
   - It could only be tested under a new pre-registration, on data after

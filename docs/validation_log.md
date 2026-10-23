@@ -1341,3 +1341,59 @@ combo taker fee key), code `b07fdf3`. Touches protected files
   live files hashed, 0 changed, no failure markers.
 - **PENDING:** the first live snapshot run on `main` with this code, and the
   first real combo line.
+
+## 2026-10-23: calibration study result accepted; harness merged (feat/harness-study)
+
+**Owner delegation** (2026-10-23): the owner asked for the result's
+acceptance to be handled ("handle these 3 items"). The owner had already
+approved the harness itself, to merge after the result was reviewed.
+
+- **Fourth look by the independent reviewer: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_result_r4.md`, at
+  `6e318f7`). Five of the third look's six findings were answered in full;
+  the sixth (the git and rerun evidence) only partly. Three new minor
+  findings, answered here:
+  1. **The rerun record lacked the runner, command and git evidence.** The
+     rerun was repeated, see below. It was run by the author, not by the
+     owner or the reviewer.
+  2. **The positive post-hoc figure lacked the caveat the negative one
+     had.** `result_note.md` now says it is a point estimate with no
+     interval and dependent brackets, and that the gain is in the buckets
+     under 0.20 while the 0.20–0.30 bucket loses 0.64 cents per bracket
+     after the fee.
+  3. **The log briefly held conflict markers during the review.** A merge
+     from `main` was started in this worktree while the reviewer was
+     reading, then aborted within seconds. The later merge
+     (`f388577`) keeps both sides; `grep -nE '^(<<<<<<<|=======|>>>>>>>)'
+     docs/validation_log.md` prints nothing.
+- **VERIFIED, clean rerun repeated** (2026-10-23 1:53–2:04 PM PT, by the
+  author):
+  - a fresh detached worktree at `586ca7917a976a07d1b975670352bf206d8f53bb`,
+    `git status --short` empty before and after;
+  - command, from that worktree: `/Users/quis/sports-edge/venv/bin/python
+    -m research.studies.kalshi_calibration --dataset
+    ~/sports-edge-research/datasets/kalshi-backfill/34babdc762e232b0 --out
+    <temporary file>`;
+  - output: `STUDY OK 2026-10-kalshi-calibration … sha256=b8f8cd29c21c6ec0233fb3dab9029efd3369f89fe364a2517da62e9e3766a1eb`,
+    exit 0;
+  - the committed `result.md` at `6e318f7` has the same sha256.
+- **Git order** (`git log --oneline 586ca79^..6e318f7`, oldest last):
+  ```
+  6e318f7 Result note: remaining review wording; clean-checkout rerun verified identical; post-result output recorded
+  8ee60c7 Result note: reproducible post-result figures (report-only script), signed after-fee reading, weather rule-7 bound, three zero-count rules; answers the second result review (approved)
+  e690dfb Result reading note (answers the result review), run record in the validation log
+  1e2e506 Result: Kalshi calibration study, registered run on dataset 34babdc762e232b0 (written by the study script; byte-identical on a second run)
+  f81c74c Pre-registration: MLB wording fixes from the re-check (approved); run-commit checks logged
+  a7ca1ab Pre-registration revision 4: answers the third review (approved); claim-power reading, MLB timing evidence, zero-count exclusion listed
+  586ca79 Study: the result prints the registered claim power and the follow-up caveat (third review, findings 1-2)
+  ```
+  `git diff --stat 1e2e506 6e318f7 -- research/registry/2026-10-kalshi-calibration/result.md`
+  prints nothing.
+- **Accepted** under the owner's delegation, on this evidence. The accepted
+  reading is unchanged:
+  - pooled sports: not claimed (Δ +0.0112);
+  - weather: claimed, but untradeable at the bid after fees;
+  - the sub-0.30 weather slice is a post-hoc hypothesis that needs its own
+    pre-registration on later data.
+
+  No edge is claimed.
