@@ -33,6 +33,9 @@ reads them.
   t − max_age ≤ ts_utc ≤ t and 0 < yes_bid ≤ yes_ask < 1, (bid + ask) / 2.
   Otherwise None. A quote stamped exactly t is known at t: a candle's
   `end_period_utc` is the end of its hour.
+- **`kalshi_quote(con, ticker, t, max_age)`:** the (bid, ask) that
+  `kalshi_mid` uses, for filters such as a maximum spread. `kalshi_mid` is
+  defined from it, so the two never disagree.
 - **`pinnacle_fair(con, ticker, t, max_age)`:** the latest reference with
   t − max_age ≤ fetched_utc ≤ t. Otherwise None.
 - **`KalshiMidSource(max_age)`:** a source whose prediction is
