@@ -1,13 +1,25 @@
 # Pre-registration: Kalshi calibration by price bucket and sport (favorite-longshot check)
 
-Study `2026-10-kalshi-calibration`, **revision 2** (2026-10-23).
-- **Script:** `research/studies/kalshi_calibration.py` at commit `20afe15`.
+Study `2026-10-kalshi-calibration`, **revision 3** (2026-10-23).
+- **Script:** `research/studies/kalshi_calibration.py` at commit `98f8b3a`.
 - **Harness:** `research/harness.py` (PROTECTED). The owner approved it at
   commit `334c293` on 2026-10-22, and it is unchanged since (`git diff
   334c293 -- research/harness.py` is empty). The approval is recorded in
   `docs/validation_log.md`.
 
-**Revision 2** answers the pre-registration review
+**Revision 3** answers the second review
+(`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg_r2.md`, verdict
+REVISE: all 14 first-round findings resolved, 1 new major and 4 minor):
+
+| Finding (second review) | Change |
+|---|---|
+| 1. The power section ignored the exclusion-bound claim rule | Section 6 now states the power to *claim* under the B rule, pooled and per sport, and the effect needed for 80%. The lower power is accepted explicitly: the pooled test reaches 80% claim power at about Δ = 0.023, about the 0.0225 follow-up threshold. |
+| 2. The follow-up threshold was computed at run time | Fixed in the script at 0.0225. The run-time half-spread is printed separately for reference. |
+| 3. The null interval ignored B; the "not claimed" reason could be wrong | A null now rules out only an excess outside [lo − B, hi + B]. A failed claim prints its actual reason: the bound, or the bootstrap interval disagreeing with the z test. |
+| 4. Expected expiration might be rewritten at settlement | Evidence added in section 3, from timing fields only. |
+| 5. Three paths without end-to-end tests | Tests added: the bound printed; a single-date group entered as INSUFFICIENT with p = 1; every claim and verdict path. Two more: a leak on an excluded decision stops the run, and the tested price applies the spread rule. |
+
+**Revision 2** answered the first pre-registration review
 (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg.md`, verdict
 REVISE). The study has not run on this dataset; no outcome has been read.
 
@@ -138,6 +150,23 @@ hidden:
 **Weather t** is fixed by the calendar (the measured date's local
 midnight). The weather rules read no field that settles with the outcome.
 
+**Expected expiration is not rewritten at settlement** (second review,
+finding 4):
+- **Live versus frozen:** 34 markets matched live on 2026-10-22, whose
+  `expected_expiration_time` the live database recorded before they
+  settled, are in the frozen dataset with the identical value (34 of 34).
+  Their expected expiration minus the Pinnacle scheduled start is 160–179
+  min.
+- **Scheduled times, not settlement times:** across the frozen settled
+  markets, expected expiration falls on a whole 5-minute mark, like a
+  schedule, for 100% of NBA, NCAAF, NFL and NHL markets and 93.0% of MLB.
+  Actual close times do so for 0.3–1.7%, which is chance for clock times
+  to the second. The field carries scheduled times, not the time play
+  ended.
+- **The limit:** the dataset holds no snapshot taken before each game, so
+  this evidence is indirect. A value updated between listing and the
+  game, for example after a postponement, is the one used.
+
 **The price at t** is the mid of the latest **two-sided** hourly candle with
 t − 6 h ≤ end_period_utc ≤ t. A candle's `end_period_utc` is the end of its
 hour, so all of its data are known at t.
@@ -194,6 +223,27 @@ hour, so all of its data are known at t.
   - Basketball 0.0359 (n 1,523);
   - Hockey 0.0336 (n 1,743);
   - Baseball 0.0206 (n 4,635).
+- **Power to *claim* under the exclusion-bound rule (section 9).** A claim
+  needs the 95% interval, widened by B on each side, to exclude 0. That is
+  a higher bar than the test alone. With SE = sd/√n, B = b0 + c·|Δ| (b0
+  as in section 9, c = n excluded with a price ÷ (n + that)), z = 1.96:
+
+| Group | smallest claimable \|Δ̂\| | power to claim at Δ = 0.02 | Δ for 80% claim power |
+|---|---|---|---|
+| Pooled | 0.0187 | 0.60 (0.66 at the observed sd 0.469) | 0.0229 |
+| Football | 0.0476 | 0.01 | 0.0570 |
+| Basketball | 0.0297 | 0.23 | 0.0405 |
+| Hockey | 0.0254 | 0.33 | 0.0355 |
+| Baseball | 0.0195 | 0.52 | 0.0258 |
+
+  **Accepted as registered:**
+  - The pooled study can claim, with about 80% power, a bias as large as
+    the 0.0225 follow-up threshold, which is the size that would matter
+    for trading.
+  - It cannot reliably claim a 0.02 bias, and the per-sport tests are much
+    weaker. Football in particular can claim only biases of about 0.05 or
+    more, because its rule-4 exclusions are large.
+  - A non-claim is read with these numbers.
 - **Weather:** sd 0.0709. It is derived from prices as the RMS over
   city-days of √(S(1−S))/k (S = summed price of the sub-0.50 brackets,
   capped at 1; k = their count). At n 2,557 the detectable effect is
@@ -235,17 +285,20 @@ hour, so all of its data are known at t.
   - Weather has no outcome-dependent exclusion, so B = 0.
 - **Claimed rejection:** the test's p < 0.05 (primary) or BH-rejected
   (secondary), **and** the 95% cluster-bootstrap interval, widened by B on
-  each side, excludes 0. A rejection that fails the bound is reported as
-  "rejected, not claimed".
+  each side, excludes 0. A rejection that fails is reported as "rejected,
+  not claimed", with its reason: either the widened interval includes 0, or
+  the bootstrap interval itself includes 0 (the percentile bootstrap and
+  the z test can disagree).
 - **If claimed with |Δ| ≥ 0.0225** (the fee at p = 0.5 with multiplier 1,
   0.0175, plus the median half-spread of eligible games at t, 0.0050):
   propose a prospective, fee-adjusted shadow study on games after this
   dataset's last date, with its own pre-registration. No live action. The
-  result also prints the run-time half-spread of scored games.
+  threshold 0.0225 is fixed in the script; the run-time half-spread of the
+  scored games is printed for reference only.
 - **If claimed with |Δ| < 0.0225:** a clear but untradeable
   miscalibration. Record it.
 - **If not rejected:** report only that a pooled underdog excess outside
-  the observed 95% interval is ruled out. Calibration bucket by bucket is
+  the observed 95% interval, widened by B on each side, is ruled out. Calibration bucket by bucket is
   described from the tables, not concluded.
 - **INSUFFICIENT:** any group with fewer than 20 units (AGENTS.md rule 9).
 
@@ -260,6 +313,9 @@ hour, so all of its data are known at t.
 - The backfill's per-series counts of markets and of markets with candles.
 - Close minus expected expiration for all five series (section 3), read
   2026-10-22 (NFL, NCAAF, NBA) and 2026-10-23 (all five).
+- **Expected expiration** of the 34 live-matched, now-settled markets
+  against their frozen values, and the share of expected-expiration and
+  close times on 5-minute marks (2026-10-23, timing fields only).
 - **Candle-only counts and distributions** (2026-10-23):
   - rules 5–6 per sport and source;
   - bid and ask ranges per source;
@@ -273,6 +329,6 @@ hour, so all of its data are known at t.
 probe on 2026-10-22 (KXNBAGAME-26OCT22CLEPHI, one game). No other outcome,
 and no aggregate of outcomes, has been read.
 
-**Code version:** `20afe15`. **Determinism:** the output depends only on
+**Code version:** `98f8b3a`. **Determinism:** the output depends only on
 the dataset files. A test checks byte-identical output for the same
 dataset id.
