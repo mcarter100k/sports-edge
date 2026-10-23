@@ -72,6 +72,11 @@ def isolated(tmp_path, monkeypatch, request):
     monkeypatch.setenv("SPORTS_EDGE_LOG_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("SPORTS_EDGE_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("SPORTS_EDGE_NOTIFY", "log")
+    for var in ("BACKUP_PASSPHRASE", "BACKUP_B2_KEY_ID", "BACKUP_B2_APP_KEY", "BACKUP_B2_BUCKET_ID", "BACKUP_TARGET",
+                "BACKUP_B2_RESTORE_KEY_ID", "BACKUP_B2_RESTORE_APP_KEY", "BACKUP_B2_BUCKET_NAME"):
+        monkeypatch.delenv(var, raising=False)
+    # Local backup copies never land in the real backup folder.
+    monkeypatch.setenv("BACKUP_DIR", str(tmp_path / "backups"))
     for var in ("ODDS_API_KEY", "KALSHI_BASE_URL", "SHADOW_EDGE_THRESHOLD", "SHADOW_CONTRACTS",
                 "SHADOW_STAKE_DOLLARS", "FEE_PRECISION", "ODDS_MAX_AGE_MIN", "ODDS_DAILY_CREDITS",
                 "ODDS_INTERVAL_MIN", "ODDS_HORIZON_H", "ODDS_PLAN", "SSL_CERT_FILE", "KALSHI_TICKER_BATCH",
