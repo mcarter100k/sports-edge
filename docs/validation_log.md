@@ -919,3 +919,46 @@ Spec `c25c87d`, code `6025d55`.
 - **VERIFIED for the run commit (2026-10-23):**
   - `586ca79` (script) precedes `a7ca1ab` (revision 4) in `git log`;
   - `git diff 334c293 586ca79 -- research/harness.py` is empty.
+
+## 2026-10-23: the calibration study's registered run (held for owner review)
+
+- **Code and data:** script `586ca79`, unchanged before the run. `git diff
+  --stat 586ca79 HEAD` touches only `research/registry/` and `docs/`
+  (shown below). Dataset `34babdc762e232b0`.
+- **OBSERVED, run 1** (2026-10-23 01:50–02:00 PT): `STUDY OK … sha256=b8f8cd29c21c6ec0233fb3dab9029efd3369f89fe364a2517da62e9e3766a1eb`,
+  written to `research/registry/2026-10-kalshi-calibration/result.md`.
+- **VERIFIED, run 2** (02:00–02:10 PT), to a separate file: the same
+  sha256, and `cmp` reports the files byte-identical.
+- **Leakage check (registered, no sampling):** all 46,071 tested prices
+  (scored, rule-4-excluded and exploratory) were identical on the
+  isolation connection.
+- **Result** (held for owner review, not merged):
+  - **Pooled sports:** Δ +0.0112, rejected by the z test, not claimed
+    (widened by B = 0.0089). The follow-up is not met.
+  - **Weather:** Δ −0.0124, claimed. By the registered rule this is a
+    clear but untradeable miscalibration of the mid. Measured against the
+    bid it nearly vanishes (−0.0018 per bracket, post-result and
+    descriptive). See `result_note.md`.
+- **The result review:** REVISE, with 1 major finding (the weather claim
+  printed no consequence) and 6 minor. Answered by `result_note.md`, with
+  `result.md` unchanged.
+- `git log --oneline` at the time of this entry:
+
+```
+1e2e506 Result: Kalshi calibration study, registered run on dataset 34babdc762e232b0 (written by the study script; byte-identical on a second run)
+f81c74c Pre-registration: MLB wording fixes from the re-check (approved); run-commit checks logged
+a7ca1ab Pre-registration revision 4: answers the third review (approved); claim-power reading, MLB timing evidence, zero-count exclusion listed
+586ca79 Study: the result prints the registered claim power and the follow-up caveat (third review, findings 1-2)
+```
+
+`git diff --stat 586ca79 HEAD`:
+
+```
+...6-10-23_2026-10-kalshi-calibration_prereg_r3.md | 136 ++++++++++++++++
+ ...6-10-23_2026-10-kalshi-calibration_prereg_r4.md |  82 ++++++++++
+ docs/validation_log.md                             |  19 +++
+ .../registry/2026-10-kalshi-calibration/prereg.md  |  45 +++++-
+ .../registry/2026-10-kalshi-calibration/result.md  | 176 +++++++++++++++++++++
+ 5 files changed, 451 insertions(+), 7 deletions(-)
+```
+
