@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from . import checks, config
 from .fees import FeeScheduleUnknown, load_table, resolve_multipliers
-from .matching import RULE_VERSION, check_outcomes, kalshi_game, match
+from .matching import PLACEHOLDER_AFTER, RULE_VERSION, check_outcomes, kalshi_game, match
 from .odds import DevigRejected, TheOddsApi, devig_power, devig_proportional
 from .store import from_db_ts, to_db_ts
 from .timeutil import pacific_midnight, utcnow
@@ -35,22 +35,25 @@ def build_odds_source(store):
 
 
 def games_from_db(store, start, end):
-    """Kalshi moneyline games resolving in [start, end], rebuilt from the markets table."""
+    """Kalshi moneyline games resolving in [start, end], rebuilt from the markets table. A placeholder
+    event (matching.is_placeholder) stays a candidate until PLACEHOLDER_AFTER past its resolve_by."""
     rows = store.con.execute("""
         SELECT m.event_ticker, m.ticker, m.yes_sub_title, m.market_type, m.competition_scope,
-               m.mutually_exclusive, m.resolve_by, m.status, m.sport, s.tags
+               m.mutually_exclusive, m.resolve_by, m.status, m.sport, s.tags,
+               m.expected_expiration_time, m.occurrence_time
         FROM markets m JOIN series s ON s.series_ticker = m.series_ticker
         WHERE m.competition_scope = 'Game' AND m.event_ticker IN (
             SELECT event_ticker FROM markets
             WHERE competition_scope = 'Game' AND resolve_by BETWEEN ? AND ?)
-        ORDER BY m.event_ticker, m.ticker""", [to_db_ts(start), to_db_ts(end)]).fetchall()
+        ORDER BY m.event_ticker, m.ticker""", [to_db_ts(start - PLACEHOLDER_AFTER), to_db_ts(end)]).fetchall()
     events = {}
-    for ev, ticker, title, mtype, scope, mutex, rb, status, sport, tags in rows:
+    for ev, ticker, title, mtype, scope, mutex, rb, status, sport, tags, exp, occ in rows:
         e = events.setdefault(ev, {"event_ticker": ev, "mutually_exclusive": mutex,
                                    "product_metadata": {"competition_scope": scope},
                                    "markets": [], "_rb": [], "_status": set(), "_sport": sport,
                                    "_tags": json.loads(tags or "[]") or [sport]})
-        e["markets"].append({"ticker": ticker, "yes_sub_title": title, "market_type": mtype})
+        e["markets"].append({"ticker": ticker, "yes_sub_title": title, "market_type": mtype,
+                             "expected_expiration_time": from_db_ts(exp), "occurrence_time": from_db_ts(occ)})
         e["_rb"].append(from_db_ts(rb))
         e["_status"].add(status)
     games = []
@@ -58,7 +61,8 @@ def games_from_db(store, start, end):
         if e["_status"] != {"active"}:
             continue
         game, _reason = kalshi_game(e, e["_tags"], min(t for t in e["_rb"] if t))
-        if game:
+        # Unchanged for ordinary events: any market resolving in [start, end] keeps the event.
+        if game and (game.placeholder or any(t and start <= t <= end for t in e["_rb"])):
             games.append((game, e["_sport"]))
     return games
 
