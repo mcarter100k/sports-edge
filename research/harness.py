@@ -67,12 +67,17 @@ def _check_standard(con):
 
 # Baselines -------------------------------------------------------------------------
 
-def kalshi_mid(con, ticker, t, max_age):
-    row = con.execute("""
+def kalshi_quote(con, ticker, t, max_age):
+    """(bid, ask) of the latest two-sided quote with t - max_age <= ts_utc <= t, or None."""
+    return con.execute("""
         SELECT yes_bid, yes_ask FROM quotes
         WHERE ticker = ? AND ts_utc <= ? AND ts_utc >= ? AND yes_bid > 0 AND yes_ask < 1 AND yes_bid <= yes_ask
         ORDER BY ts_utc DESC LIMIT 1""", [ticker, _naive(t), _naive(t - max_age)]).fetchone()
-    return None if row is None else (row[0] + row[1]) / 2
+
+
+def kalshi_mid(con, ticker, t, max_age):
+    q = kalshi_quote(con, ticker, t, max_age)
+    return None if q is None else (q[0] + q[1]) / 2
 
 
 def pinnacle_fair(con, ticker, t, max_age):

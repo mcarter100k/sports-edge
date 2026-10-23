@@ -44,6 +44,8 @@ def test_kalshi_mid_takes_the_latest_two_sided_quote_at_or_before_t_within_age()
     assert harness.kalshi_mid(con, "C", T, 6 * H) is None                   # older than max_age
     assert harness.kalshi_mid(con, "C", T, 9 * H) == pytest.approx(0.21)
     assert harness.kalshi_mid(con, "Z", T, 6 * H) is None
+    assert harness.kalshi_quote(con, "A", T, 6 * H) == (0.50, 0.52)
+    assert harness.kalshi_quote(con, "B", T, 6 * H) is None
 
 
 def test_naive_times_are_refused():
