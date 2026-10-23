@@ -26,7 +26,7 @@ from pathlib import Path
 
 import duckdb
 
-from sports_edge.kalshi import KalshiClient
+from sports_edge.kalshi import KalshiClient, KalshiError
 from sports_edge.timeutil import iso_z, parse_utc, utcnow
 
 from .datasets import research_dir
@@ -44,6 +44,8 @@ BATCH_MAX_CANDLES = 9000          # Kalshi's limit is 10,000; leave room for edg
 CHUNK_REQUESTS = 200
 QUIET_BEFORE_S = 30               # no requests from :x4:30 ... (30 s before each quarter hour)
 QUIET_AFTER_S = 240               # ... to 4 min after it, while the live snapshot job runs
+COOL_DOWN_S = 60                  # a 429 that outlasts the client's retries pauses every worker
+COOL_DOWNS = 10
 
 
 def backfill_dir():
@@ -76,6 +78,11 @@ class SharedThrottle:
         if at > now:
             self.sleep(at - now)
 
+    def cool_down(self, seconds):
+        """Push every thread's next slot `seconds` ahead (after a lasting 429)."""
+        with self.lock:
+            self.next_at = max(self.next_at or 0.0, self.clock()) + seconds
+
 
 class PoliteClient:
     """KalshiClient GETs, held off around each quarter hour and paced by a shared throttle."""
@@ -87,9 +94,15 @@ class PoliteClient:
         wait = quiet_wait(self.now_fn())
         if wait > 0:
             self.sleep(wait)
-        if self.throttle is not None:
-            self.throttle.wait()
-        return self.client.get(path, params)
+        for attempt in range(COOL_DOWNS + 1):
+            if self.throttle is not None:
+                self.throttle.wait()
+            try:
+                return self.client.get(path, params)
+            except KalshiError as exc:
+                if "HTTP 429" not in str(exc) or self.throttle is None or attempt == COOL_DOWNS:
+                    raise
+                self.throttle.cool_down(COOL_DOWN_S)
 
     def paginate(self, path, params, key):
         params, cursor = dict(params), ""
@@ -263,8 +276,8 @@ def fetch_candles(api, series, markets, run_stamp, out, limit=None, pool=None):
 
 
 def fetch(series_list, out, limit=None, rps=None, client=None, now_fn=utcnow, sleep=time.sleep, workers=None):
-    rps = rps or float(os.environ.get("RESEARCH_MAX_RPS", "5"))
-    n = workers or (1 if client else int(os.environ.get("RESEARCH_WORKERS", "6")))
+    rps = rps or float(os.environ.get("RESEARCH_MAX_RPS", "3"))
+    n = workers or (1 if client else int(os.environ.get("RESEARCH_WORKERS", "4")))
     throttle = SharedThrottle(rps, sleep=sleep)
     # Each worker's own client does not pace itself; the shared throttle does.
     clients = [client] if client else [KalshiClient(max_rps=1000) for _ in range(n)]

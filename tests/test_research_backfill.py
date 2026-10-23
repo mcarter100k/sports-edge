@@ -257,3 +257,52 @@ def test_weather_listing_drops_markets_closing_before_the_scope_date(monkeypatch
                                 now_fn=lambda: NOON, sleep=lambda s: None)
     found = backfill.list_markets(api, "KXHIGHNY", "run", lambda s: None)
     assert [m["ticker"] for _, m in found] == [new["ticker"]]
+
+
+def test_a_lasting_429_pauses_all_workers_then_retries():
+    from sports_edge.kalshi import KalshiError
+    t = {"now": 0.0}
+    slept = []
+
+    def sleep(s):
+        slept.append(s)
+        t["now"] += s
+
+    th = backfill.SharedThrottle(10, clock=lambda: t["now"], sleep=sleep)
+
+    class Flaky:
+        calls = 0
+
+        def get(self, path, params=None):
+            Flaky.calls += 1
+            if Flaky.calls <= 2:
+                raise KalshiError("GET x failed after 6 attempts: HTTP 429: too many")
+            return {"ok": True}
+
+    api = backfill.PoliteClient(Flaky(), now_fn=lambda: NOON, sleep=lambda s: None, throttle=th)
+    assert api.get("/x") == {"ok": True}
+    assert Flaky.calls == 3
+    assert slept == [pytest.approx(60.1), pytest.approx(60.1)]
+
+
+def test_other_errors_and_too_many_429s_still_fail():
+    from sports_edge.kalshi import KalshiError
+    th = backfill.SharedThrottle(10, clock=lambda: 0.0, sleep=lambda s: None)
+
+    class Bad:
+        def get(self, path, params=None):
+            raise KalshiError("GET x failed: HTTP 400: bad")
+
+    with pytest.raises(KalshiError, match="400"):
+        backfill.PoliteClient(Bad(), now_fn=lambda: NOON, sleep=lambda s: None, throttle=th).get("/x")
+
+    class Always429:
+        calls = 0
+
+        def get(self, path, params=None):
+            Always429.calls += 1
+            raise KalshiError("HTTP 429")
+
+    with pytest.raises(KalshiError, match="429"):
+        backfill.PoliteClient(Always429(), now_fn=lambda: NOON, sleep=lambda s: None, throttle=th).get("/x")
+    assert Always429.calls == backfill.COOL_DOWNS + 1
