@@ -36,7 +36,6 @@ ALPHA = 0.05
 Q = 0.05
 SD_ASSUMED = 0.45
 DELTA = 0.02
-LEAK_SAMPLE = 200
 MIN_UNITS = 20
 EDGES_DOG = [0, .05, .10, .15, .20, .25, .30, .35, .40, .45, .50]
 EDGES_ALL = [0, .05, .10, .20, .30, .40, .50, .60, .70, .80, .90, .95, 1.0]
@@ -214,8 +213,8 @@ def reliability_md(title, ps, ys, edges):
 
 
 def score_md(title, r):
-    lines = [f"**{title}** (harness score; {r['scored_rows']} rows, leakage check on {r['leakage_checked']} "
-             f"decisions passed)", ""]
+    lines = [f"**{title}** (harness score, {'registered' if r['registered'] else 'development'} run; "
+             f"{r['scored_rows']} rows; leakage check on all {r['leakage_checked']} decisions passed)", ""]
     for k, label in (("source", "Kalshi mid (the source)"), ("kalshi_mid", "Kalshi mid baseline"),
                      ("pinnacle_fair", "Pinnacle fair baseline")):
         b = r["by"][k]
@@ -234,8 +233,6 @@ def run(folder, out_path):
     wd, wfun = weather_decisions(ms)
     with tempfile.TemporaryDirectory() as tmp:
         con = harness_con(folder, manifest, sd + wd, Path(tmp))
-        leak = harness.check_no_peeking(con, harness.KalshiMidSource(MAX_AGE),
-                                        [(d["ticker"], d["t"]) for d in sd + wd], sample=LEAK_SAMPLE, seed=SEED)
         srows = priced(con, sd, sfun, "games")
         wrows = priced(con, wd, wfun, "markets")
         s_score = harness.score(con, [(d["ticker"], d["t"]) for d in srows], harness.KalshiMidSource(MAX_AGE),
@@ -267,8 +264,9 @@ def run(folder, out_path):
          f"Study `{STUDY}`. Written by `research/studies/kalshi_calibration.py`; never edited by hand.", "",
          f"- Dataset: `{manifest['name']}` id `{manifest['dataset_id']}`",
          f"- Tables: " + ", ".join(f"{t} {e['rows']} rows" for t, e in sorted(manifest["tables"].items())),
-         f"- Leakage test (poisoned and truncated data after each decision time): passed on {leak} sampled "
-         f"decisions, and again inside each harness score.", "",
+         f"- Leakage test (registered run): every scored decision was predicted on a separate connection "
+         f"holding only data known at its decision time, with no outcomes, and compared with the full data: "
+         f"{s_score['leakage_checked']} sports and {w_score['leakage_checked']} weather decisions, all passed.", "",
          "## Inclusion", ""]
     for k, v in sorted(sfun.items()):
         L.append(f"- Sports: {k}: {v}")

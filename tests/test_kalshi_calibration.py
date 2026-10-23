@@ -104,6 +104,8 @@ def test_study_is_byte_identical_and_applies_every_rule(tmp_path):
     assert re.search(r"\| Sports \(pooled\) \| 35 \| 35 \|", text)
     assert "| Weather | 30 |" in text
     assert "INSUFFICIENT" in text          # Football, Hockey and Baseball have no games here
+    assert "Leakage test (registered run)" in text and "35 sports and 90 weather decisions, all passed" in text
+    assert re.search(r"leakage check on all 35 decisions passed", text)
 
 
 def test_inclusion_never_depends_on_outcomes(tmp_path):
