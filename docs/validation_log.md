@@ -1027,3 +1027,20 @@ Spec `1d4d46a`, heartbeat amendment `853d663`, code `54a4178`.
   PENDING at the top.
 
 **Suite on merged `main` (`076b1e3`):** 571 passed, 1 skipped.
+
+## 2026-10-22: guard skips heredoc bodies (fix/guard-heredoc, merged)
+
+Spec amendment `57de872`, code `8d5411d`.
+
+- **VERIFIED, Gate 1:**
+  - 4 new tests: a body that mentions bulk staging or `rm data/x` is
+    allowed; the opening line's redirection (`cat > data/x <<EOF`) is still
+    blocked; commands after the closing line are still checked; `<<-`
+    works.
+  - **Mutant:** removing the strip makes 2 tests fail.
+  - Suite: 575 passed, 1 skipped.
+- **VERIFIED, Gate 2 (the real editor, scratch repository, with controls):**
+  - bulk staging is blocked;
+  - an append into `data/` is blocked;
+  - the documentation heredoc that the old guard blocked is allowed, and
+    its file was written.
