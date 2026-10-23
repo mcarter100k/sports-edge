@@ -1067,3 +1067,48 @@ games absent from the reference listing". **That is wrong.**
 - **Options and a recommendation:** branch `proposal/college-scope`.
 - **The same correction** is in the alias batch spec (branch
   `feat/alias-batch-1`, commit `dad1a60`).
+
+## 2026-10-23: Kalshi placeholder times, match_v3 (feat/match-placeholder, merged)
+
+Spec `91316c1`, code `dc22a27`. **Owner approval** (2026-10-22): approved,
+subject to a reality gate at the normal 24 h listing horizon after 10 AM PT
+showing the Saturday college games pairing with 0 ambiguous and 0
+conflicts.
+
+- **VERIFIED, Gate 1:**
+  - 16 placeholder tests, including the owner's three: a placeholder event
+    pairs; a non-placeholder event with a wrong time still refuses; two
+    candidate games still refuse.
+  - All 9 mutants killed.
+  - Suite: 591 passed, 1 skipped (branch, and `main` after the merge).
+- **OBSERVED, Gate 2, with a 48 h listing horizon** (2026-10-22 night):
+  - the branch matched 45 college games, against 18 on `main` (the
+    control);
+  - other sports matched 21 games in both;
+  - 0 ambiguous, 0 conflicts.
+- **VERIFIED, Gate 2 at production settings** (24 h horizon, 2026-10-23
+  10:05–10:12 PT), on empty folders:
+  - **Branch:** 16 college games matched, against 7 on `main` (the
+    control). Akron vs Kent State and Baylor vs Kansas (17:00Z Saturday)
+    paired with the right teams. 0 ambiguous, 0 conflicts. Other sports
+    matched 22 games in both. 0 live files changed, no failure markers in
+    either run.
+  - **Every active placeholder college event was classified** against the
+    full free listing (`/events`, 0 credits), 66 in all:
+    - 9 listed inside the horizon and window. The branch added exactly 9
+      college matches over `main`, so all 9 paired.
+    - 30 start beyond the 24 h horizon and pair as their kickoff comes into
+      range. Boston College vs Georgia Tech and Bowling Green vs Buffalo
+      (19:30Z) are among them.
+    - 27 are not in the reference listing under any name.
+    - None is listed in the horizon yet failed to pair.
+- **Merged** into `main` at `a7fc9f7`, after the 10:15 PT live run had
+  finished.
+- **Gate 2 after the merge** (the live checkout's wrapper, empty folder,
+  10:16–10:19 PT): `match_v3`, 16 college games matched, 0 ambiguous, 0
+  conflicts, 0 live files changed, no failure markers.
+- **PENDING:**
+  - the first live hourly odds step on `main` recording `match_v3` matches;
+  - Boston College vs Georgia Tech and Bowling Green vs Buffalo pairing in
+    the live data after about 12:30 PT, when their kickoff enters the 24 h
+    horizon.
