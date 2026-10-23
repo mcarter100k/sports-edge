@@ -1205,3 +1205,14 @@ combo taker fee key), code `b07fdf3`. Touches protected files
   changes (`slate alert`) was run directly above.
 - **PENDING:** the first real combo line, from a check with price gaps in
   two or more games, after this branch is approved and merged.
+- **Owner approval** (2026-10-23): "approved". **Merged** into `main` at
+  `e2b1ea6` at 1:45 PM PT, after the 1:45 live run had finished. Suite on
+  `main` after the merge: 622 passed.
+- **OBSERVED, Gate 2 after the merge** (the live checkout, copy of the live
+  data, 1:46 PM PT): `slate board` "none (no checked game still to start)";
+  `slate alert` `SLATE ALERT OK messages=0 groups=2`; the fee probe gives
+  the same output as on the branch (combo multiplier 1; KXNBAGAME,
+  KXNFLGAME, KXNCAAFGAME 1/1; KXMLBGAME 0.5/0.5). Each run: exit 0, 21
+  live files hashed, 0 changed, no failure markers.
+- **PENDING:** the first live snapshot run on `main` with this code, and the
+  first real combo line.
