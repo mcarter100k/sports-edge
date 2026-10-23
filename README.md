@@ -8,11 +8,12 @@ order and never logs in to a trading account.
 Every 15 minutes it:
 
 1. **Records prices.** Once a day (03:00 Los Angeles time) it reads every
-   open sports market from Kalshi's public market data and stores the best
-   bid, best ask, last price and volume. Sports and leagues are discovered
-   from Kalshi, so nothing is hardcoded. Markets paired with a sharp-book
-   line (see 2) are also recorded every hour, and every 15 minutes once they
-   resolve within 48 hours. Every run prints how many paired markets each
+   open sports market from Kalshi's public market data. It stores each
+   market's details and any settlement, but **stores prices (best bid, best
+   ask, last price, volume) only for markets paired with a sharp-book line**
+   (see 2). Sports and leagues are discovered from Kalshi, so nothing is
+   hardcoded. Paired markets are priced on the daily run, every hour, and
+   every 15 minutes once they resolve within 48 hours. Every run prints how many paired markets each
    sport has. On Thursdays during Kalshi's maintenance (03:00–05:00 ET) runs
    are recorded as "exchange closed" and do not alert.
 2. **Compares with sharp odds, only before each kickoff.** Once an hour it
@@ -181,6 +182,9 @@ weekly heartbeat says so.
 | `logs/alerts.log` | every notification sent |
 | `docs/specs/` | how each piece is supposed to behave |
 | `docs/validation_log.md` | what has been verified, and what is still waiting on reality |
+| `research/` | offline research: stats, frozen datasets, the Kalshi backfill, registered studies (`research/registry/`) |
+| `~/sports-edge-research/` | research data, outside the repo: backfill and frozen datasets |
+| `docs/reviews/` | independent reviews of each pre-registration and result |
 
 All stored times are UTC. Anything meant for a person to read is in Los
 Angeles time, with the zone shown.

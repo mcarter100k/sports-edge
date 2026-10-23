@@ -83,6 +83,8 @@ def isolated(tmp_path, monkeypatch, request):
     monkeypatch.setenv("SPORTS_EDGE_NO_ENV_FILE", "1")
     # Fees fail closed unless a test builds its own table (helpers.fee_table).
     monkeypatch.setenv("SPORTS_EDGE_FEE_TABLE", str(tmp_path / "no_fee_table.json"))
+    # Research data (frozen datasets, backfill) never lands in the real research folder.
+    monkeypatch.setenv("SPORTS_EDGE_RESEARCH_DIR", str(tmp_path / "research"))
     monkeypatch.chdir(tmp_path)
     _network["allowed"] = request.node.get_closest_marker("integration") is not None
     yield tmp_path
