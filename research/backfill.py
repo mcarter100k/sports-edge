@@ -17,6 +17,7 @@ import os
 import queue
 import sys
 import tempfile
+import threading
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
@@ -59,16 +60,35 @@ def quiet_wait(now):
     return 0.0
 
 
-class PoliteClient:
-    """KalshiClient GETs, held off around each quarter hour."""
+class SharedThrottle:
+    """At most `rps` requests a second across every thread that shares it."""
 
-    def __init__(self, client, now_fn=utcnow, sleep=time.sleep):
-        self.client, self.now_fn, self.sleep = client, now_fn, sleep
+    def __init__(self, rps, clock=time.monotonic, sleep=time.sleep):
+        self.interval, self.clock, self.sleep = 1.0 / rps, clock, sleep
+        self.lock = threading.Lock()
+        self.next_at = None
+
+    def wait(self):
+        with self.lock:
+            now = self.clock()
+            at = now if self.next_at is None else max(now, self.next_at)
+            self.next_at = at + self.interval
+        if at > now:
+            self.sleep(at - now)
+
+
+class PoliteClient:
+    """KalshiClient GETs, held off around each quarter hour and paced by a shared throttle."""
+
+    def __init__(self, client, now_fn=utcnow, sleep=time.sleep, throttle=None):
+        self.client, self.now_fn, self.sleep, self.throttle = client, now_fn, sleep, throttle
 
     def get(self, path, params=None):
         wait = quiet_wait(self.now_fn())
         if wait > 0:
             self.sleep(wait)
+        if self.throttle is not None:
+            self.throttle.wait()
         return self.client.get(path, params)
 
     def paginate(self, path, params, key):
@@ -243,10 +263,12 @@ def fetch_candles(api, series, markets, run_stamp, out, limit=None, pool=None):
 
 
 def fetch(series_list, out, limit=None, rps=None, client=None, now_fn=utcnow, sleep=time.sleep, workers=None):
-    rps = rps or float(os.environ.get("RESEARCH_MAX_RPS", "8"))
-    n = workers or (1 if client else int(os.environ.get("RESEARCH_WORKERS", "4")))
-    clients = [client] if client else [KalshiClient(max_rps=rps / n) for _ in range(n)]
-    pool = [PoliteClient(c, now_fn=now_fn, sleep=sleep) for c in clients]
+    rps = rps or float(os.environ.get("RESEARCH_MAX_RPS", "5"))
+    n = workers or (1 if client else int(os.environ.get("RESEARCH_WORKERS", "6")))
+    throttle = SharedThrottle(rps, sleep=sleep)
+    # Each worker's own client does not pace itself; the shared throttle does.
+    clients = [client] if client else [KalshiClient(max_rps=1000) for _ in range(n)]
+    pool = [PoliteClient(c, now_fn=now_fn, sleep=sleep, throttle=throttle) for c in clients]
     api = pool[0]
     run_stamp = stamp(utcnow())
     for series in series_list:
