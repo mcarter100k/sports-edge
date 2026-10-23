@@ -63,6 +63,11 @@ rules, and what it does not mean.
 
 ## Post-result descriptive figures (computed after reading the result; not evidence)
 
+All figures in this section are OBSERVED output of the committed report
+script `research/studies/kalshi_calibration_postresult.py` (run on dataset
+`34babdc762e232b0`). Fee figures use 0.07 × p × (1 − p) at multiplier 1,
+because the weather series' multiplier is not in a cited fee table.
+
 **Weather, by price bucket** (sum of (y − p), brackets priced under 0.50,
 13,471 brackets, total −148.4):
 
@@ -81,14 +86,24 @@ rules, and what it does not mean.
 - **Much of the lowest bucket is pinned at the tick floor.** Nearly half of
   it has a bid of 0.01, so its mid is set by the quote format, not by a
   view.
-- **Selling earns the bid, not the mid.** Measured against the bid, the
-  average over all sub-0.50 brackets is **−0.0018 per bracket**, before any
-  fee. That is close to nothing.
-  - The fee for weather series is not in any cited fee table. At
-    multiplier 1 it is 0.07 × p × (1 − p) per contract, for example 0.6
-    cents at p = 0.1.
-  - Choosing the sub-0.30 buckets after seeing this table would be
-    post-hoc selection. It is not evidence of an edge.
+- **Selling earns the bid, not the mid.** Like for like, per bracket (a
+  plain average over the 13,471 brackets, not the per-city-day Δ):
+  - mean (y − mid) is −0.0110;
+  - mean (y − bid) is −0.0018. So a seller at the bid would have *earned*
+    0.18 cents per bracket before fees;
+  - after the fee at multiplier 1, the same seller **loses 0.56 cents per
+    bracket** on average.
+
+  Across all brackets under 0.50, there was nothing to earn after costs.
+- **The brackets under 0.30 are the obvious post-hoc candidate.** A seller
+  at the bid there shows +1.06 cents per bracket before fees, and +0.55
+  cents after the fee at multiplier 1 (10,672 brackets).
+  - This slice was chosen after seeing the table, so it is a hypothesis,
+    not evidence.
+  - It could only be tested under a new pre-registration, on data after
+    this dataset's last date, priced at the bid after fees.
+  - If Kalshi rounds fees up per order (INFERRED, not in any repo file),
+    the small gain in the lowest bucket could disappear.
 
 **Small cells** in the calibration tables (fewer than 20 units) carry no
 information (AGENTS.md rule 9):
@@ -108,18 +123,28 @@ source's scores by construction, and validate nothing.
   could remove a game's candles at t if its market closed more than 14 days
   after t. Of the 88 rule-5 sports exclusions, **6** did so (Baseball 5,
   Football 1). The largest possible shift is 6/10,054 ≈ 0.0006.
+- **The 14-day edge case:** recounted with close − t > 14 days − 6 hours,
+  to cover a game that lost only part of its 6-hour lookback. Still 6
+  (OBSERVED, from the post-result script).
 - **Together** they could widen the sports interval by about 0.0017 more.
-  That does not change the non-claim. For weather, t is about a day before
-  close, so neither applies.
+  That does not change the non-claim.
+- **Weather:** rule 7 removed 2 brackets as "not settled yes or no" (from
+  `result.md`). That exclusion reads outcomes and is not covered by B
+  (which is 0 for weather). It could move the weather Δ by about 2/2,557 ≈
+  0.0008 at most, against an interval whose upper end is −0.0097, so the
+  claim stands. The candle window does not apply to weather: t is about a
+  day before close (INFERRED from the measured-date design and the
+  scheduled close).
 
 ## Records
 
 - **Zero-count rules** are not printed by the script; its funnel prints
-  only rules that fired. Two are at 0:
-  - "no expected expiration": 10,331 − 59 − 109 = 10,163;
+  only rules that fired. Three are at 0:
+  - "not a two-market binary game" and "no expected expiration": 10,331 −
+    59 − 109 = 10,163;
   - the weather "no measured date in the ticker": 15,342 + 30 = 15,372.
 
-  The second was not in the pre-registration. Its count is 0, so it changed
+  The weather rule was not in the pre-registration. Its count is 0, so it changed
   nothing.
 - `result.md` does not name the script commit. It is `586ca79`. The run
   record is in `docs/validation_log.md`.

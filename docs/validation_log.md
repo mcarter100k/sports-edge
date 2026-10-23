@@ -962,3 +962,15 @@ a7ca1ab Pre-registration revision 4: answers the third review (approved); claim-
  5 files changed, 451 insertions(+), 7 deletions(-)
 ```
 
+- **Correction (2026-10-23)** to the run record above. "Measured against
+  the bid it nearly vanishes (−0.0018 per bracket)" compared two figures
+  averaged differently: Δ is per city-day, while −0.0018 is per bracket.
+  Like for like, per bracket, it is −0.0110 at the mid and −0.0018 at the
+  bid. After the fee at multiplier 1, a seller at the bid loses 0.56 cents
+  per bracket. These figures are OBSERVED from
+  `research/studies/kalshi_calibration_postresult.py`.
+- **The second result review: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_result_r2.md`). Its
+  six minor findings are answered in `result_note.md` and by the committed
+  post-result script.
+
