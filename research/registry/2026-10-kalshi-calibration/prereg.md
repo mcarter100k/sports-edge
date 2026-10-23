@@ -1,13 +1,29 @@
 # Pre-registration: Kalshi calibration by price bucket and sport (favorite-longshot check)
 
-Study `2026-10-kalshi-calibration`, **revision 3** (2026-10-23).
-- **Script:** `research/studies/kalshi_calibration.py` at commit `98f8b3a`.
+Study `2026-10-kalshi-calibration`, **revision 4** (2026-10-23).
+- **Script:** `research/studies/kalshi_calibration.py` at commit `586ca79`.
 - **Harness:** `research/harness.py` (PROTECTED). The owner approved it at
   commit `334c293` on 2026-10-22, and it is unchanged since (`git diff
   334c293 -- research/harness.py` is empty). The approval is recorded in
   `docs/validation_log.md`.
 
-**Revision 3** answers the second review
+**Revision 4** answers the third review
+(`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg_r3.md`, verdict
+APPROVE, 5 minor findings):
+1. The result now prints the registered claim-power figures next to the
+   plain detectable effect.
+2. Section 6 states when the follow-up triggers, and the design-effect
+   caveat for the claim table.
+3. Section 3 adds the MLB off-grid evidence and the sports in the live
+   sample.
+4. Rule 4 lists the zero-count "no expected expiration" exclusion.
+5. The validation log is updated.
+
+Script changes since revision 3 (`98f8b3a` → `586ca79`): the printed power
+lines and the follow-up caveat only. No rule, threshold or computation
+changed.
+
+**Revision 3** answered the second review
 (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg_r2.md`, verdict
 REVISE: all 14 first-round findings resolved, 1 new major and 4 minor):
 
@@ -86,6 +102,8 @@ outcomes):
    [open_utc, close_utc), and the **timing guard** close_utc − t ≥ 3 h
    (3.5 h for football).
    - **Games left:** 10,163 (59 outside the open period, 109 by the guard).
+   - **A game with no expected expiration** is also excluded. Its count is
+     0 in this dataset (10,331 − 59 − 109 = 10,163).
    - **Of the 168 excluded,** 124 have a tested price at t: Football 76,
      Basketball 9, Hockey 4, Baseball 35. These enter the exclusion bound
      (section 9).
@@ -163,6 +181,14 @@ finding 4):
   Actual close times do so for 0.3–1.7%, which is chance for clock times
   to the second. The field carries scheduled times, not the time play
   ended.
+- **MLB, the weakest case** (46% of the sample): the 7.0% of MLB markets
+  (328 games) whose expected expiration is off the 5-minute grid fall on
+  minutes ending in 2 or 3. That fits first pitches such as 7:07 plus
+  3 h. Their close − expected (median −0.06 h, p5 −0.54, p95 +0.69) matches
+  the other MLB games. Only 6.7% sit within 2 minutes of the close, whereas
+  a rewrite to the end of play would put nearly all there.
+- **The live sample of 34** is NHL 22, NCAAF 6, NBA 4, NFL 2 and MLB 0.
+  MLB rests on the grid evidence alone.
 - **The limit:** the dataset holds no snapshot taken before each game, so
   this evidence is indirect. A value updated between listing and the
   game, for example after a postponement, is the one used.
@@ -243,7 +269,12 @@ hour, so all of its data are known at t.
   - It cannot reliably claim a 0.02 bias, and the per-sport tests are much
     weaker. Football in particular can claim only biases of about 0.05 or
     more, because its rule-4 exclusions are large.
-  - A non-claim is read with these numbers.
+  - A non-claim is read with these numbers. The result prints them.
+  - The table is before any design effect from clustering.
+  - **The follow-up needs both a claim and |Δ̂| ≥ 0.0225.** It therefore
+    triggers with 80% probability only at a true Δ of about 0.0225 +
+    0.84 × 0.0050 ≈ 0.0267. At a true Δ of 0.0225 it triggers about half
+    the time.
 - **Weather:** sd 0.0709. It is derived from prices as the RMS over
   city-days of √(S(1−S))/k (S = summed price of the sub-0.50 brackets,
   capped at 1; k = their count). At n 2,557 the detectable effect is
@@ -329,6 +360,6 @@ hour, so all of its data are known at t.
 probe on 2026-10-22 (KXNBAGAME-26OCT22CLEPHI, one game). No other outcome,
 and no aggregate of outcomes, has been read.
 
-**Code version:** `98f8b3a`. **Determinism:** the output depends only on
+**Code version:** `586ca79`. **Determinism:** the output depends only on
 the dataset files. A test checks byte-identical output for the same
 dataset id.

@@ -900,3 +900,15 @@ Spec `c25c87d`, code `6025d55`.
   Revision 2 answers each one. Every number added comes from timing fields
   and candles, on a connection with no outcomes table. The study has not
   run.
+- **Second review (REVISE)** and **revision 3** (`be61302`).
+- **Third review: APPROVE** (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg_r3.md`).
+  Its five minor findings are answered in revision 4. The script changed
+  (`586ca79`) only to print the registered claim power and the follow-up
+  caveat.
+- **VERIFIED by direct checks** (the reviewer had no access):
+  - `98f8b3a` precedes `be61302`;
+  - `git diff 334c293 98f8b3a -- research/harness.py` is empty;
+  - `python -m research.datasets verify` on `34babdc762e232b0` prints
+    `DATASET OK … manifest_sha256=db0b979f…`;
+  - the committed `dataset_manifest.json` is byte-identical to the frozen
+    manifest.
