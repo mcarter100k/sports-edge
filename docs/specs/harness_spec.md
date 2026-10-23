@@ -76,6 +76,8 @@ If any prediction differs between the three (beyond 1e-12), it raises
 - Poisoned and truncated views live in their own schemas and are put first
   on DuckDB's search path, so a source querying `quotes` sees them. The
   real views are restored afterwards, even on error.
+- `modes` (default both) chooses the poisoned and truncated variants, so
+  each can be tested on its own.
 - A source that reads files or globals outside the connection is not
   covered. Sources must read only through `con`.
 - `score()` runs this check first and refuses to score a source that fails
