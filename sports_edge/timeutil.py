@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 DISPLAY_TZ = ZoneInfo("America/Los_Angeles")
+EASTERN_TZ = ZoneInfo("America/New_York")      # Kalshi's placeholder times (docs/specs/odds_matching_spec.md)
 
 
 def utcnow() -> datetime:
@@ -27,6 +28,12 @@ def parse_utc(value):
     if dt.tzinfo is None:
         raise ValueError(f"timestamp without an offset: {value!r}")
     return dt.astimezone(timezone.utc)
+
+
+def eastern_to_utc(day, hour, minute=0):
+    """A wall-clock time in America/New_York on `day` (a date), as an aware UTC datetime."""
+    local = datetime(day.year, day.month, day.day, hour, minute, tzinfo=EASTERN_TZ)
+    return local.astimezone(timezone.utc)
 
 
 def iso_z(dt) -> str:
