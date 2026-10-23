@@ -45,6 +45,12 @@ WEATHER_SD = 0.0709                      # from prices at t (pre-registration se
 DELTA = 0.02
 FEE_AT_HALF = 0.07 * 0.25                # taker fee per contract at p = 0.5, multiplier assumed 1
 FOLLOWUP = 0.0225                        # registered: FEE_AT_HALF + the pre-run median half-spread (0.0050)
+# Registered power to claim under the exclusion-bound rule (pre-registration section 6), sd 0.5, before any
+# design effect: (smallest claimable |delta-hat|, power to claim a true delta of 0.02, delta for 80% claim power).
+CLAIM_POWER = {"pooled": (0.0187, 0.60, 0.0229), "Football": (0.0476, 0.01, 0.0570),
+               "Basketball": (0.0297, 0.23, 0.0405), "Hockey": (0.0254, 0.33, 0.0355),
+               "Baseball": (0.0195, 0.52, 0.0258)}
+FOLLOWUP_80 = 0.0267                     # true delta at which the follow-up triggers with 80% probability
 MIN_UNITS = 20
 EDGES_DOG = [0, .05, .10, .15, .20, .25, .30, .35, .40, .45, .50]
 EDGES_ALL = [0, .05, .10, .20, .30, .40, .50, .60, .70, .80, .90, .95, 1.0]
@@ -386,11 +392,17 @@ def run(folder, out_path):
     L += [f"Decision: **{verdict}**.", "",
           f"Power (stated before the run): with sd {SD_ASSUMED}, |Δ| = {DELTA} needs {n_need} games; {primary['n']} "
           f"were scored, so the smallest effect detectable at 80% power is "
-          f"{stats.detectable_effect(SD_ASSUMED, primary['n']):.4f}, before any design effect from clustering.", "",
+          f"{stats.detectable_effect(SD_ASSUMED, primary['n']):.4f}, before any design effect from clustering. "
+          f"Under the claim rule (registered before the run, sd 0.5, before any design effect): the smallest "
+          f"claimable |Δ̂| is {CLAIM_POWER['pooled'][0]:.4f}, the power to claim a true Δ of 0.02 is "
+          f"{CLAIM_POWER['pooled'][1]:.2f}, and 80% claim power needs a true Δ of {CLAIM_POWER['pooled'][2]:.4f}. "
+          f"A non-claim is to be read with these numbers.", "",
           f"Follow-up threshold (registered before the run): |Δ| ≥ {FOLLOWUP:.4f} (fee at p = 0.5 with multiplier 1, "
           f"{FEE_AT_HALF:.4f}, plus the pre-run median half-spread, 0.0050). "
           + ("Met." if followup_met(primary, bound["pooled"]) else "Not met.")
-          + f" Run-time median half-spread of the scored games, for reference: {half:.4f}.", "",
+          + f" Run-time median half-spread of the scored games, for reference: {half:.4f}. The follow-up needs both a "
+          f"claim and |Δ̂| ≥ {FOLLOWUP:.4f}, so it triggers with 80% probability only at a true Δ of about "
+          f"{FOLLOWUP_80:.4f}.", "",
           "## Secondary family (Benjamini–Hochberg, q = 0.05, always five tests)", "",
           "| group | units | dates | Δ | SE | 95% interval | p | BH adjusted p | exclusion bound B | rejected and claimed |",
           "|---|---|---|---|---|---|---|---|---|---|"]
@@ -408,6 +420,9 @@ def run(folder, out_path):
                  f"[{f(res['lo'])}, {f(res['hi'])}] | {f(res['p'], sign=False)} | {f(adj, sign=False)} | "
                  f"{f(bound[k], sign=False)} | {'yes' if claimed else reason} |")
     L += ["",
+          "Power to claim per sport (registered before the run, sd 0.5, before any design effect): "
+          + "; ".join(f"{g} smallest claimable |Δ̂| {CLAIM_POWER[g][0]:.4f}, power at Δ = 0.02 {CLAIM_POWER[g][1]:.2f}, "
+                      f"80% at Δ = {CLAIM_POWER[g][2]:.4f}" for g in SPORT_GROUPS) + ".", "",
           "Weather Δ is, per city-day, the mean of (y − p) over brackets priced under 0.50 at local midnight. It is "
           "driven mostly by whether the winning bracket is one of them: when it is, the value is (1 − Σp) / k. "
           "Weather clusters are measured dates." + (

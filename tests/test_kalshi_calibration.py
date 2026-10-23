@@ -245,3 +245,12 @@ def test_the_tested_price_applies_the_spread_rule():
                                    "0.60 AS yes_ask UNION ALL SELECT 'N', TIMESTAMP '2026-03-01 11:00:00', 0.45, 0.47"})
     assert study.FilteredMid().predict(con, "W", t) is None
     assert abs(study.FilteredMid().predict(con, "N", t) - 0.46) < 1e-12
+
+
+def test_result_prints_the_registered_claim_power(tmp_path):
+    ds = make_dataset(tmp_path)
+    study.run(ds, tmp_path / "a.md")
+    text = (tmp_path / "a.md").read_text()
+    assert "smallest claimable |Δ̂| is 0.0187" in text and "80% claim power needs a true Δ of 0.0229" in text
+    assert "Football smallest claimable |Δ̂| 0.0476" in text
+    assert "triggers with 80% probability only at a true Δ of about 0.0267" in text
