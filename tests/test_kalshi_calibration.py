@@ -36,8 +36,9 @@ def make_dataset(tmp, flip=False):
         ev = f"KXNBAGAME-G{d:02d}"
         a, b = f"{ev}-AAA", f"{ev}-BBB"
         p = 0.15 + 0.7 * rng.random()
+        close = exp - timedelta(hours=3, minutes=30) if d == 5 else exp - timedelta(minutes=20)   # game 5 ended early
         for tk in (a, b):
-            market(tk, ev, "Basketball", exp - timedelta(days=5), exp - timedelta(minutes=20), exp)
+            market(tk, ev, "Basketball", exp - timedelta(days=5), close, exp)
         decision = exp - timedelta(hours=4)
         spread = 0.20 if d == 1 else 0.02
         if d == 4:                                    # game 4: only a quote 8 h old (stale)
@@ -97,9 +98,10 @@ def test_study_is_byte_identical_and_applies_every_rule(tmp_path):
     assert "excluded games: spread over 10 cents: 1" in inc
     assert "excluded games: no two-sided quote within 6 h: 2" in inc
     assert "excluded games: not settled yes or no: 1" in inc
-    assert "Sports games scored: 36" in inc
+    assert "excluded: market closed too soon after the decision (game may have started): 1" in inc
+    assert "Sports games scored: 35" in inc
     assert "Pinnacle fair baseline: not available (no Pinnacle fair prices at decision time in this dataset)" in text
-    assert re.search(r"\| Sports \(pooled\) \| 36 \| 36 \|", text)
+    assert re.search(r"\| Sports \(pooled\) \| 35 \| 35 \|", text)
     assert "| Weather | 30 |" in text
     assert "INSUFFICIENT" in text          # Football, Hockey and Baseball have no games here
 

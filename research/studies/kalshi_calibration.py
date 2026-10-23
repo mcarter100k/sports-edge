@@ -24,9 +24,12 @@ STUDY = "2026-10-kalshi-calibration"
 SPORT_GROUPS = ("Football", "Basketball", "Hockey", "Baseball")
 SPORTS_OFFSET = timedelta(hours=4)       # decision = expected expiration - 4 h (about 1 h before the start)
 WEATHER_OFFSET = timedelta(hours=24)     # decision = close - 24 h (start of the measured day)
-EXPLORATORY_OFFSETS = (timedelta(hours=3), timedelta(hours=6))
+EXPLORATORY_OFFSETS = (timedelta(hours=5), timedelta(hours=8))   # further from the start, never closer
 MAX_AGE = timedelta(hours=6)
 MAX_SPREAD = 0.10
+# Timing guard: the market must close at least this long after the decision time.
+MIN_CLOSE_GAP = {"Football": timedelta(hours=3.5), "Basketball": timedelta(hours=3),
+                 "Hockey": timedelta(hours=3), "Baseball": timedelta(hours=3)}
 SEED = 20261022
 N_BOOT = 2000
 ALPHA = 0.05
@@ -78,6 +81,11 @@ def sports_decisions(ms, offset=SPORTS_OFFSET):
         t = m["expected"] - offset
         if not (m["open"] <= t < m["close"]):
             funnel["excluded: decision time outside the market's open period"] += 1
+            continue
+        if m["close"] - t < MIN_CLOSE_GAP[m["grp"]]:
+            # A game market closes when the winner is known; closing this soon after t means the
+            # game may already have started at t.
+            funnel["excluded: market closed too soon after the decision (game may have started)"] += 1
             continue
         out.append({"ticker": m["ticker"], "event": event, "grp": m["grp"], "t": t})
     funnel["games with a decision time"] = len(out)
