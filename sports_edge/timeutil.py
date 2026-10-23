@@ -64,6 +64,11 @@ def display_day(dt) -> str:
     return la.strftime("%a %b ") + str(la.day)
 
 
+def wall_time_to_utc(day, hour, tz_name):
+    """A wall-clock time on `day` (a date) in the named zone, as an aware UTC datetime."""
+    return datetime(day.year, day.month, day.day, hour, tzinfo=ZoneInfo(tz_name)).astimezone(timezone.utc)
+
+
 def pacific_day_start(day):
     """Midnight America/Los_Angeles at the start of `day` (a date), as an aware UTC datetime."""
     return datetime(day.year, day.month, day.day, tzinfo=DISPLAY_TZ).astimezone(timezone.utc)

@@ -55,15 +55,15 @@ def make_dataset(tmp, flip=False):
         market(f"{ev}-{s}", ev, "Basketball", T0 - timedelta(days=5), T0, T0)
         outcome(f"{ev}-{s}", "no")
     for d in range(30):
-        close = T0 + timedelta(days=d, hours=2)
-        ev = f"KXHIGHNY-W{d:02d}"
+        day = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(days=d)      # January: EST
+        t = day.replace(hour=5)                                                  # local midnight in New York
+        ev = f"KXHIGHNY-26JAN{d + 1:02d}"
         win = rng.randrange(3)
         for i, price in enumerate((0.2, 0.5, 0.3)):
             tk = f"{ev}-B{i}"
-            market(tk, ev, "Weather", close - timedelta(days=2), close, close + timedelta(hours=12))
-            candle(tk, close - timedelta(hours=24, minutes=30), price - 0.01, price + 0.01)
+            market(tk, ev, "Weather", t - timedelta(hours=14), t + timedelta(hours=24), t + timedelta(hours=36))
+            candle(tk, t - timedelta(minutes=30), price - 0.01, price + 0.01)
             outcome(tk, "yes" if i == win else "no")
-
     con = duckdb.connect()
     con.execute("CREATE TABLE markets (ticker VARCHAR, event_ticker VARCHAR, series_ticker VARCHAR, grp VARCHAR, "
                 "market_type VARCHAR, open_utc TIMESTAMP, close_utc TIMESTAMP, expected_expiration_utc TIMESTAMP)")
@@ -104,8 +104,9 @@ def test_study_is_byte_identical_and_applies_every_rule(tmp_path):
     assert re.search(r"\| Sports \(pooled\) \| 35 \| 35 \|", text)
     assert "| Weather | 30 |" in text
     assert "INSUFFICIENT" in text          # Football, Hockey and Baseball have no games here
-    assert "Leakage test (registered run)" in text and "35 sports and 90 weather decisions, all passed" in text
+    assert "Leakage check (registered run)" in text
     assert re.search(r"leakage check on all 35 decisions passed", text)
+    assert "Weather: bracket markets with a decision time: 90" in inc
 
 
 def test_inclusion_never_depends_on_outcomes(tmp_path):
@@ -126,3 +127,36 @@ def test_after_decision_candles_are_never_used(tmp_path):
     # every game's after-decision candle is priced at 0.98; none may reach the calibration table
     table = section(text, "Calibration tables (descriptive)")
     assert "0.9800" not in table and "0.0200 |" not in table.split("Weather")[0]
+
+
+def test_exclusion_bound_and_claim_rule():
+    # 98 included games with mean -0.03; 2 excluded games priced 0.2 and 0.7 (underdog 0.2 and 0.3).
+    b = study.exclusion_bound(98, -0.03, [0.2, 0.7])
+    assert b == ((1 - 0.2 + 0.03) + (1 - 0.3 + 0.03)) / 100
+    assert study.exclusion_bound(98, -0.03, []) == 0.0
+    res = {"lo": -0.05, "hi": -0.01}
+    assert study.survives(res, 0.009) and not study.survives(res, 0.011)
+    assert study.survives({"lo": 0.02, "hi": 0.06}, 0.019) and not study.survives({"lo": 0.02, "hi": 0.06}, 0.021)
+
+
+def test_weather_decision_time_does_not_depend_on_close_time(tmp_path):
+    ds = make_dataset(tmp_path)
+    con = datasets.open_dataset(ds)
+    ms = study.markets(con)
+    con.close()
+    a, _ = study.weather_decisions(ms)
+    moved = [{**m, "close": m["close"] + timedelta(days=3)} if m["grp"] == "Weather" else m for m in ms]
+    b, _ = study.weather_decisions(moved)
+    assert a == b and len(a) == 90
+    assert {d["t"].hour for d in a} == {5}              # local midnight in New York in January (EST)
+    assert a[0]["cluster"] == "2026-01-01"              # the measured date, not a Los Angeles date
+
+
+def test_family_always_has_five_tests(tmp_path):
+    ds = make_dataset(tmp_path)
+    study.run(ds, tmp_path / "a.md")
+    text = (tmp_path / "a.md").read_text()
+    family = section(text, "Secondary family")
+    rows = [line for line in family.splitlines() if line.startswith("| ") and not line.startswith("| group")]
+    assert [r.split("|")[1].strip() for r in rows] == ["Football", "Basketball", "Hockey", "Baseball", "Weather"]
+    assert sum("INSUFFICIENT" in r for r in rows) == 3
