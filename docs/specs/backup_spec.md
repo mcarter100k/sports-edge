@@ -58,6 +58,12 @@ The run exits nonzero, and the wrapper alerts loudly through
 - `BACKUP_TARGET=b2` and the B2 settings are missing. In that case the
   local archive is still written, and the message says so.
 
+## Weekly heartbeat
+
+The Sunday proof-of-life lists `backup` next to `snapshot` and `grader`. It
+needs attention if the backup is failing, has never succeeded, or last
+succeeded more than 48 hours ago.
+
 ## Restore (`python -m sports_edge.backup restore <archive> <empty folder>`)
 
 1. Check the archive's sha256 against its sidecar.
