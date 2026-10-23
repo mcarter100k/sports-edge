@@ -217,3 +217,100 @@ followed leagues failed rule 5 on names alone:
   `UNMATCHED (not listed): <reason>=<n>, …`.
 - **`UNMATCHED-REFERENCE` lines** (in-scope reference games with no Kalshi
   game) are unchanged.
+
+## Amendment 2026-10-22: Kalshi placeholder times (rule version `match_v3`, PROPOSED, owner review)
+
+**The problem (observed 2026-10-22).** Kalshi lists many Saturday college
+games with a placeholder time. For example, KXNCAAFGAME-26OCT23AKRKENT has
+`expected_expiration_time = occurrence_time = 2026-10-24 03:00Z`. That is
+23:00 Eastern on the ticker's date (Oct 23). The game kicks off at
+2026-10-24 17:00Z, 14 h after `resolve_by`. Rule 4 (reference start within
+[resolve_by − 8 h, resolve_by]) can never pass. In week 43, 27 of the 45
+college games that match a reference game uniquely by names were blocked
+this way. See `docs/proposals/college_scope.md`.
+
+**1. The detection rule (exact).** A Kalshi game event is a
+*placeholder event* only if all of the following hold:
+1. **Ticker date:** its event ticker carries a date as the first
+   `-YYMMMDD` token after the series prefix, for example `-26OCT23` =
+   2026-10-23. Digits may follow (a start time, as in `-26OCT231430`); the
+   date is the first seven characters.
+2. **The same placeholder in every market:** every market of the event
+   has `expected_expiration_time` equal to `occurrence_time`, and that
+   value is the same for all of them.
+3. **The placeholder value:** that value is exactly 23:00:00 in
+   America/New_York on the ticker date, converted to UTC: 03:00Z under
+   daylight time, 04:00Z under standard time. The conversion is
+   `timeutil.eastern_to_utc`.
+
+An event that fails any part is not a placeholder event, and rule 4 applies
+unchanged.
+
+**2. The widened window, only after the normal window finds nothing.** For
+a placeholder event:
+- **Normal first:** candidates are first sought with rule 4 as written.
+- **Widen only on an empty result:** only if that finds **no** candidate are
+  candidates sought again with the time rule
+  [resolve_by − 8 h, resolve_by + 32 h]. That covers the ticker's date and
+  the following day in every US time zone.
+- **Why two steps:** a genuine game whose real end happens to be 23:00 ET
+  (an 8 p.m. start) matches in the normal window exactly as today. A
+  false detection can therefore never turn a good match into an
+  ambiguous one, for example two MLB games between the same teams on
+  consecutive days.
+
+**3. Every uniqueness rule is kept.** Rules 1, 2, 3, 5 and 6 apply to the
+widened candidates exactly as before:
+- both Kalshi teams must match two distinct reference teams;
+- exactly one reference game may fit the Kalshi event;
+- that reference game may fit no other Kalshi event.
+
+Two candidates in the widened window refuse as `ambiguous`, and a
+reference game also claimed by another event refuses.
+
+**4. The game time is the reference start.** Once matched, a placeholder
+event's time comes from the reference game everywhere downstream. That is
+already true:
+- check scheduling and clusters use the reference listing's latest start
+  (`checks.latest_starts`);
+- the pre-game rule uses the reference read's `commence_utc`
+  (`shadow.evaluate`);
+- markouts use the latest listed start.
+
+Kalshi's `resolve_by` is used only to choose which matched markets are
+snapshotted (`snapshot.matched_event_tickers`: resolve_by > now − 2 days;
+near tier: resolve_by ≤ now + 48 h). A placeholder that is too early keeps
+the market snapshotted at least as long as before, and 2 days covers a
+real start 14 h later.
+
+**5. The listing window.** The odds step rebuilds candidate Kalshi games
+from markets resolving in [now, now + horizon + 8 h]. For placeholder
+events only, the lower bound becomes now − 32 h. A placeholder event
+therefore stays a candidate until its widened window has passed. Without
+this, a Saturday game would be considered only for the ~10 hours when both
+its placeholder and its reference listing are in range.
+
+**6. Logging.** An unmatched placeholder event's detail gains
+`placeholder=1`. Reasons are unchanged (`no_candidate`, `name_mismatch`,
+`ambiguous`), with `in_window` counted over the window that was searched
+last.
+
+**7. Rule version:** matches recorded from now on carry `match_v3`.
+Earlier rows keep `match_v2`; nothing is relabelled.
+
+**8. Tests the implementation must have:**
+- **A placeholder event pairs correctly:** the Akron vs Kent State case,
+  placeholder 03:00Z, reference start 14 h later.
+- **A non-placeholder event with a wrong time still refuses:** the same
+  teams and reference game, with the Kalshi time at 02:00Z (not 23:00 ET).
+- **Two candidate games still refuse:** a placeholder event with two
+  reference games of the same teams inside the widened window gives
+  `ambiguous`.
+- **A false detection cannot break a normal match:** an event whose real
+  end is 23:00 ET, with a same-day candidate and a next-day duplicate,
+  matches the same-day game.
+- **Detection:** EDT (03:00Z) and EST (04:00Z) both detected; a minute off,
+  occurrence ≠ expected, markets disagreeing, or no date in the ticker are
+  not detected.
+- **The listing window:** a placeholder event 20 h past its `resolve_by`
+  is still a candidate; a non-placeholder event is not.

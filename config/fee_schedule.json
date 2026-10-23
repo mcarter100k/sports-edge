@@ -1,0 +1,83 @@
+{
+  "_doc": "Kalshi fee table (docs/specs/fee_model_spec.md, amendment 2026-10-23). Every value cites a page of the source bundle; its sha256 is checked on load. Built from the owner's screenshots of kalshi.com/fee-schedule and docs.kalshi.com Fee Rounding, 2026-10-23.",
+  "source": {
+    "file": "docs/sources/kalshi-fees-2026-10-23.pdf",
+    "sha256": "515ec65425db46341bfc02b7e243fecf2c27ec685d0e1018055cb3bc4ced15da",
+    "effective": "2026-10-23",
+    "note": "kalshi.com/fee-schedule as displayed 2026-10-23 ('No upcoming fee changes scheduled'); originals in docs/sources/kalshi-fees-2026-10-23/"
+  },
+  "default": {
+    "taker": "1",
+    "maker": "0",
+    "cite": "p.2 Standard fees, \"Most markets: additional fees -, fee multiplier 1, $0.07 - $1.75 taker fees (100 contracts)\" = 0.07 x 100 x p(1-p) at p = 0.01 and 0.50"
+  },
+  "settlement_fee": {
+    "value": "0",
+    "cite": "No settlement fee appears on p.2-9 (only taker and maker fees are listed) or in the rounding mechanics on p.1; owner confirmed no settlement fee from the 2026-07-07 schedule (fee_model_spec.md, amendment 2026-10-22)"
+  },
+  "rounding": {
+    "balance_precision": "0.0001",
+    "cite": "p.1 Fee Rounding, Overview: \"Direct member balances are aligned to $0.0001 (0.01c)\"; trade fee \"rounded up to the nearest $0.000001\""
+  },
+  "combo": {
+    "taker": "1",
+    "cite": "p.2 Standard fees, \"Combos (excluding uncorrelated NFL): maker fees - 50% of taker, fee multiplier 1, $0.07 - $1.75 taker fees\"; uncorrelated NFL combos fall under \"Most markets: fee multiplier 1\". Taker multiplier 1 for every combo."
+  },
+  "series": {
+    "KXEPLGAME": {
+      "taker": "1",
+      "maker": "1",
+      "cite": "p.4 Non-standard fees, \"KXEPLGAME ... maker fees, multiplier 1, taker $0.07 - $1.75, maker $0.02 - $0.44 (100 contracts)\""
+    },
+    "KXLALIGAGAME": {
+      "taker": "1",
+      "maker": "1",
+      "cite": "p.3 Non-standard fees, \"KXLALIGAGAME ... maker fees, multiplier 1, taker $0.07 - $1.75, maker $0.02 - $0.44 (100 contracts)\""
+    },
+    "KXNBAGAME": {
+      "taker": "1",
+      "maker": "1",
+      "cite": "p.6 Non-standard fees, \"KXNBAGAME ... maker fees, multiplier 1, taker $0.07 - $1.75, maker $0.02 - $0.44 (100 contracts)\""
+    },
+    "KXNCAAFGAME": {
+      "taker": "1",
+      "maker": "1",
+      "cite": "p.7 Non-standard fees, \"KXNCAAFGAME ... maker fees, multiplier 1, taker $0.07 - $1.75, maker $0.02 - $0.44 (100 contracts)\""
+    },
+    "KXNFLGAME": {
+      "taker": "1",
+      "maker": "1",
+      "cite": "p.8 Non-standard fees, \"KXNFLGAME ... maker fees, multiplier 1, taker $0.07 - $1.75, maker $0.02 - $0.44 (100 contracts)\""
+    },
+    "KXNHLGAME": {
+      "taker": "1",
+      "maker": "1",
+      "cite": "p.5 Non-standard fees, \"KXNHLGAME ... maker fees, multiplier 1, taker $0.07 - $1.75, maker $0.02 - $0.44 (100 contracts)\""
+    },
+    "KXMLBGAME": {
+      "taker": "0.5",
+      "maker": "0.5",
+      "cite": "p.9 Non-standard fees, \"KXMLBGAME Professional Baseball Game, maker fees, 0.5 prelive, 1 live, taker $0.04 - $0.88, maker $0.01 - $0.22 (100 contracts)\". PRE-GAME ONLY: the multiplier is 1 once live; valid here because every priced check is before the start (shadow.evaluate not_pre_game)."
+    }
+  },
+  "unconfirmed": {
+    "KXMLBEXTRAS": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBF3": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBF5": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBF5SPREAD": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBF5TOTAL": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBF7": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBHIT": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBHR": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBHRR": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBKS": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBOUTS": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBRBI": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBRFI": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBSB": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBSPREAD": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBTB": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBTEAMTOTAL": "API multiplier 0.5; not checked on the fee page (not a game moneyline)",
+    "KXMLBTOTAL": "API multiplier 0.5; not checked on the fee page (not a game moneyline)"
+  }
+}

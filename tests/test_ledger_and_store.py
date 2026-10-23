@@ -61,9 +61,11 @@ def test_write_mode_detector_sees_nested_calls():
 
 
 def test_no_module_opens_a_ledger_for_overwrite():
-    # Only health.py (its own state file, atomic replace) and store.py (temp CSV
-    # staging) may open anything for writing.
-    allowed = {"health.py", "store.py"}
+    # Only health.py (its own state file, atomic replace), store.py (temp CSV
+    # staging) and backup.py (archives under BACKUP_DIR and temporary folders;
+    # tests/test_backup.py checks every file under data/ is unchanged) may open
+    # anything for writing.
+    allowed = {"health.py", "store.py", "backup.py"}
     for path in PKG.glob("*.py"):
         if path.name not in allowed:
             assert write_mode_opens(path.read_text()) == [], path.name

@@ -205,8 +205,28 @@ To test the alert path for real: `touch state/force_failure_once`. The
 next 15-minute run fails on purpose and alerts, and the run after that
 recovers.
 
+## Backups
+
+Every night at 4:15 AM (`scripts/run_backup.sh`) the database is exported
+(never copied raw), together with the CSV ledgers, `logs/` and frozen
+research datasets. The export is hashed into a manifest, encrypted with
+`BACKUP_PASSPHRASE`, and uploaded to Backblaze B2. A failure alerts loudly,
+and the Sunday proof-of-life flags a backup older than 48 hours. The newest
+7 archives are also kept in `~/sports-edge-backups`.
+
+To restore anywhere:
+`venv/bin/python -m sports_edge.backup restore <archive.tar.gz.enc> <empty folder>`.
+It checks the archive's hash, decrypts, checks every file against the
+manifest, rebuilds the database and compares every table's row count.
+
+**Keep `BACKUP_PASSPHRASE` in a password manager.** Without it no backup
+can be read. Setup and costs are in `docs/specs/backup_spec.md`.
+
 ## Changing it
 
-Read `AGENTS.md` first. In short: work on a branch, write the spec before
+Read `AGENTS.md` first. The editor settings in `.claude/` enforce part of it:
+they refuse edits to `data/`, `logs/` and the fee table, reading `.env`,
+bulk `git add`, and edits to protected files outside a feature worktree
+(`docs/specs/enforcement_spec.md`). In short: work on a branch, write the spec before
 the code, keep the tests green, and run `scripts/reality_run.py` against the
 real APIs before merging. Never edit the data files by hand.
