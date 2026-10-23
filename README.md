@@ -203,6 +203,9 @@ recovers.
 
 ## Changing it
 
-Read `AGENTS.md` first. In short: work on a branch, write the spec before
+Read `AGENTS.md` first. The editor settings in `.claude/` enforce part of it:
+they refuse edits to `data/`, `logs/` and the fee table, reading `.env`,
+bulk `git add`, and edits to protected files outside a feature worktree
+(`docs/specs/enforcement_spec.md`). In short: work on a branch, write the spec before
 the code, keep the tests green, and run `scripts/reality_run.py` against the
 real APIs before merging. Never edit the data files by hand.
