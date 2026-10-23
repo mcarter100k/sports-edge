@@ -22,6 +22,14 @@ Entries are cleared with a date and the evidence that reality produced.
 - **First real pick** (added 2026-10-22). This needs an odds key in `.env`
   and `config/fee_schedule.json` built from the saved fee PDF. Until both
   exist, no check can price a game.
+- **Off-machine backup** (added 2026-10-22). Pending until the owner:
+  creates the B2 bucket (Object Lock on) and the write-only and restore
+  keys; sets `BACKUP_PASSPHRASE` and the `BACKUP_B2_*` values in `.env`;
+  stores the passphrase in a password manager; and runs
+  `scripts/launchd/install.sh`. Then pending: the first 04:15 run uploading
+  to B2, and a `fetch` plus `restore` from B2 on a temporary folder. Until
+  then, the Sunday heartbeat reads NEEDS ATTENTION ("backup has never
+  succeeded"). That is correct, not a fault.
 
 ---
 
@@ -883,3 +891,139 @@ Spec `c25c87d`, code `6025d55`.
   (`6025d55`) was approved by the owner.
 - **Merged** into `main` with a merge commit. Every validation-log entry
   from both sides is kept.
+
+## 2026-10-22: Milestone 1, editor enforcement (feat/enforcement, merged)
+
+Spec `9983358`, code `ec93b28`. No protected file changed.
+
+- **VERIFIED, Gate 1:**
+  - 84 guard tests against temporary git repositories: a main checkout, a
+    feature worktree, a detached worktree and a worktree on `master`.
+  - Mutants: 10 tried. 9 were killed at once. "Every linked worktree counts
+    as a feature worktree" survived. A test with a worktree on `master` was
+    added, and then it was killed.
+  - Suite on the branch: 501 passed, 1 skipped.
+- **VERIFIED, Gate 2 (the real editor, headless, in a scratch
+  repository):** each rule was tried with the project settings and, as a
+  control, without them, in `bypassPermissions` mode. A rule passed only
+  if it was attempted, the target was unchanged (or the canary absent)
+  with the rule, and changed (or present) without it.
+  - **The result:** 11 blocks, each with a control that acted:
+    - Write to `data/`; Edit of `data/` and of `logs/`;
+    - Edit of `config/fee_schedule.json`;
+    - Read of `.env`; `cat .env`;
+    - bulk staging, plain and through `git -C`;
+    - a shell append into `data/`;
+    - Edit of a protected file in the main checkout;
+    - Edit of `.claude/settings.json` in the main checkout.
+  - **One allowed case, as specified:** a protected file in a feature
+    worktree, changed in both runs.
+  - **A first run was void:** the scratch AGENTS.md text made the model
+    refuse on its own. The fixture was cut to the PROTECTED block, and the
+    probe now requires an attempt.
+- **OBSERVED after the merge:**
+  - The guard loads from `main` for an editor session in the live checkout.
+    Bulk staging in an empty scratch repository was blocked by the hook.
+  - **A false positive:** a heredoc that only wrote documentation
+    mentioning bulk staging was blocked. An apostrophe made it
+    unsplittable, and the fallback scan matched the document text. A fix
+    is on a separate branch.
+- **Known limit (by design, in the spec):** a program started from the
+  shell (for example `python -c`) can still write files. The guard reads
+  command text only.
+
+## 2026-10-22: Milestone 1, research base (feat/research-base, merged)
+
+Spec `fe6f0c2` with three backfill amendments. AGENTS.md now protects
+`research/harness.py` and `research/registry/*/result.md`.
+
+- **VERIFIED, Gate 1:**
+  - `research/stats.py` has pinned values: Wilson 8/10 = [0.4902, 0.9433];
+    `n_for_effect(1, 0.1) = 785`; the Benjamini–Hochberg 1995 example
+    rejects 4 of 15; the Brier decomposition is exact on distinct values.
+  - Datasets: byte-identical Parquet for identical data, a new id for
+    changed data, a tampered file or edited manifest refused, and the live
+    database unchanged by an export.
+  - Backfill: the quiet windows, batch limits, resume, the weather scope,
+    both candle schemas, the worker pool, the shared throttle and the 60 s
+    pause on a lasting 429.
+  - **Backfill mutants:** an unused throttle, unchained slots, ignored
+    resume, an ignored weather scope, an ignored batch cap and a dropped
+    historical schema were each killed. Writing those tests showed the
+    fake transport had never exercised a second page of a listing. It was
+    fixed.
+- **OBSERVED, Gate 2 (`reality_run.py`, real Kalshi API, temporary research
+  folder):**
+  - KXNHLGAME and KXHIGHCHI, 4 markets each: `BACKFILL FETCH OK
+    requests=18 workers=4`;
+  - normalize: `markets=5716 candles=786`;
+  - freeze: `DATASET OK … id=ae3abeff4536996f`;
+  - each run: 0 live files changed, no failure markers.
+- **Found while running the full backfill:**
+  - **Speed:** one request at a time ran at about 2.5 a second, bounded by
+    the round trip.
+  - **Rate limit:** per-worker limits adding up to 8 a second, then 5 a
+    second shared, drew HTTP 429 from the historical endpoints within
+    minutes. About 3.3 a second ran cleanly. Now 3 a second shared, with a
+    60 s pause for every worker on a lasting 429.
+  - **The live snapshot job was unaffected:** the 21:00, 21:15 and 21:30
+    runs were all `SNAPSHOT OK`.
+- **OBSERVED, match coverage** (`research/studies/match_coverage.py`, on a
+  copy of the live data):
+  - 39 of 71 games matched in series that have paired (55%).
+  - College football: 8 matched, 31 not. All 31 are games absent from the
+    reference listing (8 NCAAF games listed in total), not alias problems.
+  - Details are in the alias batch spec (branch `feat/alias-batch-1`,
+    owner review).
+- **VERIFIED:** the reviewer definition (`.claude/agents/auditor.md`) runs
+  with tools Read, Grep and Glob only, as the session's init event shows.
+  Asked to create a file, it could not, and no file appeared.
+- **PENDING:** the full backfill, then the frozen dataset.
+
+## 2026-10-22: Milestone 1, backup (feat/backup, merged; not installed)
+
+Spec `1d4d46a`, heartbeat amendment `853d663`, code `54a4178`.
+
+- **VERIFIED, Gate 1:**
+  - 19 backup tests: the round trip, an encrypted archive, a tampered
+    archive, a wrong, missing or short passphrase, B2 not configured, the
+    B2 upload against a fake (the SHA-1 header, a SHA-1 mismatch, a failed
+    authorize), fetch then restore, retention of 7, a non-empty restore
+    folder, a missing database, and the wrapper under `/bin/bash`
+    (ALERT, then RECOVERED).
+  - 2 heartbeat tests: a backup more than 48 h old, and one never
+    successful.
+  - Mutants: 12 tried. 9 were killed at once. Three survived: the
+    row-count check removed, the ledger read without its lock, and the
+    export opened read-write. Tests were added for each, and all three are
+    now killed.
+  - **Owner attention:**
+    `tests/test_ledger_and_store.py::test_no_module_opens_a_ledger_for_overwrite`
+    now allows `backup.py`, which writes archives outside `data/`. A new
+    test checks that every file under `data/` is byte-identical after a
+    backup.
+- **OBSERVED, Gate 2 (wrapper, copy of the live data, folder target):**
+  `BACKUP OK … tables=13 rows=107455 files=16`, an archive of 3,364,768
+  bytes, 0 live files changed.
+- **VERIFIED, real restore of the live database:**
+  - **The run:** an export of the live database through the jobs' lock
+    (21:05 PT), encrypted, copied to a stand-in for the off-machine target,
+    then restored into a temporary folder.
+  - **Restore:** `RESTORE OK files=21 tables=13 rows=107455`.
+  - **Row counts:** each of the 13 restored tables equals the live count
+    read under the lock. For example markets 99,576, settlements 1,572 and
+    price_snapshots 1,492.
+  - **Live files:** 0 of 11 changed. The live counts were the same before
+    and after.
+  - **The checks can fail:** this is shown by the Gate 1 tamper tests.
+- **Gate 2 after the merge** (`python -m sports_edge.heartbeat` on a copy of
+  the live data): the report lists `backup: last success never` and
+  `problem: backup has never succeeded`.
+  - Its "snapshot has never succeeded" line comes from the gate's empty
+    state folder.
+  - 0 live files changed.
+- **NOT CHECKED:** the B2 upload against the real service (no bucket or
+  keys yet), and the 04:15 launchd firing (`install.sh` not run). See
+  PENDING at the top.
+
+**Suite on merged `main` (`076b1e3`):** 571 passed, 1 skipped.
