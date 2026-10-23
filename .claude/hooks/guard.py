@@ -174,7 +174,28 @@ def write_targets(tokens):
     return [t for t in targets if t and not t.startswith("&")]
 
 
+HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+
+
+def strip_heredocs(command):
+    """The command without heredoc bodies: they are text fed to a program, not commands. The line
+    that opens each heredoc stays, so its redirection targets are still checked."""
+    lines = command.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        for m in HEREDOC.finditer(line):
+            word, tabs = m.group(3), m.group(1) == "-"
+            while i < len(lines) and (lines[i].lstrip("\t") if tabs else lines[i]) != word:
+                i += 1
+            i += 1                      # the closing delimiter line
+    return "\n".join(out)
+
+
 def check_bash(command, cwd):
+    command = strip_heredocs(command)
     try:
         parts = split_commands(command)
     except ValueError:
