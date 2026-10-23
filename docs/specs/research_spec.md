@@ -78,7 +78,7 @@ Kalshi's public market data. GET only, through `sports_edge.kalshi.KalshiClient`
 - **Window per market:** [max(open, close − 14 days), close].
 
 **Politeness.**
-- At most `RESEARCH_MAX_RPS` requests a second in total (default 5), enforced
+- At most `RESEARCH_MAX_RPS` requests a second in total (default 3), enforced
   by **one limiter shared by all worker threads**, so workers never burst
   together.
 - `RESEARCH_WORKERS` threads (default 6) keep requests in flight, because
@@ -88,6 +88,11 @@ Kalshi's public market data. GET only, through `sports_edge.kalshi.KalshiClient`
 - No requests from 30 s before to 4 min after each quarter hour, while the
   live snapshot job runs.
 - The client's retry on 429 and 5xx applies.
+- **A 429 that survives the client's retries pauses every worker for 60 s.**
+  The shared limiter's next slot moves 60 s ahead. That request is then
+  retried, up to 10 pauses, before the run fails.
+  - **Amended 2026-10-22:** at 5 a second, the historical endpoints
+    returned 429 after a few minutes, while about 3.3 a second ran cleanly.
 
 **Storage.**
 - Raw responses are appended to `backfill/raw/<series>/*.jsonl.gz`.
