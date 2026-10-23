@@ -1,0 +1,34 @@
+{
+  "dataset_id": "34babdc762e232b0",
+  "duckdb_version": "1.5.6",
+  "frozen_utc": "2026-10-23T08:10:30.977Z",
+  "name": "kalshi-backfill",
+  "source": {
+    "kind": "files",
+    "tables": {
+      "candles": "/Users/quis/sports-edge-research/backfill/tables/candles.parquet",
+      "markets": "/Users/quis/sports-edge-research/backfill/tables/markets.parquet",
+      "outcomes": "/Users/quis/sports-edge-research/backfill/tables/outcomes.parquet"
+    }
+  },
+  "tables": {
+    "candles": {
+      "content_sha256": "6c23e68dadae26bf685ba7697236e59df95af148d7671e278c391236335309a6",
+      "file": "candles.parquet",
+      "file_sha256": "8e090b924d4f1b0d5780bc8ab35eafb486e3d44efa58809f4785878040eaa01b",
+      "rows": 2684145
+    },
+    "markets": {
+      "content_sha256": "3cca26ab140fe7e48980ec2846cba752ac9802629ec05c73cf902d64a83a8c08",
+      "file": "markets.parquet",
+      "file_sha256": "59f33818f3a4fc0e6581f82e92cc8291838f4406376e55281767ee0c68b27d2c",
+      "rows": 36034
+    },
+    "outcomes": {
+      "content_sha256": "f3043fa11f9455790110c34015f0cd7289c735f42bc587e74aa67a9072642559",
+      "file": "outcomes.parquet",
+      "file_sha256": "d04b4d01caf6a75c9e740d0715febd9603dade5f6f825019e69e16d5eab90973",
+      "rows": 36034
+    }
+  }
+}
