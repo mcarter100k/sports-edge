@@ -55,69 +55,132 @@ inflate the false-positive rate well past 5%.
 
   Only games with both a closing reference read and a closing Kalshi price
   count. A game missing either is counted and shown, never imputed.
-- **Lower bound** of mean D, M or R: mean − z × cluster-robust standard
-  error, with clusters = Los Angeles dates, and SE² = G/(G−1) ×
-  Σ_clusters (Σ (x − mean))² / N². This is analytic, so a one-sided tail of
-  0.625% needs no bootstrap.
+- **Test statistic** for mean D, M or R: z = (mean − null) / cluster-robust
+  standard error, with clusters = Los Angeles dates, and SE² = G/(G−1) ×
+  Σ_clusters (Σ (x − mean))² / N².
+  - **Null values:** −0.01 for D (non-inferiority), 0 for M and R.
+  - **One-sided:** a promotion needs z above the boundary.
 
-## 3. Checkpoints (no continuous monitoring)
+## 3. Checkpoints and false positives from repeated looks
 
 **When:** the tests are evaluated only when the count of qualifying games
 first reaches **100, 250, 500 and 1,000**. Between checkpoints the stage
 line repeats the last checkpoint's verdict and shows the running count.
 
-**Error control:** the overall one-sided α of 0.025 is split equally across
-the 4 looks (Bonferroni), so each test at each look uses one-sided α =
-0.00625, **z = 2.50**.
+**The problem.** Testing the same accumulating data four times at the usual
+z = 1.96 gives a 7.3% chance that a no-edge strategy passes at some look,
+not 2.5% (simulated below).
+
+**The rule: alpha spending for promotions, kills at any look.**
+
+1. **Promotions use O'Brien–Fleming-type boundaries** (Lan–DeMets
+   spending, α(t) = 2 − 2Φ(2.2414/√t), overall one-sided α = 0.025 per
+   test). Information fraction t = n / 1,000. The boundaries were computed
+   by recursive numerical integration over the four looks:
+
+   | Look (games) | t | α spent by then | Promotion boundary z |
+   |---|---|---|---|
+   | 100 | 0.10 | 1.4 × 10⁻¹² | **7.00** |
+   | 250 | 0.25 | 7.4 × 10⁻⁶ | **4.34** |
+   | 500 | 0.50 | 0.0015 | **2.96** |
+   | 1,000 | 1.00 | 0.025 | **1.97** |
+
+   - Both Early-signal tests (D and M) use these boundaries.
+   - The Confirmed returns test is made at one look only (1,000 games),
+     with z = 1.96.
+
+2. **Kills (demotion to Practice) at every look**, at the nominal z ≤
+   −1.96:
+   - M is significantly negative: Kalshi moved away from the side bought;
+   - or D is significantly below −0.01: Pinnacle moved toward Kalshi's
+     price.
+
+   **Kills are non-binding.** The promotion boundaries are computed as if
+   no kill existed, so a kill can only lower the chance of a false
+   promotion, never raise it. An early look therefore cannot promote
+   unless the evidence is overwhelming, but it can always stop a strategy
+   that is failing.
+
+**Overall false-positive rate across all four looks** (simulated, 200,000
+paths under the null, one test):
+
+| Rule | P(any look passes, no edge) |
+|---|---|
+| z = 1.96 at every look (no correction) | 0.073 |
+| z = 2.50 at every look (Bonferroni, the first draft of this spec) | 0.020 |
+| **O'Brien–Fleming spending (this rule)** | **0.025** (exactly α by construction; simulated 0.0248) |
+| One look at 1,000 only, z = 1.96 (reference) | 0.025 |
+
+**For the stages:**
+- **Early signal** needs both the D and M tests to pass at the same look.
+  Under either null (no convergence, or adverse drift) the test that should
+  fail has at most 0.025 chance of passing over all looks. So
+  **P(false Early signal) ≤ 0.025.**
+- **Supported** needs Early signal, so P(false Supported) ≤ 0.025.
+- **Confirmed** needs Early signal and the one-look returns test, so
+  P(false Confirmed) ≤ 0.025.
+
+**The cost of kills to a real edge** (simulated, z ≤ −1.96 at any look):
+- 7.3% when the true mean equals the null exactly, which is the right
+  outcome there;
+- 1.0% when the true mean is 0.05 sd per game above the null;
+- 0.2% at 0.1 sd per game.
 
 ## 4. Tiers
 
-| Stage | First reached at | Needs, at that checkpoint and every later one |
+| Stage | Earliest look | Needs, at that look and every later one |
 |---|---|---|
-| Practice | — | below 100 qualifying games, or a condition below fails |
-| **Early signal** | 100 games | **Drift not adverse:** lower bound of mean D > −0.01 (non-inferiority, margin 1 cent, a third of the 3-cent threshold). **And Kalshi converges:** lower bound of mean M > 0. |
-| **Supported** | 500 games | Early signal holds, and the mean R > 0 (a point estimate, as confirmation) |
-| **Confirmed** | 1,000 games | Early signal holds, and the lower bound of mean R > 0 |
+| Practice | — | below 100 qualifying games, no promotion yet, or a kill |
+| **Early signal** | 100 games (in practice 250, see section 5) | **Drift not adverse:** z_D = (mean D + 0.01) / SE above the look's boundary (non-inferiority, margin 1 cent, a third of the 3-cent threshold). **And Kalshi converges:** z_M = mean M / SE above the look's boundary. |
+| **Supported** | 500 games | Early signal holds, and the mean R > 0. This is a point estimate, used as confirmation, not a test. |
+| **Confirmed** | 1,000 games | Early signal holds, and z_R = mean R / SE ≥ 1.96 |
 
-**Demotion to Practice:**
-- At any checkpoint, either Early-signal condition fails.
-- The v1 20-bet losing stretch, unchanged.
+**Once promoted,** a stage stays unless a kill fires at a later look, or the
+v1 20-bet losing stretch fires (unchanged).
 
 The line names the reason, for example
 `Practice (STAGE_v2: Pinnacle moved toward Kalshi at 250 games)`.
 
-## 5. Power at each tier (stated before any data)
+## 5. Power and timing (stated before any data)
 
 **Assumptions.** The standard deviations below are assumptions, not
 measurements. No live row exists. Each is to be replaced by the sd
 observed in the first 50 qualifying games. That sd is recorded in
-`docs/validation_log.md` before the 100-game checkpoint is evaluated.
+`docs/validation_log.md` before the 100-game look.
 - **sd of D:** 0.03 (a Pinnacle moneyline moving 0 to 3 cents between the
-  60- and 15-minute reads). Also shown at 0.02 and 0.04.
+  60- and 15-minute reads).
 - **sd of M:** 0.03 to 0.05.
 - **sd of R:** 1.0 (a bought binary returns about −100% or +100%).
 
-All figures use z = 2.50.
+**Effect size** is (true mean − null) / sd per game:
+- D, true mean 0, sd 0.03: (0 + 0.01) / 0.03 = 0.33;
+- M = 0.01 with sd 0.03: 0.33; with sd 0.05: 0.20.
 
-| Test | n | Power (or detectable effect) |
-|---|---|---|
-| D not adverse, true mean 0, sd 0.03 | 100 | 0.80 |
-| same | 250 | 0.997 |
-| same, sd 0.04 | 100 / 250 | 0.50 / 0.93 |
-| same, sd 0.02 | 100 | 0.99 |
-| M > 0, sd 0.03 | 100 | detects M ≥ 0.010 at 80% |
-| M > 0, sd 0.05 | 100 / 250 | detects M ≥ 0.017 / 0.011 at 80% |
-| R mean > 0 (Supported) | 500 | passes 50% of the time with no edge; 75% with a true 3% return |
-| R lower bound > 0 (Confirmed) | 1,000 | detects only a return of about 10.6% or more at 80%; power at a true 3% return is 0.06 |
+**Probability that a test has promoted by each look** (cumulative,
+simulated with these boundaries):
+
+| Effect per game | by 100 | by 250 | by 500 | by 1,000 |
+|---|---|---|---|---|
+| 0.05 | 0.00 | 0.00 | 0.03 | 0.35 |
+| 0.10 | 0.00 | 0.00 | 0.23 | 0.88 |
+| 0.15 | 0.00 | 0.03 | 0.65 | 1.00 |
+| 0.20 | 0.00 | 0.12 | 0.93 | 1.00 |
+| 0.33 | 0.00 | 0.82 | 1.00 | 1.00 |
+
+**Returns:**
+- Supported at 500 passes 50% of the time with no edge, and 75% with a
+  true 3% return. It is confirmation, not a test.
+- Confirmed (z ≥ 1.96 at 1,000) detects only a return of about 8.9% or more
+  at 80%. A true 3% return needs about 8,700 games for 80% power.
 
 **In plain terms:**
-- The first two tests can say within 100 to 250 games whether the gaps
-  behave like stale Kalshi prices.
-- Returns cannot confirm a small edge on any horizon in this table. At z =
-  2.50, a true 3% return needs about 12,400 games for 80% power (about
-  8,700 at a single look with z = 1.96). Confirmed is a high bar on
-  purpose. Reaching it would mean a large edge, and failing it does not
-  disprove a small one.
+- 100 games are never enough to promote. The 100-game look exists to kill.
+- If the gaps behave like stale Kalshi prices (Pinnacle steady, Kalshi
+  moving toward it by about a cent), Early signal arrives at 250 games
+  with probability about 0.8, and by 500 almost surely.
+- Returns cannot confirm a small edge on this horizon. Confirmed is a high
+  bar on purpose. Reaching it would mean a large edge, and failing it does
+  not disprove a small one.
 
 ## 6. Free plan
 
@@ -130,6 +193,12 @@ today.
 
 - **Pinned checkpoint values:** synthetic graded rows at 99, 100, 249 and
   250 games. The verdict changes only at a checkpoint.
+- **Pinned boundaries:** 7.00, 4.34, 2.96 and 1.97. A z of 4.33 at 250 does
+  not promote, and 4.35 does.
+- **Kills:** z_M = −1.97 at the 100-game look demotes even after an earlier
+  promotion; z_M = −1.95 does not.
+- **Boundaries reproduced from the spending function** in a test, not only
+  stored as constants.
 - **Each condition alone:** a demotion when D is adverse while M > 0, and
   when M ≤ 0 while D is fine.
 - **Unit counting:** two bets on one game count as one unit.
