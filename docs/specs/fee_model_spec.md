@@ -172,3 +172,73 @@ source is news reporting.**
 above, are removed with the combo alert line, which is parked (see
 `slate_alerts_spec.md`). The fail-closed cross-check on
 `quadratic_with_combo_maker_fees` is unchanged.
+
+---
+
+## Amendment 2026-10-23: the fee table's source and values (owner-authorized; PROPOSED, owner review)
+
+**Owner authorization (2026-10-23).** The owner authorized building the
+table, including an automated fetch of Kalshi's fee pages. That lifts the
+"never an automated fetch" term above, for this table only.
+
+**What was reachable:**
+- `kalshi.com/fee-schedule` and `kalshi.com/docs/kalshi-fee-schedule.pdf`
+  still answer automated requests with HTTP 429 and a bot-check page. They
+  were not retried with a disguised request.
+- Kalshi's developer documentation, `docs.kalshi.com`, answered normally.
+
+**The sources:**
+1. **Eight screenshots of `kalshi.com/fee-schedule`, taken by the owner on
+   2026-10-23:**
+   - the Standard fees table with the top of the Non-standard table;
+   - one search result each for KXLALIGAGAME, KXEPLGAME, KXNHLGAME,
+     KXNBAGAME, KXNCAAFGAME, KXNFLGAME and KXMLBGAME.
+2. **The Fee Rounding page,** `https://docs.kalshi.com/getting_started/fee_rounding.md`,
+   fetched 2026-10-23.
+
+**The source file.** The validator wants one document with page numbers, so
+the sources are bundled into `docs/sources/kalshi-fees-2026-10-23.pdf`:
+- page 1 is the rounding page's text;
+- pages 2 to 9 are the screenshots, in the order above;
+- each page carries its original file's name and sha256.
+
+The originals are committed beside it, in
+`docs/sources/kalshi-fees-2026-10-23/`. The table records the bundle's
+sha256, and `source.effective` is `2026-10-23`: the page as displayed that
+day, which shows "No upcoming fee changes scheduled".
+
+**The values, and what each cites:**
+
+| Key | Value | Cite |
+|---|---|---|
+| default | taker 1, maker 0 | p.2, Standard fees, "Most markets: multiplier 1, $0.07–$1.75 per 100 contracts" (= 0.07 × 100 × p(1−p) at p = 0.01 and 0.50) |
+| KXNFLGAME, KXNCAAFGAME, KXNBAGAME, KXNHLGAME, KXEPLGAME, KXLALIGAGAME | taker 1, maker 1 | the series' page: Non-standard fees, "maker fees, multiplier 1, taker $0.07–$1.75, maker $0.02–$0.44" (maker = 0.0175 × 100 × 0.25) |
+| KXMLBGAME | taker 0.5, maker 0.5 | p.9, Non-standard fees, "maker fees, 0.5 prelive, 1 live; taker $0.04–$0.88, maker $0.01–$0.22" |
+| rounding.balance_precision | 0.0001 | p.1, Fee Rounding, Overview: "Direct member balances are aligned to $0.0001 (0.01c)" |
+| settlement_fee | 0 | No settlement fee appears in the schedule pages (p.2–9, which list only taker and maker fees) or in the rounding mechanics (p.1). The owner confirmed no settlement fee from the 2026-07-07 schedule (amendment of 2026-10-22). |
+
+**KXMLBGAME before and after the start.**
+- The page gives 0.5 before the game and 1 once it is live. The table has
+  one multiplier per series and records the pre-game 0.5.
+- That is correct only because every price the system checks is before the
+  start: `shadow.evaluate` refuses at or after `commence_utc`
+  (`not_pre_game`), and the slip rater refuses started games.
+- **Any future use of a live price must not use this table's KXMLBGAME
+  value.** The `cite` says so.
+
+**Fail closed for everything not checked:**
+- **The 18 other Pro Baseball series** with API multiplier 0.5 (KXMLBF5,
+  KXMLBTOTAL and the others) are listed under `unconfirmed`. They were not
+  checked on the fee page, and they are not game moneylines.
+- **Every other non-standard series** (the 106 with maker fees in the API,
+  outside the seven above) has no row. Against the default (maker 0) the
+  existing cross-check rejects them as `fee_unknown`. No row is guessed.
+
+**Tests:**
+- The repository table loads and validates against the committed bundle,
+  with its hash checked.
+- Each of the seven series resolves to its cited multipliers against its
+  API fee type.
+- An unconfirmed series raises.
+- A series with API maker fees but no row raises.
+- MLB's taker fee at p = 0.5 for 100 contracts is half the standard fee.
