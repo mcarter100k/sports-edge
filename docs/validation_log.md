@@ -883,3 +883,20 @@ Spec `c25c87d`, code `6025d55`.
   (`6025d55`) was approved by the owner.
 - **Merged** into `main` with a merge commit. Every validation-log entry
   from both sides is kept.
+
+## 2026-10-23: owner approval of the harness, and the calibration study pre-registration
+
+- **Owner approval (2026-10-22):** `research/harness.py` on
+  `feat/harness-study` at commit `334c293`. It is to be merged to `main`
+  after the study result is reviewed. The file is unchanged since (`git diff
+  334c293 -- research/harness.py` is empty, checked 2026-10-23).
+- **The dataset:** the backfill finished with `BACKFILL FETCH OK
+  requests=27406`. It was normalized to markets 36,034 and candles
+  2,684,145, and frozen as `kalshi-backfill` id `34babdc762e232b0`
+  (manifest sha256 `db0b979f…`).
+- **The pre-registration:** revision 1 (`492fe50`) drew a review verdict of
+  REVISE, with 6 major and 8 minor findings
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg.md`).
+  Revision 2 answers each one. Every number added comes from timing fields
+  and candles, on a connection with no outcomes table. The study has not
+  run.
