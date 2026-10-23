@@ -63,30 +63,92 @@ Splits over sorted distinct dates: [(train_dates, test_dates)].
 - Test windows do not overlap.
 - Rolling (`expanding=False`) keeps only the last `train_days` dates.
 
-## `check_no_peeking(con, source, decisions, sample=50, seed=0)`
+## Isolation, the leakage test and fitting (amended 2026-10-22, owner review)
 
-**The leakage test.** For up to `sample` decisions, drawn with the seed, it
-predicts three times:
-1. on the real views;
-2. on **poisoned** views: every quote and reference row after t is replaced
-   by a deterministic, unrelated value, and every outcome is flipped;
-3. on **truncated** views: rows after t are removed and `outcomes` is
-   empty.
+This replaces the search-path design. A source used to see shadow views
+placed first on DuckDB's search path, and it could still reach the real
+tables by naming `main.<table>`.
 
-If any prediction differs between the three (beyond 1e-12), it raises
-`LeakageError` naming the source, ticker and t.
+### The isolation connection
 
-- Poisoned and truncated views live in their own schemas and are put first
-  on DuckDB's search path, so a source querying `quotes` sees them. The
-  real views are restored afterwards, even on error.
-- `modes` (default both) chooses the poisoned and truncated variants, so
-  each can be tested on its own.
-- A source that reads files or globals outside the connection is not
-  covered. Sources must read only through `con`.
-- `score()` runs this check first and refuses to score a source that fails
-  it.
+`Isolation(con)` is a **separate DuckDB connection.**
+- **What it holds:** `quotes` and `reference` rows with a timestamp at or
+  before the current decision time t, and `units`.
+- **What it does not hold:** there is **no `outcomes` table**, and no other
+  schema or attached database. Nothing later than t exists in it, so no
+  table name can reach later data.
+- **How it moves forward:** decisions are processed in time order. Moving to
+  a later t inserts the rows in (previous t, t]. It never moves backwards.
+- **The source data:** time-sorted Parquet copies in a private temporary
+  folder, deleted afterwards.
+- **What a source may use:** only `con`. Reading files or module globals is
+  outside this guarantee.
+
+### Scoring uses isolated predictions
+
+`score()` and `score_walk_forward()` score the predictions a source makes
+on the isolation connection. So the scored numbers cannot use data after t
+through `con`, by construction.
+
+### The leakage test
+
+`check_no_peeking(con, source, decisions, sample=None, seed=0)`:
+- **The comparison:** for each checked decision, it compares the source's
+  prediction on the isolation connection with its prediction on the full
+  scoring connection.
+- **When it raises:** any difference beyond 1e-12, or an error on the
+  isolation connection (for example a query of `outcomes`), raises
+  `LeakageError` naming the source, the ticker and t.
+- **What it catches:** a source whose output would change if it could see
+  later data, including one that queries `main.quotes` by name.
+- **The limit:** a source that reads outcomes in a way that never changes
+  its output is not flagged, and does no harm.
+
+**Every decision in registered runs.**
+- `score(..., registered=True)`, the default, checks **every** decision.
+  `sample` may be set only with `registered=False`, for development runs.
+- Passing `sample` to a registered run raises `HarnessError`.
+- The result records `leakage_checked` and whether the run was registered.
+
+### Fit and predict across walk-forward folds
+
+`score_walk_forward(con, decisions, make_source, max_age, train_days, test_days, embargo_days=1, expanding=True, step_days=None, ...)`:
+1. **Folds:** `walk_forward` over the decisions' cluster dates (the units
+   table), with `embargo_days ≥ 1` (required). The embargo keeps outcomes
+   that settle overnight out of the test dates.
+2. **A fresh source per fold:** `make_source()` builds a new instance for
+   each fold, so nothing learned in one fold carries into another.
+3. **Fitting:** `source.fit(train_con)` is called if the source has `fit`.
+   `train_con` is a separate connection holding only:
+   - `quotes` and `reference` rows before the cutoff (midnight Los Angeles
+     time after the last training date);
+   - `outcomes` and `units` for tickers whose cluster date is a training
+     date.
+4. **Prediction:** the fold's test decisions are predicted on the isolation
+   connection, never on `train_con`, and leakage-checked as above.
+5. **Scoring:** pooled over every fold's test decisions, exactly as in
+   `score()`.
+
+**The guarantee:** a source cannot fit on test-period quotes, references or
+outcomes, because they are absent from every connection it is given before
+or while predicting a test decision.
 
 ## Tests (Gate 1)
+
+Added 2026-10-22:
+- A source querying `main.quotes` explicitly is caught.
+- A source querying `outcomes` is caught (the table is absent from the
+  isolation connection).
+- During every isolated prediction, the isolation connection's latest
+  timestamp is at or before t, and it has no `outcomes` table.
+- A source that memorizes outcomes in `fit` scores exactly 0.5 on every
+  test decision in walk-forward. As a positive control, the same source fit
+  on all the data predicts perfectly.
+- The training connection holds no row at or after the cutoff and no
+  outcome of a test ticker.
+- `make_source` is called once per fold.
+- A registered run checks every decision; `sample` raises in a registered
+  run.
 
 - `kalshi_mid` picks the latest two-sided quote at or before t within the
   age, and rejects later, one-sided and stale quotes.
