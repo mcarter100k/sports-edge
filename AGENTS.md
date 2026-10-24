@@ -154,5 +154,5 @@ Snapshot cycle (every 15 min): `scripts/run_snapshot.sh`
 Nightly grader: `scripts/run_grader.sh`
 Weekly proof-of-life: `scripts/weekly_heartbeat.sh`
 Stale-snapshot watch (every 15 min, at :07/:22/:37/:52): `scripts/run_watch.sh`
-Every job module runs under a 2,200 s limit: `sports_edge/jobguard.py`
+Every job module runs under its own time limit: `sports_edge/jobguard.py`; every HTTPS GET has a 120 s deadline: `sports_edge/net.py`
 launchd plists: `scripts/launchd/` (installed with `scripts/launchd/install.sh`)
