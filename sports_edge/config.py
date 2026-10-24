@@ -5,11 +5,40 @@ directory with environment variables alone.
 """
 import json
 import os
+from decimal import Decimal
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 KALSHI_BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
+
+
+def env_file() -> Path:
+    """The .env the wrappers source: $SPORTS_EDGE_PROJ/.env, else the repo's."""
+    return Path(os.environ.get("SPORTS_EDGE_PROJ") or REPO_ROOT) / ".env"
+
+
+def load_env_file(path=None):
+    """Load .env with the wrappers' rules (docs/specs/status_spec.md): skipped with
+    SPORTS_EDGE_NO_ENV_FILE, a missing file loads nothing, and a variable already set wins.
+    Returns the names it set."""
+    if os.environ.get("SPORTS_EDGE_NO_ENV_FILE"):
+        return []
+    path = path or env_file()
+    if not path.exists():
+        return []
+    added = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key and key not in os.environ:
+            os.environ[key] = value.strip('"').strip("'")
+            added.append(key)
+    return added
 
 
 def _path(var, default_name):
@@ -115,6 +144,11 @@ def sheet_dir() -> Path:
 
 def imessage_to():
     return os.environ.get("IMESSAGE_TO") or None
+
+
+def combo_target_payout():
+    """The owner's payout target for combo lines, per dollar staked (shown, never pursued). Default 4."""
+    return Decimal(os.environ.get("COMBO_TARGET_PAYOUT") or "4")
 
 
 def load_json_config(name):

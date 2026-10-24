@@ -22,6 +22,14 @@ Entries are cleared with a date and the evidence that reality produced.
 - **First real pick** (added 2026-10-22). This needs an odds key in `.env`
   and `config/fee_schedule.json` built from the saved fee PDF. Until both
   exist, no check can price a game.
+- **Off-machine backup** (added 2026-10-22). Pending until the owner:
+  creates the B2 bucket (Object Lock on) and the write-only and restore
+  keys; sets `BACKUP_PASSPHRASE` and the `BACKUP_B2_*` values in `.env`;
+  stores the passphrase in a password manager; and runs
+  `scripts/launchd/install.sh`. Then pending: the first 04:15 run uploading
+  to B2, and a `fetch` plus `restore` from B2 on a temporary folder. Until
+  then, the Sunday heartbeat reads NEEDS ATTENTION ("backup has never
+  succeeded"). That is correct, not a fault.
 
 ---
 
@@ -798,6 +806,416 @@ review and is not built.
 - **PENDING:** the first scheduled run on the merged code. The sheet should
   open with the BOARD, and the 3:30 AM PT grader should print the markouts
   line.
+
+## 2026-10-22: first scheduled run on the merged board and notification delivery (3:30 PM PT)
+
+- **OBSERVED, the live 3:30 PM PT run on `main` `a1ebb2b`:**
+  - **Snapshot:** exit 0, `tier=near`, `checks_due=9`, `events_priced=0`
+    (no fee table, so nothing is priced).
+  - **Slate alert:** `SLATE ALERT OK messages=1`, exit 0. The message was
+    delivered as a Mac notification, not an iMessage. `alerts.log`:
+    `SLATE terminal-notifier: Don't bet today: prices not checked (no fee table). · Practice · … → sheet.txt`.
+    `imessage.log`: `notified (IMESSAGE_TO not set)`.
+  - **The live iCloud sheet** opens with
+    `BOARD (price gaps as of each game's check, 3:30 PM PT)` and
+    `none (no fee table)`.
+- **Cleared:** the first live slate banner after merge (PENDING in the
+  delivery entry), and the sheet opening with the BOARD on a scheduled run
+  (PENDING in the merge entry).
+- **Still PENDING:** the owner confirming that clicking a banner opens the
+  iCloud sheet (path with a space); the 3:30 AM PT grader's markouts line;
+  the 8:00 AM PT morning banner.
+
+## 2026-10-22: the status command, and `.env` for every command (owner request)
+
+Spec `b91f2bc`, code `7fc18fd`. No protected file is changed.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 415 passed, 1 skipped (13 new tests). `tests/conftest.py` now
+    also sets `SPORTS_EDGE_NO_ENV_FILE` for every test, so no test can load
+    the real `.env`.
+  - New mutants: 17 of 17 killed, from clean caches, each restored
+    byte-identical. They cover commands never loading `.env`, any import
+    loading it, an already-set value replaced, the skip switch ignored,
+    `SPORTS_EDGE_PROJ` ignored, quotes kept, the `export` prefix, a
+    read-write database, and each status line rule.
+  - The board and markout set (35) and the standing set (98) were rerun on
+    this branch: all killed.
+- **VERIFIED, `.env` loading, with a control.** Run through
+  `reality_run.py` on a copy of the live data, with `ODDS_API_KEY` removed
+  from the environment and `SPORTS_EDGE_PROJ` set to the live checkout:
+  - `slate board` printed `none (no fee table)`: the key came from `.env`.
+  - **Control,** with `SPORTS_EDGE_NO_ENV_FILE=1`: `none (odds not set up)`.
+- **OBSERVED, `status` on the live data from a clean environment (4:08 PM
+  PT):** exit 0, no stderr, 12 live files hashed before and after, 0
+  changed (the database file included). Output:
+  ```
+  SPORTS-EDGE · 4:08 PM PT
+  Running fine · last check 4:00 PM PT
+  Today: 18 games tracked · 0 checked · 0 picks
+  Why no picks: no fee table
+  Odds credits: 0 of 15 used today
+  ```
+- **OBSERVED, `run_snapshot.sh` on this branch** (empty folder, 4:09 PM
+  PT): `SNAPSHOT OK tier=daily events_matched=28 matched_after_scan=28
+  snapshot_rows=58`, then `SLATE ALERT OK`. 0 live files changed, no
+  failure markers.
+- **Owner's header:** line 1 is `SPORTS-EDGE`, as specified. The jargon
+  test exempts only that product name.
+
+## 2026-10-22: markout zero cause for all-postponed rows (grader.py, held for owner review)
+
+Spec `c25c87d`, code `6025d55`.
+
+- **VERIFIED, Gate 1:**
+  - Suite: 404 passed, 1 skipped (2 new tests).
+  - Mutants: 3 of 3 killed (the new cause removed, the cause shown when
+    only some rows are postponed, measured rows counted as postponed). The
+    board and markout set (35 of 35) and the standing set (98 of 98) were
+    rerun on this branch. All were restored byte-identical, from clean
+    caches.
+- **OBSERVED, Gate 2:** the grader wrapper on a copy of the live data, run
+  through the fixed `reality_run.py`, ran this branch's code. It printed
+  `markouts: 0 measured (no shadow rows logged yet)`, with 0 live files
+  changed and no failure markers.
+- **Finding:** the postponed count already left out rows in
+  `shadow_markouts.csv`, because a measured row is skipped first. A test
+  now fixes this. A postponed row is never written, so the same row is
+  counted again each night.
+- **PENDING:** the new cause on live data (needs a logged game that is
+  postponed); owner review of `grader.py` before merge.
+
+## 2026-10-22: markout zero cause approved and merged
+
+- **Owner review:** the `grader.py` change on `fix/markout-zero-cause`
+  (`6025d55`) was approved by the owner.
+- **Merged** into `main` with a merge commit. Every validation-log entry
+  from both sides is kept.
+
+## 2026-10-22: Milestone 1, editor enforcement (feat/enforcement, merged)
+
+Spec `9983358`, code `ec93b28`. No protected file changed.
+
+- **VERIFIED, Gate 1:**
+  - 84 guard tests against temporary git repositories: a main checkout, a
+    feature worktree, a detached worktree and a worktree on `master`.
+  - Mutants: 10 tried. 9 were killed at once. "Every linked worktree counts
+    as a feature worktree" survived. A test with a worktree on `master` was
+    added, and then it was killed.
+  - Suite on the branch: 501 passed, 1 skipped.
+- **VERIFIED, Gate 2 (the real editor, headless, in a scratch
+  repository):** each rule was tried with the project settings and, as a
+  control, without them, in `bypassPermissions` mode. A rule passed only
+  if it was attempted, the target was unchanged (or the canary absent)
+  with the rule, and changed (or present) without it.
+  - **The result:** 11 blocks, each with a control that acted:
+    - Write to `data/`; Edit of `data/` and of `logs/`;
+    - Edit of `config/fee_schedule.json`;
+    - Read of `.env`; `cat .env`;
+    - bulk staging, plain and through `git -C`;
+    - a shell append into `data/`;
+    - Edit of a protected file in the main checkout;
+    - Edit of `.claude/settings.json` in the main checkout.
+  - **One allowed case, as specified:** a protected file in a feature
+    worktree, changed in both runs.
+  - **A first run was void:** the scratch AGENTS.md text made the model
+    refuse on its own. The fixture was cut to the PROTECTED block, and the
+    probe now requires an attempt.
+- **OBSERVED after the merge:**
+  - The guard loads from `main` for an editor session in the live checkout.
+    Bulk staging in an empty scratch repository was blocked by the hook.
+  - **A false positive:** a heredoc that only wrote documentation
+    mentioning bulk staging was blocked. An apostrophe made it
+    unsplittable, and the fallback scan matched the document text. A fix
+    is on a separate branch.
+- **Known limit (by design, in the spec):** a program started from the
+  shell (for example `python -c`) can still write files. The guard reads
+  command text only.
+
+## 2026-10-22: Milestone 1, research base (feat/research-base, merged)
+
+Spec `fe6f0c2` with three backfill amendments. AGENTS.md now protects
+`research/harness.py` and `research/registry/*/result.md`.
+
+- **VERIFIED, Gate 1:**
+  - `research/stats.py` has pinned values: Wilson 8/10 = [0.4902, 0.9433];
+    `n_for_effect(1, 0.1) = 785`; the Benjamini–Hochberg 1995 example
+    rejects 4 of 15; the Brier decomposition is exact on distinct values.
+  - Datasets: byte-identical Parquet for identical data, a new id for
+    changed data, a tampered file or edited manifest refused, and the live
+    database unchanged by an export.
+  - Backfill: the quiet windows, batch limits, resume, the weather scope,
+    both candle schemas, the worker pool, the shared throttle and the 60 s
+    pause on a lasting 429.
+  - **Backfill mutants:** an unused throttle, unchained slots, ignored
+    resume, an ignored weather scope, an ignored batch cap and a dropped
+    historical schema were each killed. Writing those tests showed the
+    fake transport had never exercised a second page of a listing. It was
+    fixed.
+- **OBSERVED, Gate 2 (`reality_run.py`, real Kalshi API, temporary research
+  folder):**
+  - KXNHLGAME and KXHIGHCHI, 4 markets each: `BACKFILL FETCH OK
+    requests=18 workers=4`;
+  - normalize: `markets=5716 candles=786`;
+  - freeze: `DATASET OK … id=ae3abeff4536996f`;
+  - each run: 0 live files changed, no failure markers.
+- **Found while running the full backfill:**
+  - **Speed:** one request at a time ran at about 2.5 a second, bounded by
+    the round trip.
+  - **Rate limit:** per-worker limits adding up to 8 a second, then 5 a
+    second shared, drew HTTP 429 from the historical endpoints within
+    minutes. About 3.3 a second ran cleanly. Now 3 a second shared, with a
+    60 s pause for every worker on a lasting 429.
+  - **The live snapshot job was unaffected:** the 21:00, 21:15 and 21:30
+    runs were all `SNAPSHOT OK`.
+- **OBSERVED, match coverage** (`research/studies/match_coverage.py`, on a
+  copy of the live data):
+  - 39 of 71 games matched in series that have paired (55%).
+  - College football: 8 matched, 31 not. All 31 are games absent from the
+    reference listing (8 NCAAF games listed in total), not alias problems.
+  - Details are in the alias batch spec (branch `feat/alias-batch-1`,
+    owner review).
+- **VERIFIED:** the reviewer definition (`.claude/agents/auditor.md`) runs
+  with tools Read, Grep and Glob only, as the session's init event shows.
+  Asked to create a file, it could not, and no file appeared.
+- **PENDING:** the full backfill, then the frozen dataset.
+
+## 2026-10-22: Milestone 1, backup (feat/backup, merged; not installed)
+
+Spec `1d4d46a`, heartbeat amendment `853d663`, code `54a4178`.
+
+- **VERIFIED, Gate 1:**
+  - 19 backup tests: the round trip, an encrypted archive, a tampered
+    archive, a wrong, missing or short passphrase, B2 not configured, the
+    B2 upload against a fake (the SHA-1 header, a SHA-1 mismatch, a failed
+    authorize), fetch then restore, retention of 7, a non-empty restore
+    folder, a missing database, and the wrapper under `/bin/bash`
+    (ALERT, then RECOVERED).
+  - 2 heartbeat tests: a backup more than 48 h old, and one never
+    successful.
+  - Mutants: 12 tried. 9 were killed at once. Three survived: the
+    row-count check removed, the ledger read without its lock, and the
+    export opened read-write. Tests were added for each, and all three are
+    now killed.
+  - **Owner attention:**
+    `tests/test_ledger_and_store.py::test_no_module_opens_a_ledger_for_overwrite`
+    now allows `backup.py`, which writes archives outside `data/`. A new
+    test checks that every file under `data/` is byte-identical after a
+    backup.
+- **OBSERVED, Gate 2 (wrapper, copy of the live data, folder target):**
+  `BACKUP OK … tables=13 rows=107455 files=16`, an archive of 3,364,768
+  bytes, 0 live files changed.
+- **VERIFIED, real restore of the live database:**
+  - **The run:** an export of the live database through the jobs' lock
+    (21:05 PT), encrypted, copied to a stand-in for the off-machine target,
+    then restored into a temporary folder.
+  - **Restore:** `RESTORE OK files=21 tables=13 rows=107455`.
+  - **Row counts:** each of the 13 restored tables equals the live count
+    read under the lock. For example markets 99,576, settlements 1,572 and
+    price_snapshots 1,492.
+  - **Live files:** 0 of 11 changed. The live counts were the same before
+    and after.
+  - **The checks can fail:** this is shown by the Gate 1 tamper tests.
+- **Gate 2 after the merge** (`python -m sports_edge.heartbeat` on a copy of
+  the live data): the report lists `backup: last success never` and
+  `problem: backup has never succeeded`.
+  - Its "snapshot has never succeeded" line comes from the gate's empty
+    state folder.
+  - 0 live files changed.
+- **NOT CHECKED:** the B2 upload against the real service (no bucket or
+  keys yet), and the 04:15 launchd firing (`install.sh` not run). See
+  PENDING at the top.
+
+**Suite on merged `main` (`076b1e3`):** 571 passed, 1 skipped.
+
+## 2026-10-22: guard skips heredoc bodies (fix/guard-heredoc, merged)
+
+Spec amendment `57de872`, code `8d5411d`.
+
+- **VERIFIED, Gate 1:**
+  - 4 new tests: a body that mentions bulk staging or `rm data/x` is
+    allowed; the opening line's redirection (`cat > data/x <<EOF`) is still
+    blocked; commands after the closing line are still checked; `<<-`
+    works.
+  - **Mutant:** removing the strip makes 2 tests fail.
+  - Suite: 575 passed, 1 skipped.
+- **VERIFIED, Gate 2 (the real editor, scratch repository, with controls):**
+  - bulk staging is blocked;
+  - an append into `data/` is blocked;
+  - the documentation heredoc that the old guard blocked is allowed, and
+    its file was written.
+
+## 2026-10-22: CORRECTION, college football match coverage
+
+The research-base entry above says the 31 unmatched college games "are
+games absent from the reference listing". **That is wrong.**
+
+- **Where the wrong claim came from:** `reference_events`, which stores
+  only games starting within the 24 h odds horizon.
+- **What the full listing shows** (OBSERVED,
+  `/v4/sports/americanfootball_ncaaf/events`, `x-requests-last: 0`): 67
+  college games, including the missed Akron vs Kent State, Baylor vs
+  Kansas, Boston College vs Georgia Tech and Bowling Green vs Buffalo
+  (Saturday 2026-10-24).
+- **The actual cause** (OBSERVED, `markets`): those Kalshi games carry a
+  placeholder `expected_expiration_time = occurrence_time = 2026-10-24
+  03:00Z`, about 14 h before the real kickoff. So matching rule 4 cannot
+  pass.
+- **Week 43 counts:** Kalshi lists 104 college games; 45 match a reference
+  game uniquely on names; 27 of those start after Kalshi's expected
+  expiration; 8 were matched.
+- **Options and a recommendation:** branch `proposal/college-scope`.
+- **The same correction** is in the alias batch spec (branch
+  `feat/alias-batch-1`, commit `dad1a60`).
+
+## 2026-10-23: Kalshi placeholder times, match_v3 (feat/match-placeholder, merged)
+
+Spec `91316c1`, code `dc22a27`. **Owner approval** (2026-10-22): approved,
+subject to a reality gate at the normal 24 h listing horizon after 10 AM PT
+showing the Saturday college games pairing with 0 ambiguous and 0
+conflicts.
+
+- **VERIFIED, Gate 1:**
+  - 16 placeholder tests, including the owner's three: a placeholder event
+    pairs; a non-placeholder event with a wrong time still refuses; two
+    candidate games still refuse.
+  - All 9 mutants killed.
+  - Suite: 591 passed, 1 skipped (branch, and `main` after the merge).
+- **OBSERVED, Gate 2, with a 48 h listing horizon** (2026-10-22 night):
+  - the branch matched 45 college games, against 18 on `main` (the
+    control);
+  - other sports matched 21 games in both;
+  - 0 ambiguous, 0 conflicts.
+- **VERIFIED, Gate 2 at production settings** (24 h horizon, 2026-10-23
+  10:05–10:12 PT), on empty folders:
+  - **Branch:** 16 college games matched, against 7 on `main` (the
+    control). Akron vs Kent State and Baylor vs Kansas (17:00Z Saturday)
+    paired with the right teams. 0 ambiguous, 0 conflicts. Other sports
+    matched 22 games in both. 0 live files changed, no failure markers in
+    either run.
+  - **Every active placeholder college event was classified** against the
+    full free listing (`/events`, 0 credits), 66 in all:
+    - 9 listed inside the horizon and window. The branch added exactly 9
+      college matches over `main`, so all 9 paired.
+    - 30 start beyond the 24 h horizon and pair as their kickoff comes into
+      range. Boston College vs Georgia Tech and Bowling Green vs Buffalo
+      (19:30Z) are among them.
+    - 27 are not in the reference listing under any name.
+    - None is listed in the horizon yet failed to pair.
+- **Merged** into `main` at `a7fc9f7`, after the 10:15 PT live run had
+  finished.
+- **Gate 2 after the merge** (the live checkout's wrapper, empty folder,
+  10:16–10:19 PT): `match_v3`, 16 college games matched, 0 ambiguous, 0
+  conflicts, 0 live files changed, no failure markers.
+- **PENDING:**
+  - the first live hourly odds step on `main` recording `match_v3` matches;
+  - Boston College vs Georgia Tech and Bowling Green vs Buffalo pairing in
+    the live data after about 12:30 PT, when their kickoff enters the 24 h
+    horizon.
+
+## 2026-10-23: fee table live, first priced check, iMessage delivery
+
+- **The fee table** (`feat/fee-table`) was approved by the owner and merged
+  at `3a1200e`.
+  - **VERIFIED:** the live checkout reads `table_state: ok`, the suite
+    passes (608), and the post-merge gate changed 0 live files.
+  - **Cleared from PENDING at the top** (the "First real pick" entry):
+    `config/fee_schedule.json` now exists. A real pick still needs a gap of
+    at least 3 cents after the fee.
+- **VERIFIED, the first priced check ever** (live 12:45 PT run on `main`):
+  - `checks_due=1 events_priced=1 check_checked=1`, with no `FEE UNKNOWN`
+    line, for Bulls vs Bucks (1:10 PT, 30 min before);
+  - `reference_odds` went from 0 rows to 2, the first Pinnacle price ever
+    stored, for 1 odds credit;
+  - `shadow_rows=0`: no side cleared 3 cents after the fee. A manual scan of
+    all 44 of the day's sides at 10:35 PT found every one 0.9–3.5 cents
+    over fair after the fee.
+- **iMessage** (`IMESSAGE_TO` set in `.env` on 2026-10-23):
+  - **Test 1, direct send:** the first try timed out after 30 s while the
+    macOS Automation prompt was unanswered (logged `FAILED
+    (TimeoutExpired)`). After the owner granted it, the send was logged
+    `sent`, and the owner's iPhone screenshot shows it delivered.
+  - **Test 2, the morning job** run through launchd (`launchctl
+    kickstart`): `SLATE MORNING OK`, logged `sent`, and the owner's
+    screenshot shows it delivered. No second permission prompt was needed.
+  - **Test 3, the live 12:45 PT slate alert:** `SLATE ALERT OK messages=1`,
+    logged `sent`. The owner reported receiving "1:10 PM PT · NBA 1:
+    checked, no price gaps · prices 0 min old · Practice · … · Bet log
+    unreadable: cap not tracked".
+  - **A note on the phone's display:** messages to the owner's own number
+    appear twice (sent and received bubbles). `imessage.log` shows one send
+    each.
+  - **Cleared from PENDING at the top** (Slate and alerts, Part B): the
+    first 8:00 AM morning iMessage (sent by a launchd run of the morning
+    job) and the first pre-game check iMessage.
+  - **Still PENDING:**
+    - the first "Don't bet now" from a real failing run;
+    - the first reply logged from `replies.txt` (Apple Shortcut not set
+      up; messages read "Bet log unreadable");
+    - the first scheduled 8:00 AM morning iMessage, as distinct from the
+      manual launchd run.
+
+## 2026-10-23: combo alerts (feat/combo-alerts, held for owner review)
+
+Spec amendments `1a2954f` (combo line with payout and the owner's target;
+combo taker fee key), code `b07fdf3`. Touches protected files
+(`sports_edge/fees.py`, `config/fee_schedule.json`), so it is **not merged**.
+
+- **What it does:** when one check (or the board's current gaps) has picks
+  in two or more different games, one extra line prices a combo of the
+  first pick in each game: the highest cent X whose cost after the combo
+  taker fee is no more than the product of the legs' fair prices, the
+  payout that cost buys (rounded down to 0.1×), and whether it meets the
+  owner's target (`COMBO_TARGET_PAYOUT`, default 4). Legs are never padded
+  to reach the target. No combo line once the daily cap is reached. The
+  shadow ledger, the signal rule and `rule_id` are unchanged.
+- **Fee table:** a `combo` entry, taker multiplier 1, cited to p.2 of the
+  2026-10-23 fee page ("Combos (excluding uncorrelated NFL) … fee
+  multiplier 1, $0.07 - $1.75 taker fees"; uncorrelated NFL combos fall
+  under "Most markets: fee multiplier 1"). The $0.07–$1.75 range is per
+  100 contracts, the same formula as every other entry. Without a confirmed
+  entry the line reads "fee unconfirmed — no price".
+- **VERIFIED, Gate 1:**
+  - 14 tests in `tests/test_combo_line.py`, including a pinned line, the
+    target boundary at 3.4×/3.5×, the two-game rule, no padding, the fee
+    failing closed, the cite check, the check message on a real two-game
+    run, and the cap in alerts and on the board.
+  - 11 of 11 single-line mutants killed (two-game rule, one leg per game,
+    cap check in alerts and on the board, target boundary, price at fair,
+    payout rounding, fee fail-closed, cite required, unconfirmed refused,
+    default target).
+  - Suite: 622 passed.
+- **OBSERVED, Gate 2** (`scripts/reality_run.py --code <worktree>`,
+  1:35–1:37 PM PT, before the 1:45 live run):
+  - `slate board` on a copy of the live data: exit 0, "none (no checked
+    game still to start)", 21 live files hashed, 0 changed, no markers.
+  - `slate alert` on a copy of the live data: `SLATE ALERT OK messages=0
+    groups=2`, 0 live files changed, no markers.
+  - The branch's fee code on the real `config/fee_schedule.json`: the table
+    validates with the `combo` key; combo taker multiplier 1, precision
+    0.0001. Every stored sports series still resolves from its real stored
+    fee type (KXNBAGAME, KXNFLGAME, KXNCAAFGAME 1/1; KXMLBGAME 0.5/0.5).
+    With synthetic fairs of 0.55 × 0.55 (not market data), the real table
+    gives "Combo #1+#2: accept a quote at 28¢ or less (pays 3.4× or more),
+    else let it expire. Your 4× target: below." 0 live files changed.
+  - **Not reached:** no live check had gaps in two games, so no combo line
+    was produced from real prices.
+- **NOT CHECKED:** `run_snapshot.sh` on this branch. With an empty folder
+  it could spend a shared odds credit on a check that falls due. The step it
+  changes (`slate alert`) was run directly above.
+- **PENDING:** the first real combo line, from a check with price gaps in
+  two or more games, after this branch is approved and merged.
+- **Owner approval** (2026-10-23): "approved". **Merged** into `main` at
+  `e2b1ea6` at 1:45 PM PT, after the 1:45 live run had finished. Suite on
+  `main` after the merge: 622 passed.
+- **OBSERVED, Gate 2 after the merge** (the live checkout, copy of the live
+  data, 1:46 PM PT): `slate board` "none (no checked game still to start)";
+  `slate alert` `SLATE ALERT OK messages=0 groups=2`; the fee probe gives
+  the same output as on the branch (combo multiplier 1; KXNBAGAME,
+  KXNFLGAME, KXNCAAFGAME 1/1; KXMLBGAME 0.5/0.5). Each run: exit 0, 21
+  live files hashed, 0 changed, no failure markers.
+- **PENDING:** the first live snapshot run on `main` with this code, and the
+  first real combo line.
 
 ## 2026-10-22: logging your own bets (`sports_edge/mybet.py`), record-only
 

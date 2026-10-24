@@ -262,6 +262,6 @@ def test_an_ambiguous_name_still_refuses():
     assert r.matches == [] and r.unmatched[0]["reason"] == "name_mismatch"
 
 
-def test_matches_record_rule_version_match_v2():
+def test_matches_record_rule_version_match_v3():
     from sports_edge.matching import RULE_VERSION
-    assert RULE_VERSION == "match_v2"
+    assert RULE_VERSION == "match_v3"

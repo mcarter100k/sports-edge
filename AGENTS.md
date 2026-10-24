@@ -30,7 +30,13 @@ sports_edge/matching.py      odds matching
 sports_edge/checks.py        kickoff slots and check times (decide which games cost odds credits)
 config/team_aliases.json     team-name aliases (change which games pair)
 config/sport_groups.json     sport mapping (changes which games pair)
+research/harness.py          scores probability sources (decides what a study measures)
+research/registry/*/result.md  registered study results (written by the study script only)
 ```
+
+Added by the owner on 2026-10-22: the research harness and registered
+results. A pre-registration (`research/registry/*/prereg.md`) is committed,
+and reviewed under `docs/reviews/`, before its study runs.
 
 Everything else gets normal review: suite green and the reality gate run
 before merge.
@@ -48,12 +54,15 @@ before merge.
 Nobody edits, regenerates or deletes them. Every CSV append goes through
 `sports_edge/ledger.py` (lock, header check, fsync). A wrong row is fixed by
 a dated exclusion entry, never by deleting it.
+Frozen research datasets (`~/sports-edge-research/datasets/<name>/<id>/`,
+outside the repo) are never edited either: new data is a new freeze with a
+new id.
 
 ---
 
 ## FREE ZONE — build with tests green
 
-- `studies/` — report-only research scripts; never imported by the live path
+- `research/studies/` — report-only research scripts; never imported by the live path
 - Tests (always welcome)
 - Docs (`*.md`)
 

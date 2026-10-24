@@ -151,14 +151,16 @@ class Store:
 
     @classmethod
     @contextmanager
-    def open(cls, path=None, lock_wait_s=LOCK_WAIT_S):
+    def open(cls, path=None, lock_wait_s=LOCK_WAIT_S, read_only=False):
+        """read_only: for readers that must not change the file (status); no schema step."""
         path = path or config.db_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with _file_lock(path.parent / ".db.lock", lock_wait_s):
-            con = duckdb.connect(str(path))
+            con = duckdb.connect(str(path), read_only=read_only)
             try:
                 store = cls(con)
-                store.create_schema()
+                if not read_only:
+                    store.create_schema()
                 yield store
             finally:
                 con.close()

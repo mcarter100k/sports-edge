@@ -908,6 +908,65 @@ board amendment above.
   `+N more`.
 - Near misses, older checks and POSTPONED are unchanged.
 
+## Amendment 2026-10-23: the combo line unparked, with payout and the owner's target (PROPOSED, owner review)
+
+**Why now.** The combo line was parked (cut B above) only because no combo
+fee was confirmed. Kalshi's fee page now gives it: "Combos (excluding
+uncorrelated NFL): maker fees, 50% of taker, fee multiplier 1". Uncorrelated
+NFL combos fall under "Most markets, multiplier 1". The taker multiplier is 1
+either way. It enters the fee table as a cited `combo` entry
+(`fee_model_spec.md`, amendment 2026-10-23b). The owner asked for combo
+alerts, with a payout of at least 4× per dollar staked shown against each.
+
+**The design in "Combo" above is restored unchanged:**
+- **When:** only when a check has picks from 2 or more **different** games.
+- **The legs:** the first pick of each game (two ways of backing one team
+  count once).
+- **X** is the highest whole cent where X + the combo taker fee per contract
+  (floor($10 ÷ X) contracts, the combo multiplier, the table's precision) ≤
+  the product of the legs' fair chances.
+- **No stake suggestion.** Combos are never logged or graded, and never
+  built from one game.
+- **Without a confirmed `combo` entry** the line reads "fee unconfirmed — no
+  price", and "no price works — let any quote expire" when no X exists.
+
+**Added:**
+1. **The payout at X.** N = 1 ÷ (X + the fee per contract at X), rounded
+   down to one decimal. This is the return per dollar at the worst quote
+   worth accepting; any cheaper quote pays more. The line reads:
+   `Combo #1+#3: accept a quote at X¢ or less (pays N× or more), else let it expire.`
+2. **The owner's payout target.** `COMBO_TARGET_PAYOUT` in `.env`, default
+   4. The line ends with `Your 4× target: met.` when N ≥ the target, and
+   otherwise `Below your 4× target.`
+3. **No padding, ever.** The legs are exactly the check's picks, so every
+   leg is a logged price gap of at least 3¢ after fee. No leg is added to
+   reach the target, and no combo is built from games without a pick. The
+   target is shown, never pursued.
+4. **The board** (the sheet and `slate board`) shows the same line under its
+   current gaps when they include 2 or more games. Those are gaps from checks
+   at most 15 minutes old, of games not yet started. It is shown only when
+   the daily cap is not reached.
+5. **The cap:** when the daily cap is reached, no combo line is sent or
+   shown (picks are not listed then either).
+
+**Free plan.** Each time slot is checked once, about 30 minutes before, so
+a check's combo can only join games in that slot. Legs in an earlier slot
+may have started. The board can join any current gaps.
+
+**The actual quote is Kalshi's.** Market makers quote a combo when the owner
+builds it in the app. The line gives the most to accept, never a guess at
+the quote.
+
+**Tests the implementation must have:**
+- Two different games are needed: two picks from one game give no line.
+- The fee-unconfirmed and no-price wordings.
+- X and N pinned for a worked case.
+- The target met and not met, at the boundary.
+- `COMBO_TARGET_PAYOUT` read from the environment, with the default 4.
+- No leg added that is not a pick.
+- No combo line when the cap is reached.
+- The board line appears only with 2 or more current games.
+
 ---
 
 ## Amendment 2026-10-22: the morning message adds your own bets

@@ -231,7 +231,9 @@ def markout_report(store, postponed):
     if parts:
         return ["markouts (Kalshi mid of the side bought, before fee, minus the mid at entry; record only): "
                 + " · ".join(parts) + skipped]
-    cause = ("no shadow rows logged yet" if not logged else "no logged game has started yet" if not measured
+    cause = ("no shadow rows logged yet" if not logged
+             else "all logged games postponed" if not measured and postponed == len(logged)
+             else "no logged game has started yet" if not measured
              else "no later two-sided price before any start")
     return [f"markouts: 0 measured ({cause}){skipped}"]
 

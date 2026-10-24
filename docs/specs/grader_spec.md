@@ -190,6 +190,21 @@ unchanged and never read the markout file.
 
 ---
 
+## Amendment 2026-10-22: markout zero causes and the postponed count (owner request)
+
+- **A new zero cause.** When rows are logged, none is measured, and every
+  logged row is postponed, the line reads
+  `markouts: 0 measured (all logged games postponed)`. The order of causes
+  is now:
+  1. `no shadow rows logged yet`;
+  2. `all logged games postponed`;
+  3. `no logged game has started yet`;
+  4. `no later two-sided price before any start`.
+- **The postponed count** counts only rows not yet in
+  `data/shadow_markouts.csv`. A row measured before its game was postponed
+  is never counted as postponed. The code already did this; a test now
+  fixes it.
+
 ## Amendment 2026-10-22: settling the owner's own bets (record-only; see `my_bets_spec.md`)
 
 - **Every run** settles the logged bets in `data/my_bets.csv` from the

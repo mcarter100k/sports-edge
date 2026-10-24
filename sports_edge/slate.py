@@ -10,6 +10,7 @@ check; a two-team game's "Yes on A" and "No on B" are one result, shown once
 (the cheaper), and both stay in the ledger.
 """
 import json
+import math
 import os
 import sys
 from datetime import timedelta
@@ -56,6 +57,37 @@ def _short(name, limit=NAME_MAX):
 def side_fair(row):
     fair = Decimal(row["fair_prob"])
     return fair if row["side"] == "YES" else Decimal(1) - fair
+
+
+def combo_line(picks, table, target=None):
+    """picks: [(number, row)] from one check (or the board's current gaps). None unless 2+ different games.
+    Legs are exactly these picks, never padded to reach the owner's payout target."""
+    legs, seen = [], set()
+    for n, r in sorted(picks, key=lambda p: p[0]):
+        if r["event_ticker"] not in seen:
+            seen.add(r["event_ticker"])
+            legs.append((n, r))
+    if len(legs) < 2:
+        return None
+    label = "Combo " + "+".join(f"#{n}" for n, _ in legs)
+    try:
+        mult, precision = fees.combo_taker_multiplier(table), fees.table_precision(table)
+    except fees.FeeScheduleUnknown:
+        return f"{label}: fee unconfirmed — no price."
+    fair = math.prod(side_fair(r) for _, r in legs)
+    best = None
+    for c in range(1, 100):
+        p = Decimal(c) / 100
+        if p + fees.fee_per_contract(p, int(bets.STAKE // p), mult, "taker", precision) <= fair:
+            best = c
+    if best is None:
+        return f"{label}: no price works — let any quote expire."
+    p = Decimal(best) / 100
+    cost = p + fees.fee_per_contract(p, int(bets.STAKE // p), mult, "taker", precision)
+    pays = (Decimal(10) / cost).to_integral_value(rounding="ROUND_FLOOR") / 10
+    target = config.combo_target_payout() if target is None else target
+    goal = f"Your {target.normalize():f}× target: " + ("met." if pays >= target else "below.")
+    return f"{label}: accept a quote at {best}¢ or less (pays {pays}× or more), else let it expire. {goal}"
 
 
 def wording(row, teams, limit=NAME_MAX):
@@ -141,6 +173,7 @@ class Context:
         self.stage_line = grader.stage(ledger.read_rows(config.shadow_grades_path()),
                                        closes_possible=config.odds_plan() == "paid")[1]
         self.fee_state = fees.table_state()
+        self.table = fees.load_table() if self.fee_state == "ok" else None
         self.snapshot_failing = bool(health.read_state().get("snapshot", {}).get("consecutive_failures"))
         self.taken = grader.taken_bets(store, self.ledger, ledger.read_rows(config.bet_log_path()))
         self.at_risk = bets.money_at_risk(self.taken, display_date(now))
@@ -215,6 +248,10 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
                 if len(f"{text}\n{ctx.footer()}") > MESSAGE_MAX:
                     text = pick_text(*args, compact=True, earlier=earlier)
                 texts.append(text)
+            if picks and not ctx.cap_reached:
+                combo = combo_line([(n, r) for n, _, r in picks], ctx.table)
+                if combo:
+                    texts.append(combo)
             if not picks and compared:
                 texts.append(f"{slot(ctx, cstart, keys_of('checked', lambda r: r['source_event_id'] in compared))}"
                              f": checked, no price gaps · prices {age} min old")
@@ -412,6 +449,11 @@ def board_lines(ctx, now):
         n = None if ctx.cap_reached else bets.number_of(ctx.ledger, ctx.result_of(r), ctx.result_of)[1]
         lines.append(board_line(ctx, r, now, n, "cap reached, don't bet"))
     lines += more(gaps)
+    if gaps and not ctx.cap_reached:
+        combo = combo_line([(bets.number_of(ctx.ledger, ctx.result_of(r), ctx.result_of)[1], r) for r in gaps],
+                           ctx.table)
+        if combo:
+            lines.append(f"  {combo}")
     if not gaps:
         cause = unable_reason(ctx) or ("no checked game still to start" if not current and not older else
                                        "only older checks, see below" if not current else

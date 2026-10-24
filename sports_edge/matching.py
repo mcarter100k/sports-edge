@@ -5,12 +5,18 @@ Never guess: a match needs every rule to hold, and it must be unique both ways.
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import date, timedelta
 
-RULE_VERSION = "match_v2"          # v2: the whole word "st" reads as "state"
+from .timeutil import eastern_to_utc, parse_utc
+
+RULE_VERSION = "match_v3"          # v2: "st" reads as "state"; v3: Kalshi placeholder times
 TIE = "Tie"
 DRAW = "Draw"
 WINDOW_BEFORE = timedelta(hours=8)
+PLACEHOLDER_AFTER = timedelta(hours=32)   # widened window for placeholder events, tried only if the normal one is empty
+PLACEHOLDER_ET = (23, 0)                  # Kalshi's placeholder: 23:00 America/New_York on the ticker's date
+TICKER_DATE = re.compile(r"^[^-]+-(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})")
+MONTHS = "JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split()
 
 
 @dataclass
@@ -20,6 +26,7 @@ class KalshiGame:
     resolve_by: object            # aware datetime
     teams: dict                   # yes_sub_title -> market_ticker (excludes Tie)
     tie_market: str = None        # market ticker of the Tie market, if 3-way
+    placeholder: bool = False     # Kalshi's time is a placeholder (is_placeholder)
 
 
 @dataclass
@@ -47,6 +54,33 @@ def names_match(kalshi_name, ref_name, aliases):
     return kalshi_name in aliases and normalize(aliases[kalshi_name]) == r
 
 
+def ticker_date(event_ticker):
+    """The date in an event ticker's first -YYMMMDD token, or None."""
+    m = TICKER_DATE.match(event_ticker or "")
+    if not m:
+        return None
+    try:
+        return date(2000 + int(m.group(1)), MONTHS.index(m.group(2)) + 1, int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def is_placeholder(event_ticker, markets):
+    """True only if every market's expected expiration equals its occurrence time, all markets agree,
+    and that time is exactly 23:00 America/New_York on the ticker's date (spec amendment, match_v3)."""
+    day = ticker_date(event_ticker)
+    if day is None or not markets:
+        return False
+    times = set()
+    for m in markets:
+        exp = parse_utc(m.get("expected_expiration_time"))
+        occ = parse_utc(m.get("occurrence_datetime", m.get("occurrence_time")))
+        if exp is None or occ is None or exp != occ:
+            return False
+        times.add(exp)
+    return len(times) == 1 and times.pop() == eastern_to_utc(day, *PLACEHOLDER_ET)
+
+
 def kalshi_game(event, sport_tags, resolve_by):
     """Return (KalshiGame, None) if the event is a moneyline game, else (None, reason)."""
     meta = event.get("product_metadata") or {}
@@ -69,7 +103,7 @@ def kalshi_game(event, sport_tags, resolve_by):
     if resolve_by is None:
         return None, "not_moneyline:no_resolve_time"
     return KalshiGame(event["event_ticker"], tuple(sport_tags), resolve_by, teams,
-                      ties[0]["ticker"] if ties else None), None
+                      ties[0]["ticker"] if ties else None, is_placeholder(event["event_ticker"], markets)), None
 
 
 def _team_mapping(game, stub, aliases):
@@ -86,16 +120,43 @@ def _team_mapping(game, stub, aliases):
     return mapping
 
 
-def candidates(game, stubs, aliases):
-    """Reference stubs that satisfy the time and name rules for one game."""
+def time_window(game, widened=False):
+    """Rule 4's window; for a placeholder event the widened one (tried only after the normal one)."""
+    return (game.resolve_by - WINDOW_BEFORE,
+            game.resolve_by + (PLACEHOLDER_AFTER if widened else timedelta(0)))
+
+
+def _in_window(game, stubs, aliases, widened):
+    lo, hi = time_window(game, widened)
     out = []
     for stub in stubs:
-        if not (game.resolve_by - WINDOW_BEFORE <= stub.commence_utc <= game.resolve_by):
+        if not (lo <= stub.commence_utc <= hi):
             continue
         mapping = _team_mapping(game, stub, aliases)
         if mapping:
             out.append((stub, mapping))
     return out
+
+
+def searched_window(game, stubs, aliases):
+    """The window candidates() searched last: the widened one only for a placeholder event whose normal
+    window found nothing."""
+    return time_window(game, game.placeholder and not _in_window(game, stubs, aliases, False))
+
+
+def candidates(game, stubs, aliases):
+    """Reference stubs that satisfy the time and name rules for one game."""
+    out = _in_window(game, stubs, aliases, False)
+    if not out and game.placeholder:
+        out = _in_window(game, stubs, aliases, True)
+    return out
+
+
+def aliases_for(game, aliases_by_tag):
+    aliases = {}
+    for tag in game.sport_tags:
+        aliases.update(aliases_by_tag.get(tag, {}))
+    return aliases
 
 
 def match(games, stubs_by_tag, aliases_by_tag):
@@ -125,10 +186,10 @@ def match(games, stubs_by_tag, aliases_by_tag):
 
     for ticker, (game, sport, cands, pool) in per_game.items():
         if not cands:
-            near = [s for s in pool
-                    if game.resolve_by - WINDOW_BEFORE <= s.commence_utc <= game.resolve_by]
+            lo, hi = searched_window(game, pool, aliases_for(game, aliases_by_tag))
+            near = [s for s in pool if lo <= s.commence_utc <= hi]
             reason = "name_mismatch" if near else "no_candidate"
-            detail = f"teams={sorted(game.teams)} in_window={len(near)}"
+            detail = f"teams={sorted(game.teams)} in_window={len(near)}" + (" placeholder=1" if game.placeholder else "")
             result.unmatched.append({"event_ticker": ticker, "sport": sport, "reason": reason,
                                      "detail": detail})
             continue
