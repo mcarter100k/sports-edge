@@ -1518,3 +1518,33 @@ opened with what changed.
   - the NFL titles (`Los Angeles C`/`R`, `New York G`/`J`), each after its
     game logs an `UNMATCHED name_mismatch` line; the Giants game on
     2026-10-25 is the first expected.
+
+**Gates on the merge commit `6622eff`** (2026-10-24, after the lean
+review):
+
+- **VERIFIED, Gate 1:** suite 661 passed. That is the 662 the lean review
+  expected, less the one deleted cross-sport test.
+- **Mutants recounted** (the alias file, in a scratch copy, 2026-10-24):
+  each was caught by the table pin and by one behaviour test besides it.
+  - C/L swapped, `Los Angeles L` removed, Basketball `Los Angeles C`
+    retargeted to the Chargers: the LA game `match()` test.
+  - A Football `Los Angeles C` added: the shared-key test.
+  - An unnecessary alias added: the each-alias-is-needed test.
+- **Gate 2: NOT PASSED.** `scripts/reality_run.py --code <worktree> --
+  env ODDS_DAILY_CREDITS=0 scripts/run_snapshot.sh`, started 12:55 AM PT:
+  - the command exited 1 with no stdout or stderr. Its temporary folder
+    was removed, so the cause is NOT CHECKED;
+  - the live data check reported 5 changed files (`sports_edge.duckdb`,
+    the snapshot and slate alert day logs, `state/health.json`, the iCloud
+    `sheet.txt`). All five were last written at 1:15:14 AM PT, the time of
+    the live launchd run `snapshot-20261024T081506Z-3ed5` (OBSERVED). That
+    run wrote them, not the gate (INFERRED);
+  - the Mac went into idle sleep at 1:21:11 AM PT, during the run, and the
+    run ended at 1:26 AM PT in a maintenance wake (OBSERVED in
+    `pmset -g log`). That sleep cut the run short (INFERRED).
+- **Also seen:** the live snapshot launched at 3:38:54 AM PT, during a
+  maintenance wake, was still running at 9:21 AM PT. It had used 1.6 s of
+  CPU and was idle, and launchd had started no later snapshot (OBSERVED).
+  Left for the owner; not touched.
+- **PENDING:** Gate 2 on the merge commit, re-run with `--keep` while the
+  Mac is awake and between two live launchd runs.
