@@ -12,7 +12,7 @@ import sys
 from collections import Counter
 from datetime import timedelta
 
-from . import config, jobguard
+from . import config
 from .kalshi import KalshiClient, dec
 from .odds_step import build_odds_source, odds_step
 from .shadow import run_shadow
@@ -218,7 +218,6 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
                     f"(scheduled maintenance); nothing fetched, no alert")
                 return summary
             kind = decide_kind(store, started)
-            jobguard.set_limit(jobguard.SNAPSHOT_TIER_S[kind])
             summary["tier"] = kind
             snaps = {}
 

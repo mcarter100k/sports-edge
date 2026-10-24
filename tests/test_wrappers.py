@@ -266,7 +266,7 @@ def test_morning_missing_env_file_is_a_failure(proj, tmp_path):
     assert "MORNING FAILED | exit 1: .env missing at" in alerts()[0]
 
 
-# The job time limit and the stale-snapshot watch (amendment 2026-10-24) ---------------------
+# The job time limit (amendment 2026-10-24) -------------------------------------------------
 
 def guard_calls():
     p = Path(os.environ["SPORTS_EDGE_LOG_DIR"]) / "guard_calls"
@@ -275,23 +275,12 @@ def guard_calls():
 
 def test_every_wrapper_starts_its_module_through_the_time_limit(proj, tmp_path):
     for script, mode in [("run_snapshot.sh", "ok"), ("run_grader.sh", "ok"), ("run_backup.sh", "ok"),
-                         ("run_morning.sh", "ok"), ("weekly_heartbeat.sh", "hb_ok"), ("run_watch.sh", "ok")]:
+                         ("run_morning.sh", "ok"), ("weekly_heartbeat.sh", "hb_ok")]:
         run(script, proj, tmp_path, mode)
     assert guard_calls() == ["sports_edge.snapshot", "sports_edge.slate alert", "sports_edge.grader",
-                             "sports_edge.backup run", "sports_edge.slate morning", "sports_edge.heartbeat",
-                             "sports_edge.health check-stale snapshot"]
+                             "sports_edge.backup run", "sports_edge.slate morning", "sports_edge.heartbeat"]
 
 
 def test_a_run_stopped_at_the_limit_alerts_with_that_reason(proj, tmp_path):
     assert run("run_snapshot.sh", proj, tmp_path, "timeout").returncode == 1
     assert "snapshot failed: exit 1: stopped at the job time limit: Timeout (0:36:40)!" in alerts()[0]
-
-
-def test_the_watch_alerts_once_when_no_snapshot_has_finished_then_recovers(proj, tmp_path):
-    assert run("run_watch.sh", proj, tmp_path, "ok").returncode == 1        # nothing recorded yet
-    assert run("run_watch.sh", proj, tmp_path, "ok").returncode == 1        # still stale: not re-alerted
-    (line,) = alerts()
-    assert "snapshot_watch failed: exit 1: SNAPSHOT STALE: no finished run recorded" in line
-    assert run("run_snapshot.sh", proj, tmp_path, "fail").returncode == 1   # a failed run still finished
-    assert run("run_watch.sh", proj, tmp_path, "ok").returncode == 0
-    assert "RECOVERED logged-only: snapshot_watch ok again" in alerts()[-1]

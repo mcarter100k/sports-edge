@@ -611,14 +611,3 @@ def test_a_check_on_a_daily_run_compares_with_this_runs_price(tmp_path):
     assert sorted((r["market_ticker"], r["side"]) for r in rows) == [("KXNBAGAME-E1-CLE", "YES"),
                                                                      ("KXNBAGAME-E1-PHI", "YES")]
     assert {r["snapshot_utc"] for r in rows} == {"2026-10-22T14:35:00.000Z"}      # this run's price
-
-
-def test_each_run_sets_the_time_limit_of_its_tier(monkeypatch):
-    """docs/specs/heartbeat_spec.md, amendment 2026-10-24: near 200 s, hourly 120 s, daily 2,200 s."""
-    from sports_edge import jobguard
-    limits = []
-    monkeypatch.setattr(jobguard, "set_limit", limits.append)
-    sers, pages = world()
-    for at in (DAILY_AT, HOURLY_AT, NEAR_AT):
-        run_cycle(FakeKalshi(sers, pages, at), lambda st: None, lambda at=at: at, quiet, quiet)
-    assert limits == [2200, 120, 200]

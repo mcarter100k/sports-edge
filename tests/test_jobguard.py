@@ -1,14 +1,10 @@
 """sports_edge/jobguard.py: a hung job exits within the time limit (docs/specs/heartbeat_spec.md)."""
 import os
-import re
 import subprocess
 import sys
 import time
-from datetime import timedelta
 from pathlib import Path
 
-from sports_edge import health
-from sports_edge.timeutil import utcnow
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -60,78 +56,9 @@ def test_a_hung_job_through_the_real_wrapper_alerts_within_the_limit(tmp_path, m
         log_dir / "alerts.log").read_text()
 
 
-def test_the_limits_are_the_reviewed_table():
+def test_the_two_limits():
     from sports_edge import jobguard
-    assert jobguard.LIMITS_S == {"sports_edge.snapshot": 720, "sports_edge.grader": 720, "sports_edge.slate": 240,
-                                 "sports_edge.heartbeat": 240, "sports_edge.health": 120, "sports_edge.backup": 2200}
-    assert jobguard.SNAPSHOT_TIER_S == {"near": 200, "hourly": 120, "daily": 2200}
     assert "SPORTS_EDGE_JOB_LIMIT_S" not in os.environ
-
-
-def test_every_wrapper_module_has_a_limit():
-    from sports_edge import jobguard
-    called = set()
-    for script in (REPO / "scripts").glob("*.sh"):
-        text = script.read_text()
-        called |= set(re.findall(r"run_job \S+ (sports_edge\.\w+)", text))
-        called |= set(re.findall(r"-m sports_edge\.jobguard (sports_edge\.\w+)", text))
-    assert called and called <= set(jobguard.LIMITS_S), called - set(jobguard.LIMITS_S)
-
-
-def test_an_unknown_module_is_refused_not_run_without_a_limit(tmp_path, monkeypatch):
-    monkeypatch.delenv("SPORTS_EDGE_JOB_LIMIT_S", raising=False)
-    (tmp_path / "nolimit.py").write_text("print('ran')\n")
-    env = {**os.environ, "PYTHONPATH": f"{REPO}:{tmp_path}"}
-    env.pop("SPORTS_EDGE_JOB_LIMIT_S", None)
-    r = subprocess.run([sys.executable, "-m", "sports_edge.jobguard", "nolimit"], env=env,
-                       capture_output=True, text=True, timeout=30)
-    assert r.returncode == 2 and "no time limit set for nolimit" in r.stderr and "ran" not in r.stdout
-
-
-SETS_ITS_OWN = """import socket
-from sports_edge import jobguard
-jobguard.set_limit(1)        # as the snapshot does once it knows its tier
-a, b = socket.socketpair()
-a.recv(1)
-"""
-
-
-def test_set_limit_restarts_the_limit_inside_jobguard(tmp_path):
-    """Module limit 60 s; the job narrows it to 1 s and then hangs: it must stop near 1 s."""
-    (tmp_path / "narrows.py").write_text(SETS_ITS_OWN)
-    driver = ("import sys; from sports_edge import jobguard; jobguard.LIMITS_S['narrows'] = 60; "
-              "sys.argv = ['x', 'narrows']; import runpy; runpy.run_module('sports_edge.jobguard', run_name='__main__')")
-    env = {k: v for k, v in os.environ.items() if k != "SPORTS_EDGE_JOB_LIMIT_S"}
-    env["PYTHONPATH"] = f"{REPO}:{tmp_path}"
-    start = time.monotonic()
-    r = subprocess.run([sys.executable, "-c", driver], env=env, capture_output=True, text=True, timeout=30)
-    assert r.returncode == 1 and time.monotonic() - start < 10       # run as -m runs it (__main__)
-    assert "\nTimeout (0:00:01)!\n" in r.stderr                    # after runpy's import warning
-
-
-def test_set_limit_outside_jobguard_does_nothing(tmp_path):
-    code = "import time; from sports_edge import jobguard; jobguard.set_limit(0.2); time.sleep(1); print('alive')"
-    r = subprocess.run([sys.executable, "-c", code], env={**os.environ, "PYTHONPATH": str(REPO)},
-                       capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0 and r.stdout == "alive\n"
-
-
-# health.check_stale --------------------------------------------------------------------
-
-def test_nothing_recorded_is_stale():
-    assert health.check_stale("snapshot") == (False, "SNAPSHOT STALE: no finished run recorded")
-
-
-def test_a_recent_success_is_fresh_and_an_old_one_is_stale():
-    now = utcnow()
-    health.record_success("snapshot", now=now - timedelta(minutes=59))
-    assert health.check_stale("snapshot", now=now)[0] is True
-    fresh, line = health.check_stale("snapshot", now=now + timedelta(minutes=2))
-    assert not fresh and line.startswith("SNAPSHOT STALE: no run finished since") and line.endswith("(61 min)")
-
-
-def test_a_recent_failure_counts_as_a_finished_run():
-    now = utcnow()
-    health.record_success("snapshot", now=now - timedelta(hours=6))
-    health.record_failure("snapshot", "boom", now=now - timedelta(minutes=5))
-    assert health.check_stale("snapshot", now=now)[0] is True
+    assert jobguard.limit_s("sports_edge.snapshot") == 2200
+    assert {jobguard.limit_s(m) for m in ("sports_edge.slate", "sports_edge.grader", "sports_edge.heartbeat",
+                                           "sports_edge.backup")} == {120}

@@ -2,12 +2,9 @@
 
 python -m sports_edge.health record-failure <job> <reason>
 python -m sports_edge.health record-success <job>
-python -m sports_edge.health check-stale <job>
 
 Prints "ALERT:<message>" or "RECOVERED:<message>" when the owner should be
 told, and nothing otherwise. The wrapper delivers what is printed.
-check-stale exits 1 when none of the job's runs has finished, ok or failed,
-for STALE_AFTER; the watch job (scripts/run_watch.sh) alerts on that.
 """
 import fcntl
 import json
@@ -19,7 +16,6 @@ from . import config
 from .timeutil import display, iso_z, parse_utc, utcnow
 
 REMIND_EVERY = timedelta(minutes=60)
-STALE_AFTER = timedelta(minutes=60)
 
 
 def _path():
@@ -91,19 +87,6 @@ def record_success(job, now=None):
     return _update(apply)
 
 
-def check_stale(job, now=None):
-    """(fresh, line). Reads health.json only, so a run holding the database lock cannot block it."""
-    now = now or utcnow()
-    s = read_state().get(job, {})
-    finished = [t for t in (parse_utc(s.get("last_success_utc")), parse_utc(s.get("last_failure_utc"))) if t]
-    if not finished:
-        return False, f"{job.upper()} STALE: no finished run recorded"
-    last = max(finished)
-    if now - last > STALE_AFTER:
-        return False, f"{job.upper()} STALE: no run finished since {display(last)} ({int((now - last).total_seconds() // 60)} min)"
-    return True, f"{job} fresh: last run finished {display(last)}"
-
-
 def read_state():
     path = _path()
     if not path.exists():
@@ -117,13 +100,8 @@ def main(argv):
         message = record_failure(argv[1], " ".join(argv[2:]))
     elif len(argv) == 2 and argv[0] == "record-success":
         message = record_success(argv[1])
-    elif len(argv) == 2 and argv[0] == "check-stale":
-        fresh, line = check_stale(argv[1])
-        print(line, file=sys.stdout if fresh else sys.stderr)
-        return 0 if fresh else 1
     else:
-        print("usage: health record-failure <job> <reason> | record-success <job> | check-stale <job>",
-              file=sys.stderr)
+        print("usage: health record-failure <job> <reason> | record-success <job>", file=sys.stderr)
         return 2
     if message:
         print(message)
