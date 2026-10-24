@@ -1307,3 +1307,57 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
   - the first void leg met in real data. `scalar` is the only non-yes/no
     value the store keeps; a void reported any other way would show as
     "open past due".
+
+## 2026-10-24: own bets after the third review (feat/mybet, held for owner review)
+
+- **Third review: APPROVE** (`docs/reviews/2026-10-24_my_bets_r3.md`). Its
+  eight minor findings are answered by spec `645d3d1` and code `59c4427`:
+  - the logging limit stated;
+  - the own-bets lines never stop another run;
+  - torn grade rows left out of the net;
+  - a failed step shown in the morning;
+  - separate guards for settling and for the report;
+  - the refusal names the rival game;
+  - codes compared as a superset;
+  - the missing tests.
+- **Correction to the entry above:** its step 3 quote was shortened. The
+  exact line ends `can't settle 0 (legs not identified)`, as quoted below.
+- **VERIFIED, Gate 1** (`59c4427`):
+  - suite 656 passed;
+  - 7 of 7 new mutants killed. One survived at first (NaN grade dollars),
+    so a test was added and it is now killed.
+- **VERIFIED, Gate 2** (`59c4427`, 2026-10-24 00:16–00:22 PT), output as
+  printed:
+  1. **Tonight's real slip, logged after its games,** with
+     `--with-live-data` and production settings:
+     ```
+     exit: 0
+     Logged your bet 2cf9a95f89bd: 6 legs · $20.00 pays $3,174.00 · payout's chance 0.63% · legs multiply to 0.58% · you pay about 9% more than the legs
+     Games paired: KXNBAGAME-26OCT23DETMIA, KXNBAGAME-26OCT23HOUSAS, KXNBAGAME-26OCT23MINORL, KXNBAGAME-26OCT23NYKBOS, KXNBAGAME-26OCT23PORSAC, KXNBAGAME-26OCT23TORWAS
+     Identified all 6 legs; it will settle from Kalshi results.
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     ```
+  2. **A test NHL slip on open markets** (made up, never placed):
+     - **Why a different copy:** tomorrow's NHL games are beyond the
+       production 24 h listing. So the copy used was one paired by the
+       snapshot wrapper with `ODDS_HORIZON_H=48` and `ODDS_DAILY_CREDITS=0`
+       (no priced check, 0 credits).
+     - **What ran unchanged:** `mybet` itself ran with production settings.
+     ```
+     exit: 0
+     Logged your bet 2da9d98ade90: 2 legs · $10.00 pays $35.00 · payout's chance 28.57% · legs multiply to 28.60% · you pay about 0% less than the legs
+     Games paired: KXNHLGAME-26OCT24ANAPHI, KXNHLGAME-26OCT24BUFWSH
+     Identified all 2 legs; it will settle from Kalshi results.
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     ```
+  3. **The real grader** (`run_grader.sh`) on step 1's copy:
+     ```
+     exit: 0
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     my_bet_grades.csv: 2cf9a95f89bd,lost,-20,6,2026-10-24T07:16:30.831Z
+     your own bets: 1 logged; settled 1 (won 0, lost 1), -$20.00; void leg 0; open 0; can't settle 0 (legs not identified)
+     ```
+- **PENDING:** as in the entry above.
