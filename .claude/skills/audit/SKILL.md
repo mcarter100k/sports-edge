@@ -4,7 +4,7 @@ description: Independent audit of a research study against its pre-registered cr
 argument-hint: [registry id]
 disable-model-invocation: true
 context: fork
-agent: auditor
+agent: research-auditor
 background: false
 ---
 Audit registry entry $ARGUMENTS.
