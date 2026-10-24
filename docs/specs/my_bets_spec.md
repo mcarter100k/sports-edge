@@ -97,3 +97,71 @@ Your own bets: N, settled N, +/−$X.
   settle)`.
 - **Kept separate:** never mixed into the stage line or the price-gap
   numbers.
+
+## Amendment 2026-10-23: answers the independent review (REVISE) and the live gate
+
+Review: `docs/reviews/2026-10-23_my_bets.md`. The owner decided the
+protected-market rule on 2026-10-23.
+
+**1. Protected player markets.** Kalshi lists each NBA player market twice:
+the normal series (for example `KXNBAPTS`, "NBA Player Points") and a
+Protected one (`KXNBAPTSPROT`, "NBA Player Points Protected"; series ending
+`PROT`). A player leg means the **normal** market, unless the slip has a
+line `protection on`. Then every player leg means the Protected market.
+- `protection off` may also be written.
+- More than one `protection` line is an unreadable slip (exit code 2).
+
+**2. When a slip can be logged.** A game may pair with a Kalshi game event
+resolving from 36 hours before the log time to 36 hours after, in any market
+status (open, closed or settled). A bet can then be logged after its games,
+as well as when it is placed. Every uniqueness rule is unchanged: two
+fitting events, or two fitting markets, leave the leg not identified.
+
+**3. Settling.** These rules replace the table above:
+
+| Outcome | When | Dollars |
+|---|---|---|
+| **Lost** | every leg identified, and any leg settled `no` | − cost |
+| **Won** | every leg identified and settled `yes` | + (payout − cost) |
+| **Void leg** | every leg identified and **settled**; none `no`; at least one `scalar` (Kalshi's stored value for a void) | blank; check Kalshi |
+
+- **Open:** a bet with every leg identified but not every leg settled, and
+  no leg settled `no`. It stays open. A void leg never closes a bet while
+  another leg is open.
+- **Can't settle:** a bet with any leg not identified is **never graded**.
+  It is counted only as "can't settle". It is never in "settled" or in the
+  net dollars, whatever its identified legs did. Counting its losses but
+  never its wins would bias the record.
+- **One grade per `bet_id`,** even if the same `bet_id` appears twice in
+  `my_bets.csv`.
+- **A row that can't be read** (a blank or non-numeric cost or payout) is
+  skipped and counted as unreadable in the grader's line. It never stops the
+  grader, so the shadow ledger's grading always runs.
+
+**4. Reading the `placed` line.** Each amount must contain a digit (`,`
+alone is not an amount). The payout must be greater than the cost.
+Otherwise the slip is unreadable (exit code 2).
+
+**5. The lines.**
+- **Morning:** with nothing settled, the line leaves out the dollar figure:
+  `Your own bets: N, settled 0.`
+- **Morning, when it's too long:** if the message would go over its length
+  limit, the my-bets line is dropped first. The grader's line and the sheet
+  still carry it.
+- **Grader:** adds `unreadable N` when N > 0.
+
+**6. Reading the database:** `mybet` opens it read-only.
+
+**7. Tests the implementation must have:**
+- E void with F open, then F no on a later run, graded `lost`;
+- a void leg stored as `scalar`;
+- the twin Protected event in the fixture, with player legs refused without
+  rule 1 and taken by it;
+- `protection on` choosing the Protected market;
+- a game already settled still pairing, and two fitting events refusing;
+- a bet with an unidentified leg whose identified leg lost, never graded;
+- the same `bet_id` twice graded once;
+- a malformed row not stopping the grader;
+- `main` returning 2 for an unreadable slip, including `placed , pays 5`;
+- `data/bet_log.csv` and `data/shadow_markouts.csv` untouched, and the
+  slate's real stage line unchanged.

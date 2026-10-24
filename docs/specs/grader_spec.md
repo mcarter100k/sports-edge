@@ -216,3 +216,11 @@ unchanged and never read the markout file.
   void), net dollars, open, and can't settle.
 - **Kept separate:** these never touch the shadow ledger, the shadow
   grades, the markouts or the stage line.
+
+## Amendment 2026-10-23: own-bet settlement rules revised (see `my_bets_spec.md`, amendment 2026-10-23)
+
+- **Graded:** only bets with every leg identified.
+- **Void:** only once every leg has settled.
+- **Unreadable rows** are skipped and counted, never stopping the run.
+- **Unchanged:** the shadow grading, markouts and stage are untouched by
+  these rules.
