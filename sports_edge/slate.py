@@ -482,6 +482,7 @@ def sheet_lines(ctx, now):
              + (f" · money at risk today ${ctx.at_risk:.0f} of ${bets.DAILY_CAP:.0f}"
                 + (" · daily cap reached" if ctx.cap_reached else "")
                 if ctx.replies.get("readable") else " · daily cap not tracked"),
+             my_bets_line(),
              ""] + board_lines(ctx, now) + ["", "TODAY (Pacific time)"]
     start, end = pacific_day(now)
     cl = checks.plan(store, SOURCE, start, end)
