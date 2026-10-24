@@ -167,9 +167,11 @@ database, so a run holding the database lock cannot block it.
   `SNAPSHOT STALE: no run finished since <LA time> (<n> min)` to stderr and
   exits 1. `run_job` then alerts with the usual table: the first time loudly,
   then at most hourly, and RECOVERED once runs finish again.
-- **60 minutes** covers the longest gap the limit allows: a run that hits
-  the limit (36 min 40 s) plus up to 15 minutes until the next scheduled
-  start, plus that run's own time.
+- **60 minutes** covers a normal day: the slowest finished run seen
+  (1,103 s) plus up to 15 minutes until the next scheduled start. A run
+  that is stopped at its limit alerts by itself. Only a daily run that both
+  waits out the lock and hangs (720 s + 2,200 s) could pass 60 minutes
+  first; the watch then alerts too.
 - When the Mac is asleep, launchd starts nothing, the watch included; the
   first watch run after the wake reports the gap.
 
