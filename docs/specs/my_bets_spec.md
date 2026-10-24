@@ -222,3 +222,29 @@ This is checked on the `series_ticker` column.
   event already resolved;
 - a spread leg, and a game with no Kalshi event, not identified through
   `mybet`.
+
+## Amendment 2026-10-24b: answers the third review (APPROVE, minor findings)
+
+Review: `docs/reviews/2026-10-24_my_bets_r3.md`.
+
+**1. The logging limit, stated.** The rematch rule can only catch a wrong
+game resolving within 7 days of the paired one, and pairing looks 36 hours
+either side of the log time.
+- **Log within 5 days of the game:** right after placing is best. A slip
+  logged later may pair with a different game between the same two teams.
+- **What the rule refuses:** the rematch rule refuses some bets entirely.
+  These include MLB series games, playoff series games, home-and-home sets
+  and games Kalshi relists. The command then names the rival event, so the
+  reason is visible.
+
+**2. The own-bets lines can never stop another job.**
+- **`my_bets_line` never raises.** On any error it reads `Your own bets:
+  can't be read (<error>)`. The alert, morning and show runs carry on.
+- **Unreadable grade rows.** A grade row whose `dollars` isn't a finite
+  number is left out of the net, and a row with no `result` is ignored.
+
+**3. A failed own-bets step is visible.**
+- **Morning:** the morning's system problems include `own bets step failed`
+  when the latest grader run recorded `my_bets_settled=error`.
+- **Separate guards:** the settling and the report have one each, so rows
+  already written are counted even if the report fails.
