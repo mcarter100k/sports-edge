@@ -165,3 +165,60 @@ Otherwise the slip is unreadable (exit code 2).
 - `main` returning 2 for an unreadable slip, including `placed , pays 5`;
 - `data/bet_log.csv` and `data/shadow_markouts.csv` untouched, and the
   slate's real stage line unchanged.
+
+## Amendment 2026-10-24: answers the re-review (REVISE)
+
+Review: `docs/reviews/2026-10-23_my_bets_r2.md`. These rules replace the
+matching parts of the 2026-10-23 amendment.
+
+**1. Never the wrong game of a matchup.** A slip carries no date. A game
+that pairs with exactly one Kalshi game event is still refused if the
+`markets` table holds **another** game event of the same series, in any
+status, whose two team codes are the same two codes, resolving within 7 days
+of the paired event. Every leg of that game is then not identified.
+- **Output:** the command prints each paired event ticker. The ticker
+  carries the date, so the owner can see which game was taken.
+
+**2. Settling waits for every leg.** A bet with every leg identified is
+graded only once **every** leg has a stored settlement:
+
+| Settlements | Result | Dollars |
+|---|---|---|
+| all `yes` | **won** | + (payout − cost) |
+| any value other than `yes` or `no` (the store keeps `yes`, `no` and `scalar`) | **void_leg** | blank; out of the net, whatever the other legs did |
+| otherwise (at least one `no`) | **lost** | − cost |
+
+- **Lost waits too.** Lost is no longer graded early. A void leg can then
+  never be left out of the net only when the bet would have won.
+- **Open past due.** A bet whose legs are not all settled stays open. The
+  grader's line counts `open past due N`: open bets whose markets all
+  resolved more than 3 days ago. A settlement that never reached the store
+  is then visible (rule 8).
+
+**3. Rows that can't be read.** A row missing `bet_id`, `leg_tickers`, `cost`
+or `payout`, or with an amount that isn't a finite number, counts as
+unreadable. The grader's own-bets step runs in its own error guard, so it
+can never fail the shadow grading.
+
+**4. The lines.**
+- **The grader's line,** like the morning line, leaves out the dollar
+  figure when nothing has settled.
+- **The sheet** carries the own-bets line. It stays there when the morning
+  message drops it.
+
+**5. Protected markets, exactly.** A Protected player market is used only
+when its series is exactly the normal market's series plus `PROT` (for
+example `KXNBAPTSPROT` for `KXNBAPTS`), for the same player, line and game.
+This is checked on the `series_ticker` column.
+
+**6. Tests the implementation must have:**
+- the bet's game resolved 37 h before logging, with a rematch 12 h after,
+  not identified;
+- `[no, scalar]` graded `void_leg`, and `[no, open]` left open;
+- open past due counted;
+- a short row and a `NaN` amount, unreadable, with the grader still OK;
+- the sheet carrying the line;
+- `rate.pair_games` with its defaults refusing a finalized event and an
+  event already resolved;
+- a spread leg, and a game with no Kalshi event, not identified through
+  `mybet`.

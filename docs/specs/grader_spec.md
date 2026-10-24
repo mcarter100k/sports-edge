@@ -224,3 +224,11 @@ unchanged and never read the markout file.
 - **Unreadable rows** are skipped and counted, never stopping the run.
 - **Unchanged:** the shadow grading, markouts and stage are untouched by
   these rules.
+
+## Amendment 2026-10-24: own bets graded only once every leg settles (see `my_bets_spec.md`, amendment 2026-10-24)
+
+- **Any non-yes/no leg** makes the bet `void_leg`, out of the net.
+- **The line** counts `open past due` and shows no dollars when nothing has
+  settled.
+- **The own-bets step runs in its own error guard,** so the shadow grading
+  always completes.
