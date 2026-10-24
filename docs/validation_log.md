@@ -1386,3 +1386,12 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
   - the 08:00 morning line showing it;
   - the first bet logged at placement;
   - the first void leg met in real data.
+
+## 2026-10-24: job time limits and a GET deadline (fix/job-timeout)
+
+- **Why:** a snapshot hung from 3:38 to 9:27 AM PT reading a slow chunked Kalshi body; the 30 s socket timeout restarts with every byte (`sample`/`lsof`), so no alert fired. It was killed; the 9:30 run recovered.
+- **Change:** jobs run under `jobguard` (snapshot and grader 2,200 s, others 120 s); `net.https_get` gives up after 120 s per GET. No launchd change.
+- **VERIFIED, Gate 1:** 668 passed; 15 of 15 mutants killed (11 by behaviour tests, 4 only by the pins on the limit and deadline values).
+- **VERIFIED, Gate 2** (code `a6445e6`, 10:35 AM PT, real APIs, 0 of 26 live files changed each step): snapshot `SNAPSHOT OK tier=near`; Kalshi `/series` with a 2 s deadline gave up after 2.10 s; a snapshot with a 2 s limit was stopped and alerted with the reason.
+- **VERIFIED, grader catch-up** (11:00 AM PT, code `bb56c88`, copy of the live data, 0 live files changed): `GRADER OK` in 173 s under the 2,200 s limit (owner decision; 120 s had stopped it in the settlement sweep); it graded what last night missed: 38 calibration markets, 51 skipped `no_reference`, 1 own bet settled.
+- **PENDING:** the first real run stopped at a limit; the first real GET deadline hit.
