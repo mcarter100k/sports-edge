@@ -15,6 +15,17 @@ hypothesis, not an edge.
 
 ---
 
+## Team
+- /red-team <file or idea>: attacks a design or claimed edge before building or betting
+- /research <idea>: pre-registers, writes study code, runs the harness (needs the harness on main)
+- /audit <id>: research-auditor re-runs a study in a fresh context and accepts or rejects it; never in the same session as the research
+- auditor (read-only): unchanged; still does pre-registration and change reviews
+- /lean-review <branch>: staff-engineer check before every merge
+- Code, not commands: prices (shadow rule, board, rate), statistics (research/stats.py), orchestration (the owner + research/registry/)
+- Flow: idea → /red-team → /research → /audit → owner approves in the registry. Code: branch → /lean-review → owner merges.
+
+---
+
 ## PROTECTED — owner review before any merge
 
 Narrowed by the owner on 2026-10-22 to the files that decide what counts as

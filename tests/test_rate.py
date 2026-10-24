@@ -251,3 +251,21 @@ def test_combo_fair_line_when_every_leg_is_a_priced_moneyline_from_different_gam
     # 0.55 x 0.62 = 34.10%; the payout's chance is 10 / 31.50 = 31.75%
     assert out[-1] == ("Combo: the legs' fair chances multiply to 34.10% against the payout's 31.75%, "
                        "before fee (combo fee unconfirmed, so no grade).")
+
+
+def test_rate_pairs_only_open_games_still_to_resolve_by_default():
+    """mybet widens pair_games with before= and any_status=; rate's own defaults must not change."""
+    from sports_edge import rate
+    slip = rate.parse("NBA\nCLE Cavaliers vs PHI 76ers\nPHI 76ers to win  57%\n1 MARKET COMBO\n$10 pays $17.50\n")
+    now = parse_utc("2026-10-23T20:00:00Z")
+    with Store.open() as s:
+        rows = [{"ticker": f"KXNBAGAME-26OCT23CLEPHI-{c}", "event_ticker": "KXNBAGAME-26OCT23CLEPHI",
+                 "series_ticker": "KXNBAGAME", "competition_scope": "Game", "yes_sub_title": c, "event_title": "CLE vs PHI",
+                 "status": "active", "resolve_by": now + timedelta(hours=6), "first_seen_utc": now, "last_seen_utc": now}
+                for c in ("CLE", "PHI")]
+        s.upsert("markets", rows, "ticker")
+        assert rate.pair_games(s, slip, ["KXNBAGAME"], now)                       # open and ahead: pairs
+        s.con.execute("UPDATE markets SET status = 'finalized'")
+        assert rate.pair_games(s, slip, ["KXNBAGAME"], now) == {}                 # finalized: refused
+        s.con.execute("UPDATE markets SET status = 'active', resolve_by = ?", [now - timedelta(hours=6)])
+        assert rate.pair_games(s, slip, ["KXNBAGAME"], now) == {}                 # already resolved: refused
