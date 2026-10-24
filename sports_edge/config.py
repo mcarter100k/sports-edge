@@ -123,6 +123,14 @@ def odds_horizon_h() -> int:
     return int(os.environ.get("ODDS_HORIZON_H", "24"))
 
 
+def my_bets_path() -> Path:
+    return data_dir() / "my_bets.csv"
+
+
+def my_bet_grades_path() -> Path:
+    return data_dir() / "my_bet_grades.csv"
+
+
 def bet_log_path() -> Path:
     return data_dir() / "bet_log.csv"
 

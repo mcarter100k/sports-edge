@@ -1216,3 +1216,148 @@ combo taker fee key), code `b07fdf3`. Touches protected files
   live files hashed, 0 changed, no failure markers.
 - **PENDING:** the first live snapshot run on `main` with this code, and the
   first real combo line.
+
+## 2026-10-22: logging your own bets (`sports_edge/mybet.py`), record-only
+
+- **Spec `251e475`.**
+  - Covers `my_bets_spec.md`, plus amendments to the grader spec and the
+    slate spec.
+  - **Kept separate:** never written to the shadow ledger, the pick bet log
+    or the stage line.
+- **VERIFIED (Gate 1):** 412 passed, 1 skipped. Twelve new tests cover:
+  - **Strict reading:** the `placed` line must appear exactly once, with
+    the cause named.
+  - **Identification:** every leg of the owner's real slip is identified,
+    including "Jokić" and SA pairing with SAS by name. "Total Points" is
+    never taken for "Points", and an ambiguous or missing market is not
+    identified.
+  - **Settling:** won, lost (even with a leg unidentified), void leg, open,
+    and can't settle. Each bet is settled once.
+  - **The morning line,** and nothing written to the shadow ledger or the
+    stage line.
+- **Mutants: 13 of 13 killed**, from clean caches, each restored
+  byte-identical.
+  - **First pass: 12 of 13.** A second `placed` line was still refused
+    downstream, but with a less useful message. The test now pins the
+    message, and the mutant is killed.
+- **VERIFIED (Gate 2):** `reality_run.py --with-live-data` on a copy of the
+  live database (taken at 15:35, between launchd runs). 0 live files
+  changed, no failure markers.
+  - **The real slip logged as a bet:** 5 of 9 legs were identified (the 5
+    moneylines).
+  - **The grader** printed the my-bets line, and the morning showed "Your
+    own bets: 1, settled 0, +$0.00. (1 can't settle)".
+- **OBSERVED (live Kalshi, 2026-10-22), why 4 legs were not identified:**
+  1. **HOU–SA:** that game has no sharp-book match yet (it is beyond the
+     24-hour listing), so the slip's `SA` can't pair with Kalshi's `SAS` by
+     name.
+  2. **Every NBA player market is listed twice,** with identical event and
+     market titles, under different contract terms:
+     - `KXNBAPTS` "NBA Player Points" (`BASKETBALLENTITYSTAT.pdf`);
+     - `KXNBAPTSPROT` "NBA Player Points Protected"
+       (`NBAENTITYSTATCOVERED.pdf`).
+
+     Two markets fit, so the rule refuses to choose (never guess). The
+     standard series matched the slip's price (Jokić 20+ at 74–75¢). The
+     protected one was thin (17¢ bid against 77¢ ask). **Owner decision
+     pending:** which series an unmarked slip leg means.
+- **NOT CHECKED:** a real settlement. No logged bet's games had finished.
+
+## 2026-10-23/24: own bets after two independent reviews (feat/mybet, held for owner review)
+
+Specs: `5e6e364` and `f1b9718` (amendments 2026-10-23 and 2026-10-24).
+Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
+
+- **Reviews, saved verbatim:**
+  - **First: REVISE** (`docs/reviews/2026-10-23_my_bets.md`). Two major
+    findings: a void leg was graded before the other legs settled, and the
+    record leaned toward losses.
+  - **Re-review: REVISE** (`docs/reviews/2026-10-23_my_bets_r2.md`). Two
+    major findings: a dateless slip could pair with a rematch of the same
+    teams, and void legs entered the net only when the bet lost.
+  - Both answered by the two amendments. The owner decided the Protected
+    rule on 2026-10-23: normal markets unless the slip says
+    `protection on`.
+- **The live gate found a gap the tests missed** (on `0eea781`, 23:31 PT):
+  - tonight's real slip, logged after its games, identified 0 of 6 legs;
+  - every NBA player leg was ambiguous, because Kalshi lists a normal and
+    a Protected twin.
+- **VERIFIED, Gate 1** (`44c68db`):
+  - suite 651 passed;
+  - mutants 9 of 9 killed after the first review, and 9 of 9 after the
+    re-review (each listed in the session report).
+- **VERIFIED, Gate 2** (`44c68db`, 2026-10-24 00:02–00:04 PT;
+  `scripts/reality_run.py --code <worktree>`). Each step: exit 0, 23 live
+  files hashed, 0 changed, no failure markers.
+  1. **Tonight's real 6-leg slip, logged after its games** (copy of the
+     live data): "Identified all 6 legs". It paired KXNBAGAME-26OCT23
+     DETMIA, HOUSAS, MINORL, NYKBOS, PORSAC and TORWAS, all normal-series
+     tickers (previously 0 of 6).
+  2. **A test NHL slip on open markets** (made up, never placed; 48 h
+     pairing copy): both legs identified, KXNHLGAME-26OCT24ANAPHI-PHI and
+     KXNHLGAME-26OCT24BUFWSH-WSH.
+  3. **The real grader on step 1's copy:** `my_bet_grades.csv` has
+     `lost,-20,6`. The line reads "your own bets: 1 logged; settled 1
+     (won 0, lost 1), -$20.00; void leg 0; open 0; can't settle 0".
+     Kalshi's results: White no, Edwards yes, Murray-Boyles no, Adebayo
+     no, Wembanyama yes, Kings no.
+- **PENDING:**
+  - the first bet logged at placement on `main`, and settled by the 03:30
+    nightly grader;
+  - the first void leg met in real data. `scalar` is the only non-yes/no
+    value the store keeps; a void reported any other way would show as
+    "open past due".
+
+## 2026-10-24: own bets after the third review (feat/mybet, held for owner review)
+
+- **Third review: APPROVE** (`docs/reviews/2026-10-24_my_bets_r3.md`). Its
+  eight minor findings are answered by spec `645d3d1` and code `59c4427`:
+  - the logging limit stated;
+  - the own-bets lines never stop another run;
+  - torn grade rows left out of the net;
+  - a failed step shown in the morning;
+  - separate guards for settling and for the report;
+  - the refusal names the rival game;
+  - codes compared as a superset;
+  - the missing tests.
+- **Correction to the entry above:** its step 3 quote was shortened. The
+  exact line ends `can't settle 0 (legs not identified)`, as quoted below.
+- **VERIFIED, Gate 1** (`59c4427`):
+  - suite 656 passed;
+  - 7 of 7 new mutants killed. One survived at first (NaN grade dollars),
+    so a test was added and it is now killed.
+- **VERIFIED, Gate 2** (`59c4427`, 2026-10-24 00:16–00:22 PT), output as
+  printed:
+  1. **Tonight's real slip, logged after its games,** with
+     `--with-live-data` and production settings:
+     ```
+     exit: 0
+     Logged your bet 2cf9a95f89bd: 6 legs · $20.00 pays $3,174.00 · payout's chance 0.63% · legs multiply to 0.58% · you pay about 9% more than the legs
+     Games paired: KXNBAGAME-26OCT23DETMIA, KXNBAGAME-26OCT23HOUSAS, KXNBAGAME-26OCT23MINORL, KXNBAGAME-26OCT23NYKBOS, KXNBAGAME-26OCT23PORSAC, KXNBAGAME-26OCT23TORWAS
+     Identified all 6 legs; it will settle from Kalshi results.
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     ```
+  2. **A test NHL slip on open markets** (made up, never placed):
+     - **Why a different copy:** tomorrow's NHL games are beyond the
+       production 24 h listing. So the copy used was one paired by the
+       snapshot wrapper with `ODDS_HORIZON_H=48` and `ODDS_DAILY_CREDITS=0`
+       (no priced check, 0 credits).
+     - **What ran unchanged:** `mybet` itself ran with production settings.
+     ```
+     exit: 0
+     Logged your bet 2da9d98ade90: 2 legs · $10.00 pays $35.00 · payout's chance 28.57% · legs multiply to 28.60% · you pay about 0% less than the legs
+     Games paired: KXNHLGAME-26OCT24ANAPHI, KXNHLGAME-26OCT24BUFWSH
+     Identified all 2 legs; it will settle from Kalshi results.
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     ```
+  3. **The real grader** (`run_grader.sh`) on step 1's copy:
+     ```
+     exit: 0
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     my_bet_grades.csv: 2cf9a95f89bd,lost,-20,6,2026-10-24T07:16:30.831Z
+     your own bets: 1 logged; settled 1 (won 0, lost 1), -$20.00; void leg 0; open 0; can't settle 0 (legs not identified)
+     ```
+- **PENDING:** as in the entry above.

@@ -311,6 +311,10 @@ def problems(ctx):
     for job in ("snapshot", "grader"):
         if state.get(job, {}).get("consecutive_failures"):
             out.append(f"{job} failing")
+    last_grader = ctx.store.con.execute(
+        "SELECT summary FROM job_runs WHERE job = 'grader' AND phase = 'finish' ORDER BY ts_utc DESC LIMIT 1").fetchone()
+    if last_grader and json.loads(last_grader[0] or "{}").get("my_bets_settled") == "error":
+        out.append("own bets step failed")
     _, last = ctx.store.last_finish("snapshot")
     if last is None or ctx.now - last > NOT_RUNNING_AFTER:
         out.append("prices not updating" if last else "no price run yet")
@@ -384,14 +388,33 @@ def unchecked_line(ctx, y0, y1):
             + ", ".join(f"{k} {v}" for k, v in sorted(why.items())) + ")")
 
 
+def my_bets_line():
+    """The owner's own bets (docs/specs/my_bets_spec.md); never part of the stage line, and never stops a run."""
+    try:
+        return _my_bets_line()
+    except Exception as exc:
+        return f"Your own bets: can't be read ({type(exc).__name__})"
+
+
+def _my_bets_line():
+    logged, won, lost, void, stuck, net, _unreadable = grader.my_bets_summary()
+    if not logged:
+        return "Your own bets: none logged yet."
+    extra = ", ".join(x for x in (f"{void} void" if void else "", f"{stuck} can't settle" if stuck else "") if x)
+    money = f", {dollars(net)}" if won + lost else ""          # no dollar figure from nothing settled (rule 8)
+    return f"Your own bets: {logged}, settled {won + lost}{money}." + (f" ({extra})" if extra else "")
+
+
 def morning_text(ctx, now):
     trouble = problems(ctx)
     system = "System OK" if not trouble else "System: " + "; ".join(trouble)
     lines = [f"Kalshi slate · {display_day(now)}", ctx.stage_line, today_line(ctx, now)]
     lines += yesterday_lines(ctx, now)
     lines += [unclear_text(text) for _, text in ctx.replies["unclear_lines"][:2]]
-    lines.append(f"{system} · full sheet: iCloud Drive/sports-edge/sheet.txt")
-    text = "\n".join(lines)
+    footer = f"{system} · full sheet: iCloud Drive/sports-edge/sheet.txt"
+    text = "\n".join(lines + [my_bets_line(), footer])
+    if len(text) > MORNING_MAX:                 # the own-bets line goes first (my_bets_spec.md, amendment 2026-10-23)
+        text = "\n".join(lines + [footer])
     if len(text) > MORNING_MAX:
         raise ValueError(f"morning message is {len(text)} characters, over {MORNING_MAX}")
     return text
@@ -470,6 +493,7 @@ def sheet_lines(ctx, now):
              + (f" · money at risk today ${ctx.at_risk:.0f} of ${bets.DAILY_CAP:.0f}"
                 + (" · daily cap reached" if ctx.cap_reached else "")
                 if ctx.replies.get("readable") else " · daily cap not tracked"),
+             my_bets_line(),
              ""] + board_lines(ctx, now) + ["", "TODAY (Pacific time)"]
     start, end = pacific_day(now)
     cl = checks.plan(store, SOURCE, start, end)
