@@ -1361,3 +1361,28 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
      your own bets: 1 logged; settled 1 (won 0, lost 1), -$20.00; void leg 0; open 0; can't settle 0 (legs not identified)
      ```
 - **PENDING:** as in the entry above.
+
+## 2026-10-24: own bets merged; the first own bet logged
+
+- **Owner approval** (2026-10-24, "approved"), after three independent
+  reviews (REVISE, REVISE, APPROVE).
+- **Merged** into `main` at `d94a414` at 00:24 PT, between live runs.
+- **VERIFIED, suite on `main` after the merge:** 656 passed.
+- **OBSERVED, Gate 2 after the merge** (the live checkout, copy of the live
+  data, 00:25 PT): `mybet` on the owner's real slip printed "Identified all
+  6 legs" and the same six paired games as on the branch. Exit 0, 23 live
+  files hashed, 0 changed, no failure markers.
+- **The first own bet in the live record:** `data/my_bets.csv`, bet
+  `5c964ba233ec`. It is the owner's 2026-10-23 6-leg NBA combo: $20 pays
+  $3,174, all 6 legs identified.
+  - **Logged after its games** (00:25 PT on 2026-10-24). It is recorded here
+    so that no reader takes it for a bet logged at placement. The third
+    review noted that late logging lets the person choose what to log;
+    this bet lost, and it was logged anyway.
+- **PENDING:**
+  - the 03:30 grader settling bet `5c964ba233ec`. Expected `lost, -20`,
+    from Kalshi's final results: White no, Edwards yes, Murray-Boyles no,
+    Adebayo no, Wembanyama yes, Kings no;
+  - the 08:00 morning line showing it;
+  - the first bet logged at placement;
+  - the first void leg met in real data.
