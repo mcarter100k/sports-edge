@@ -96,12 +96,15 @@ day log) and the process exits 1; the wrapper alerts as for any failure,
 with the reason `stopped at the job time limit: Timeout (h:mm:ss)!`. Below
 the limit the module's own exit code passes through.
 
-- **Two limits (owner decision):** `sports_edge.snapshot` 2,200 s; every
-  other module 120 s. 2,200 s is 2x the slowest snapshot run on record, the
-  1,103 s daily run of 2026-10-24 that caught up after the outage.
-- **Trade-off:** the grader (600 s) and the slate and heartbeat (120 s)
-  wait for the database lock, so a long lock wait now ends at the time
-  limit instead of with `StoreLocked`. Either way the run fails and alerts.
+- **Two limits (owner decision):** `sports_edge.snapshot` and
+  `sports_edge.grader` 2,200 s; every other module 120 s. 2,200 s is 2x the
+  slowest snapshot run on record, the 1,103 s daily run of 2026-10-24 that
+  caught up after the outage. The grader runs the snapshot's settlement
+  sweep against the same slow Kalshi listing: on 2026-10-24 its catch-up run
+  took 175 s, so 120 s stopped it before it graded anything.
+- **Trade-off:** the slate and heartbeat wait up to 120 s for the database
+  lock, so a long lock wait now ends at the time limit instead of with
+  `StoreLocked`. Either way the run fails and alerts.
 - `os._exit` skips buffered stdout, so a stopped run's stdout may be cut
   short; stderr holds the stack. A run stopped mid-write leaves the
   database to DuckDB's WAL recovery, as a crash would.
