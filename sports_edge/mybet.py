@@ -19,8 +19,10 @@ from .timeutil import display, iso_z, utcnow
 
 MY_BETS_HEADER = ["bet_id", "logged_utc", "logged_pt", "league", "n_legs", "legs", "leg_tickers", "cost",
                   "payout", "implied_chance", "legs_product", "markup"]
-PLACED = re.compile(r"placed\s+\$?(?P<cost>[\d,]+(?:\.\d{1,2})?)\s+pays\s+\$?(?P<payout>[\d,]+(?:\.\d{1,2})?)",
+PLACED = re.compile(r"placed\s+\$?(?P<cost>\d[\d,]*(?:\.\d{1,2})?)\s+pays\s+\$?(?P<payout>\d[\d,]*(?:\.\d{1,2})?)",
                     re.IGNORECASE)
+PROTECTION = re.compile(r"protection\s+(?P<on>on|off)", re.IGNORECASE)
+LOOK_BACK = rate.PAIR_WINDOW                  # pair games resolved up to 36 h before logging
 PLAYER = re.compile(r"(?P<player>.+): (?P<line>\d+)\+ (?P<stat>.+)")
 
 
@@ -39,11 +41,22 @@ def split_placed(text):
     return rest, money(m["cost"]), money(m["payout"])
 
 
-def identify(store, slip, now):
-    """[ticker or None] per leg: moneyline legs by the game pairing, player legs by exact title."""
+def split_protection(text):
+    """(text without a protection line, True if 'protection on'), or SlipError for more than one."""
+    lines = text.splitlines()
+    found = [i for i, ln in enumerate(lines) if PROTECTION.fullmatch(ln.strip())]
+    if len(found) > 1:
+        raise rate.SlipError(f"at most one 'protection on' or 'protection off' line (found {len(found)})")
+    on = bool(found) and PROTECTION.fullmatch(lines[found[0]].strip())["on"].lower() == "on"
+    return "\n".join(ln for i, ln in enumerate(lines) if i not in found), on
+
+
+def identify(store, slip, now, protected=False):
+    """[ticker or None] per leg: moneyline legs by the game pairing, player legs by exact title, in the normal
+    series or, with protection on, the Protected one (series ending PROT)."""
     sport_key = {label: key for key, label in checks.slate_sports().items()}.get(slip.league)
     series = rate.learned_series(store, sport_key) if sport_key else []
-    paired = rate.pair_games(store, slip, series, now) if series else {}
+    paired = rate.pair_games(store, slip, series, now, before=LOOK_BACK, any_status=True) if series else {}
     out = []
     for leg in slip.legs:
         game = paired.get(leg.game)
@@ -59,18 +72,20 @@ def identify(store, slip, now):
             continue
         key = next(iter(game.values()))[0].rsplit("-", 1)[0].split("-", 1)[1]     # KXNBAGAME-26OCT23HOUSAS
         rows = store.con.execute("""
-            SELECT ticker FROM markets WHERE event_ticker LIKE ? AND lower(event_title) LIKE ? AND yes_sub_title = ?""",
-            [f"%-{key}", f"%: {m['stat'].strip().lower()}", f"{m['player']}: {m['line']}+"]).fetchall()
+            SELECT ticker FROM markets WHERE event_ticker LIKE ? AND lower(event_title) LIKE ? AND yes_sub_title = ?
+              AND (split_part(ticker, '-', 1) LIKE '%PROT') = ?""",
+            [f"%-{key}", f"%: {m['stat'].strip().lower()}", f"{m['player']}: {m['line']}+", protected]).fetchall()
         out.append(rows[0][0] if len(rows) == 1 else None)
     return out
 
 
 def log_bet(text, now=None, out=print):
     rest, cost, payout = split_placed(text)
+    rest, protected = split_protection(rest)
     slip = rate.parse(rest)
     now = now or utcnow()
-    with Store.open(lock_wait_s=120) as store:
-        tickers = identify(store, slip, now)
+    with Store.open(lock_wait_s=120, read_only=True) as store:
+        tickers = identify(store, slip, now, protected)
     implied = cost / payout
     product = math.prod(leg.price for leg in slip.legs)
     more = implied / product - 1

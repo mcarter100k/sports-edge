@@ -42,8 +42,9 @@ def world():
                                 "rule_version": "v", "sport_key": "basketball_nba"})
             for pid, name in PLAYERS.get(f"{a}{b}", []):
                 for line in (15, 20, 25, 30):
-                    rows.append(market(f"KXNBAPTS-{key}-{pid}-{line}", f"KXNBAPTS-{key}", f"{name}: {line}+",
-                                       f"{a} vs {b}: Points", "KXNBAPTS"))
+                    for ser in ("KXNBAPTS", "KXNBAPTSPROT"):      # Kalshi lists each player market twice
+                        rows.append(market(f"{ser}-{key}-{pid}-{line}", f"{ser}-{key}", f"{name}: {line}+",
+                                           f"{a} vs {b}: Points", ser))
                 rows.append(market(f"KXNBAPRA-{key}-{pid}-20", f"KXNBAPRA-{key}", f"{name}: 20+",
                                    f"{a} vs {b}: Total Points", "KXNBAPRA"))   # must never be taken for Points
         s.upsert("markets", rows, "ticker")
@@ -129,24 +130,47 @@ def settle(results):
                                "source": "scan"} for t, r in results.items()], NOW)
 
 
-def test_grader_settles_won_lost_void_and_leaves_open_and_stuck_bets(tmp_path):
+def test_grader_settles_only_fully_identified_bets_and_voids_only_once_all_legs_settle():
     ledger.append_rows(config.my_bets_path(), mybet.MY_BETS_HEADER, [
         bet_row("won", ["A", "B"]),                  # both yes
         bet_row("lost", ["C", "D"]),                 # C no, D still open: lost already
-        bet_row("void", ["E", "F"]),                 # E void, F yes
+        bet_row("void", ["E", "F"]),                 # E void (stored as scalar), F yes
         bet_row("open", ["G", "H"]),                 # G yes, H open
-        bet_row("stuck", ["I", ""]),                 # a leg not identified, I yes: can't settle
-        bet_row("stuck_lost", ["J", ""], cost="5")])  # a leg not identified but J lost: lost
-    settle({"A": "yes", "B": "yes", "C": "no", "E": "void", "F": "yes", "G": "yes", "I": "yes", "J": "no"})
+        bet_row("stuck", ["I", ""]),                 # a leg not identified, I yes: never graded
+        bet_row("stuck_lost", ["J", ""], cost="5"),  # a leg not identified, J lost: still never graded
+        bet_row("void_open", ["K", "L"])])           # K void, L open: stays open
+    settle({"A": "yes", "B": "yes", "C": "no", "E": "scalar", "F": "yes", "G": "yes", "I": "yes", "J": "no",
+            "K": "scalar"})
     out = []
     grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=out.append)
     got = {r["bet_id"]: (r["result"], r["dollars"]) for r in ledger.read_rows(config.my_bet_grades_path())}
-    assert got == {"won": ("won", "90"), "lost": ("lost", "-10"), "void": ("void_leg", ""),
-                   "stuck_lost": ("lost", "-5")}
-    assert "  " not in out[-1] and out[-1] == ("your own bets: 6 logged; settled 3 (won 1, lost 2), +$75.00; "
-                                               "void leg 1; open 1; can't settle 1 (legs not identified)")
+    assert got == {"won": ("won", "90"), "lost": ("lost", "-10"), "void": ("void_leg", "")}
+    assert out[-1] == ("your own bets: 7 logged; settled 2 (won 1, lost 1), +$80.00; "
+                       "void leg 1; open 2; can't settle 2 (legs not identified)")
+    settle({"L": "no"})                              # the open leg of the void bet loses on a later night
+    grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=out.append)
+    got = {r["bet_id"]: (r["result"], r["dollars"]) for r in ledger.read_rows(config.my_bet_grades_path())}
+    assert got["void_open"] == ("lost", "-10") and len(got) == 4
     grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=lambda m: None)
     assert len(ledger.read_rows(config.my_bet_grades_path())) == 4            # each bet settled once
+
+
+def test_the_same_bet_id_twice_is_graded_once():
+    ledger.append_rows(config.my_bets_path(), mybet.MY_BETS_HEADER, [bet_row("twice", ["A"]), bet_row("twice", ["A"])])
+    settle({"A": "yes"})
+    grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=lambda m: None)
+    assert [r["bet_id"] for r in ledger.read_rows(config.my_bet_grades_path())] == ["twice"]
+    assert grader.my_bets_summary()[0] == 1
+
+
+def test_an_unreadable_row_never_stops_the_grader():
+    ledger.append_rows(config.my_bets_path(), mybet.MY_BETS_HEADER, [bet_row("bad", ["A"], cost=""), bet_row("ok", ["B"])])
+    settle({"A": "yes", "B": "no"})
+    out = []
+    grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=out.append)
+    assert out[0].startswith("GRADER OK")
+    assert [r["bet_id"] for r in ledger.read_rows(config.my_bet_grades_path())] == ["ok"]
+    assert out[-1].endswith("; unreadable 1")
 
 
 def test_morning_line_and_nothing_reaches_the_shadow_ledger_or_stage(world):
@@ -156,5 +180,45 @@ def test_morning_line_and_nothing_reaches_the_shadow_ledger_or_stage(world):
     settle({t: "no" for t in logged()[0]["leg_tickers"].split(" | ")[:1]})
     grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=lambda m: None)
     assert slate.my_bets_line() == "Your own bets: 2, settled 1, -$30.00. (1 can't settle)"
+    data = config.shadow_ledger_path().parent
     assert not config.shadow_ledger_path().exists() and not config.shadow_grades_path().exists()
-    assert grader.stage([])[1] == "Practice · 0 of 100 games with a closing price"
+    assert not (data / "bet_log.csv").exists() and not (data / "shadow_markouts.csv").exists()
+    assert grader.stage(ledger.read_rows(config.shadow_grades_path()))[1] == "Practice · 0 of 100 games with a closing price"
+
+
+def test_with_nothing_settled_the_morning_line_shows_no_dollars(world):
+    ledger.append_rows(config.my_bets_path(), mybet.MY_BETS_HEADER, [bet_row("x", ["Z", ""])])
+    assert slate.my_bets_line() == "Your own bets: 1, settled 0. (1 can't settle)"
+
+
+# Protected markets, settled games, the command's exit code ------------------------------------------
+
+def test_protection_on_takes_the_protected_player_markets(world):
+    mybet.log_bet(BET + "protection on\n", NOW, lambda m: None)
+    tickers = logged()[0]["leg_tickers"].split(" | ")
+    assert tickers[0] == "KXNBAPTSPROT-26OCT23HOUSAS-HOUKDURANT7-20" and tickers[2] == "KXNBAGAME-26OCT23CLEPHI-PHI"
+    with pytest.raises(SlipError, match="at most one"):
+        mybet.log_bet(BET + "protection on\nprotection off\n", NOW, lambda m: None)
+
+
+def test_a_slip_logged_after_its_games_still_identifies_its_legs(world):
+    with Store.open() as s:                 # every market settled, resolved 6 hours before logging
+        s.con.execute("UPDATE markets SET status = 'finalized', resolve_by = ?", [NOW - timedelta(hours=6)])
+    mybet.log_bet(BET, NOW, lambda m: None)
+    assert all(logged()[0]["leg_tickers"].split(" | "))
+
+
+def test_two_fitting_game_events_leave_the_legs_not_identified(world):
+    with Store.open() as s:                 # the same teams again a day later (as in a series)
+        s.upsert("markets", [market(f"KXNBAGAME-26OCT24CLEPHI-{c}", "KXNBAGAME-26OCT24CLEPHI", c, "CLE vs PHI",
+                                    "KXNBAGAME") for c in ("CLE", "PHI")], "ticker")
+    mybet.log_bet(BET, NOW, lambda m: None)
+    assert logged()[0]["leg_tickers"].split(" | ")[2] == ""
+
+
+@pytest.mark.parametrize("extra,code", [("placed $30 pays $1,554.40\n", 0), ("placed , pays 5\n", 2), ("", 2),
+                                        ("placed $30 pays $20\n", 2)])
+def test_the_command_exit_code(extra, code, world, tmp_path):
+    f = tmp_path / "bet.txt"
+    f.write_text(SLIP + extra, encoding="utf-8")
+    assert mybet.main([str(f)]) == code

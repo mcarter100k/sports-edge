@@ -386,11 +386,12 @@ def unchecked_line(ctx, y0, y1):
 
 def my_bets_line():
     """The owner's own bets (docs/specs/my_bets_spec.md); never part of the stage line."""
-    logged, won, lost, void, stuck, net = grader.my_bets_summary()
+    logged, won, lost, void, stuck, net, _unreadable = grader.my_bets_summary()
     if not logged:
         return "Your own bets: none logged yet."
     extra = ", ".join(x for x in (f"{void} void" if void else "", f"{stuck} can't settle" if stuck else "") if x)
-    return f"Your own bets: {logged}, settled {won + lost}, {dollars(net)}." + (f" ({extra})" if extra else "")
+    money = f", {dollars(net)}" if won + lost else ""          # no dollar figure from nothing settled (rule 8)
+    return f"Your own bets: {logged}, settled {won + lost}{money}." + (f" ({extra})" if extra else "")
 
 
 def morning_text(ctx, now):
@@ -399,9 +400,10 @@ def morning_text(ctx, now):
     lines = [f"Kalshi slate · {display_day(now)}", ctx.stage_line, today_line(ctx, now)]
     lines += yesterday_lines(ctx, now)
     lines += [unclear_text(text) for _, text in ctx.replies["unclear_lines"][:2]]
-    lines.append(my_bets_line())
-    lines.append(f"{system} · full sheet: iCloud Drive/sports-edge/sheet.txt")
-    text = "\n".join(lines)
+    footer = f"{system} · full sheet: iCloud Drive/sports-edge/sheet.txt"
+    text = "\n".join(lines + [my_bets_line(), footer])
+    if len(text) > MORNING_MAX:                 # the own-bets line goes first (my_bets_spec.md, amendment 2026-10-23)
+        text = "\n".join(lines + [footer])
     if len(text) > MORNING_MAX:
         raise ValueError(f"morning message is {len(text)} characters, over {MORNING_MAX}")
     return text

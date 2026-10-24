@@ -461,3 +461,12 @@ def test_a_reply_that_names_no_pick_asks_for_the_number_once(checked):
     assert sent[0].startswith('Reply "took 40" not matched to a pick: send it again with the pick number')
     assert len(sent[0]) <= slate.MESSAGE_MAX
     assert not any(m.startswith("Reply") for m in alert(CHECK_AT + timedelta(minutes=4)))
+
+
+def test_over_length_the_morning_drops_the_own_bets_line_first(monkeypatch):
+    """docs/specs/my_bets_spec.md, amendment 2026-10-23: the own-bets line goes before the message fails."""
+    full = slate.run_morning(parse_utc("2026-10-23T15:00:00Z"), lambda t: None, quiet)
+    assert "Your own bets:" in full
+    monkeypatch.setattr(slate, "MORNING_MAX", len(full) - 1)
+    short = slate.run_morning(parse_utc("2026-10-23T15:00:00Z"), lambda t: None, quiet)
+    assert "Your own bets:" not in short and short.split("\n")[-1].startswith("System")
