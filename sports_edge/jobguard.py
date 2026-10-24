@@ -12,15 +12,16 @@ import os
 import runpy
 import sys
 
-SNAPSHOT_LIMIT_S = 2200   # 2x the slowest snapshot run: the 1,103 s catch-up daily of 2026-10-24
-LIMIT_S = 120             # every other job
+LONG_LIMIT_S = 2200   # 2x the slowest snapshot run: the 1,103 s catch-up daily of 2026-10-24
+LONG_JOBS = ("sports_edge.snapshot", "sports_edge.grader")   # the grader runs the snapshot's settlement sweep
+LIMIT_S = 120         # every other job
 
 
 def limit_s(module):
     override = os.environ.get("SPORTS_EDGE_JOB_LIMIT_S")
     if override:
         return float(override)
-    return SNAPSHOT_LIMIT_S if module == "sports_edge.snapshot" else LIMIT_S
+    return LONG_LIMIT_S if module in LONG_JOBS else LIMIT_S
 
 
 def main(argv):
