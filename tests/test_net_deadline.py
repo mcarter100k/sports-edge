@@ -10,7 +10,7 @@ from sports_edge import kalshi, net
 
 
 class Trickle:
-    """A response whose body never ends: one byte per read1, and the clock moves 1 s per byte."""
+    """A slow response: one byte per read1, the clock moving 1 s per byte, for 100 bytes."""
     status, headers = 200, {"Transfer-Encoding": "chunked"}
 
     def __init__(self, clock, body=None):
@@ -26,6 +26,8 @@ class Trickle:
         if self.body is not None:
             out, self.body = self.body[:n], self.body[n:]
             return out
+        if self.clock.t >= 100:
+            return b""
         self.clock.t += 1
         return b"x"
 
