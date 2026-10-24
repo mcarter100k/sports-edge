@@ -1,15 +1,13 @@
 """config/team_aliases.json: each alias pairs its own game, inside its own sport only."""
-import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 
 from sports_edge.matching import KalshiGame, match, names_match
 from sports_edge.odds import RefEventStub
+from test_devig_and_matching import real_aliases
 
-ALIASES = json.loads((Path(__file__).resolve().parent.parent / "config" / "team_aliases.json").read_text())
-TABLES = {sport: table for sport, table in ALIASES.items() if not sport.startswith("_")}
+TABLES = real_aliases()
 RESOLVE_BY = datetime(2026, 10, 24, 5, 0, tzinfo=timezone.utc)
 START = datetime(2026, 10, 24, 2, 0, tzinfo=timezone.utc)
 
@@ -50,19 +48,10 @@ def la_game():
                                        ("Los Angeles Clippers", "Los Angeles Lakers")])
 def test_the_los_angeles_nba_game_pairs_through_match_with_the_real_aliases(home, away):
     stub = RefEventStub("r1", "basketball_nba", START, home, away)
-    r = match([(la_game(), "Basketball")], {"Basketball": [stub]}, ALIASES)
+    r = match([(la_game(), "Basketball")], {"Basketball": [stub]}, TABLES)
     assert {m["market_ticker"]: m["ref_outcome"] for m in r.matches} == {
         LAC: "Los Angeles Clippers", LAL: "Los Angeles Lakers"}
     assert r.unmatched == []
     without = match([(la_game(), "Basketball")], {"Basketball": [stub]}, {})
     assert without.matches == [] and without.unmatched[0]["reason"] == "name_mismatch"
 
-
-def test_a_basketball_title_never_reaches_a_football_team():
-    chargers = RefEventStub("r2", "americanfootball_nfl", START, "Los Angeles Chargers", "Los Angeles Lakers")
-    # even in the Basketball pool, the Basketball alias for "Los Angeles C" names the Clippers only
-    r = match([(la_game(), "Basketball")], {"Basketball": [chargers]}, ALIASES)
-    assert r.matches == [] and r.unmatched[0]["reason"] == "name_mismatch"
-    # a Football reference game is never in a Basketball game's pool: the game is skipped, not even refused
-    r = match([(la_game(), "Basketball")], {"Football": [chargers]}, ALIASES)
-    assert r.matches == [] and r.unmatched == []

@@ -1217,39 +1217,106 @@ combo taker fee key), code `b07fdf3`. Touches protected files
 - **PENDING:** the first live snapshot run on `main` with this code, and the
   first real combo line.
 
-## 2026-10-23: alias batch 1, NBA shared-city teams (feat/alias-batch-1)
+## 2026-10-23/24: alias batch 1, NBA shared-city teams (feat/alias-batch-1)
 
-**Owner delegation** (2026-10-23): the owner asked for this item to be
-handled ("handle these 3 items"). The review was done by the independent
-read-only reviewer in fresh sessions:
-- **First review: REVISE** (`docs/reviews/2026-10-23_alias_batch_1.md`).
-  Three major findings: the tests could not catch a swapped NFL alias; the
-  spec was out of date against `main` (`match_v3`); and the four NFL aliases
-  had no `UNMATCHED name_mismatch` line behind them, which the spec requires
-  before an alias is added.
-- **Revision:** the NFL aliases were dropped and wait for that line; `main`
-  was merged in; the tests now pin the table and run the real `match()`
-  path in both home/away orders.
-- **Re-review: APPROVE** (`docs/reviews/2026-10-23_alias_batch_1_r2.md`).
-  Its five minor findings were answered in `d779be2`. The most important:
-  Kalshi uses `Los Angeles C` / `Los Angeles L` in **every** Clippers and
-  Lakers game (OBSERVED: KXNBAGAME-26OCT25LACOKC, KXNBAGAME-26OCT25LALUTA),
-  so before this batch no Lakers or Clippers game could pair.
+Lakers and Clippers games now pair; nothing else changed.
+
+- **The change:** two aliases in `config/team_aliases.json`, Basketball
+  only: `Los Angeles C` → `Los Angeles Clippers`, `Los Angeles L` →
+  `Los Angeles Lakers`. No Python file changed; the rule version stays
+  `match_v3`. Spec: the alias batch 1 amendment in
+  `docs/specs/odds_matching_spec.md`.
+
+2026-10-24 — Owner approval (Marquis Carter): reviewed the two aliases in config/team_aliases.json (Los Angeles C → Clippers, Los Angeles L → Lakers, NBA only). Approved.
+
+- **Owner delegation** (2026-10-23): the owner asked for this item to be
+  handled ("handle these 3 items"). That was not an owner review; the
+  approval above is. The review was done by the independent read-only
+  reviewer in fresh sessions:
+  - **First review: REVISE** (`docs/reviews/2026-10-23_alias_batch_1.md`).
+    Three major findings: the tests could not catch a swapped NFL alias;
+    the spec was out of date against `main` (`match_v3`); and the four NFL
+    aliases had no `UNMATCHED name_mismatch` line behind them, which the
+    spec requires before an alias is added.
+  - **Revision:** the NFL aliases were dropped and wait for that line;
+    `main` was merged in; the tests now pin the table and run the real
+    `match()` path in both home/away orders.
+  - **Re-review: APPROVE** (`docs/reviews/2026-10-23_alias_batch_1_r2.md`).
+    Its five minor findings were answered in `d779be2`. The most
+    important: Kalshi uses `Los Angeles C` / `Los Angeles L` in **every**
+    Clippers and Lakers game (OBSERVED: KXNBAGAME-26OCT25LACOKC,
+    KXNBAGAME-26OCT25LALUTA), so before this batch no Lakers or Clippers
+    game could pair.
 - **A process slip, recorded:** both first-round reviewers briefly saw
   merge-conflict markers in their worktrees. A merge from `main` was
   started while they were reading, then aborted within seconds. Each
   review says its line numbers come from the clean branch state.
+
+**History moved from the spec amendment** (2026-10-24, after the lean
+review):
+
+- **Revision 2026-10-23.** The first draft also had four NFL aliases. They
+  had no `UNMATCHED name_mismatch` line behind them, which the spec
+  requires before any alias is added, so they were removed and wait for
+  that line.
+- **Match coverage before this batch** (OBSERVED,
+  `python -m research.studies.match_coverage` on a copy of the live data,
+  evening of 2026-10-22 PT; the exact minute was not recorded). Games
+  (distinct event tickers), for Kalshi series that had paired at least
+  once, before rule version `match_v3`:
+
+  | Series | Reference key | Matched games | Never matched | Rate | Reasons |
+  |---|---|---|---|---|---|
+  | KXEPLGAME | soccer_epl | 1 | 0 | 100% | |
+  | KXLALIGAGAME | soccer_spain_la_liga | 1 | 0 | 100% | |
+  | KXMLBGAME | baseball_mlb | 1 | 0 | 100% | |
+  | KXNBAGAME | basketball_nba | 13 | 1 | 93% | name_mismatch 1 |
+  | KXNCAAFGAME | americanfootball_ncaaf | 8 | 31 | 21% | name_mismatch 31 |
+  | KXNFLGAME | americanfootball_nfl | 1 | 0 | 100% | |
+  | KXNHLGAME | icehockey_nhl | 14 | 0 | 100% | |
+  | **Total** | | **39** | **32** | **55%** | |
+
+  There were also 280 Kalshi games in series that had never paired: 124
+  soccer, 79 basketball, 75 hockey and 2 football. Most are leagues
+  outside `config/slate_sports.json` (INFERRED from the series names; not
+  counted). The college football misses were not alias problems: they came
+  from Kalshi placeholder times, which `match_v3` (merged 2026-10-23)
+  handles.
+- **Shared-city titles observed** (`yes_sub_title` in `markets`, game
+  series only; OBSERVED 2026-10-23):
+
+  | Sport tag | Kalshi title | Seen in | Reference name | In this batch |
+  |---|---|---|---|---|
+  | Basketball | `Los Angeles C` | KXNBAGAME-26OCT23LACLAL | `Los Angeles Clippers` | yes |
+  | Basketball | `Los Angeles L` | KXNBAGAME-26OCT23LACLAL | `Los Angeles Lakers` | yes |
+  | Football | `Los Angeles C` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Chargers` | no: no UNMATCHED line yet |
+  | Football | `Los Angeles R` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Rams` | no: no UNMATCHED line yet |
+  | Football | `New York G` | KXNFLGAME-26OCT25NYGHOU | `New York Giants` | no: no UNMATCHED line yet |
+  | Football | `New York J` | KXNFLGAME-26NOV01LVNYJ | `New York Jets` | no: no UNMATCHED line yet |
+
+- **The NBA reference names were observed,** not assumed, in The Odds API
+  `/v4/sports/basketball_nba/events` on 2026-10-22 (`x-requests-last: 0`,
+  no credits). OBSERVED; the listing itself was not saved, because
+  `reference_events` stores only matched games.
+- **Not in this batch:** the NFL titles above and the MLB shared-city
+  titles (`Chicago C`, `Chicago WS`, `Los Angeles A`, `Los Angeles D`,
+  `New York M`, `New York Y`). Each waits for an `UNMATCHED name_mismatch`
+  line. Until then those games are refused, never compared.
+
+**Gates before the lean review** (on the branch before `main` moved on):
 
 - **VERIFIED, Gate 1:**
   - 6 alias tests.
   - 5 of 5 mutants of the alias file killed, each by at least two tests:
     C/L swapped, an alias removed, a Football `Los Angeles C` added, the
     Basketball `Los Angeles C` retargeted to the Chargers, an unnecessary
-    alias added.
+    alias added. (The lean review noted that the table pin catches every
+    edit, so this count mostly measures the pin; the recount below
+    separates the two.)
   - Suite on the branch with `main` merged: 628 passed.
 - **VERIFIED, Gate 2** (`run_snapshot.sh` through `scripts/reality_run.py`
   on empty folders, production horizon, `ODDS_DAILY_CREDITS=0`,
-  2:03–2:10 PM PT):
+  2:03–2:10 PM PT, 2026-10-23):
   - **Branch:** `SNAPSHOT OK tier=daily matches_added=111
     match_conflicts=0 events_matched=53`. KXNBAGAME-26OCT23LACLAL paired:
     `-LAC -> Los Angeles Clippers`, `-LAL -> Los Angeles Lakers`.
@@ -1258,9 +1325,26 @@ read-only reviewer in fresh sessions:
   - Both: 0 ambiguous, 0 match conflicts, `match_v3`, odds calls `events`
     8 and `sports` 1 for 0 credits, `checks_due=0`, 21 live files hashed
     and 0 changed, no failure markers.
+
+**Lean review: FIX FIRST** (2026-10-24). Findings answered on the branch:
+the owner approval above; `main` merged in with both log entries kept; the
+spec amendment cut to the aliases, the shared-key rule and the rule
+version, with its history moved here; the cross-sport test deleted (its
+cases were covered by the table pin, the LA game test and
+`test_unpolled_sport_is_not_reported_unmatched`); `tests/test_alias_config.py`
+loads the alias file through `real_aliases()`, which reads it the way
+`odds_step.py` does; the Pacific time added to the cited row; this entry
+opened with what changed.
+
 - **PENDING:**
-  - the first live run on `main` pairing a Lakers or Clippers game (Clippers
-    at Oklahoma City and Lakers at Utah, 2026-10-25);
+  - the first live run on `main` pairing a Lakers or Clippers game
+    (Clippers at Oklahoma City and Lakers at Utah, 2026-10-25);
+  - odds credits: compare credits used on 2026-10-25 with a comparable
+    day. Newly paired games join the check-slot clusters
+    (`sports_edge/checks.py`, `clusters`); a Lakers or Clippers game alone
+    in its 30-minute slot adds a slot, up to +1 credit a day on the free
+    plan (budget 15) or +2 on the paid plan (INFERRED; not measured,
+    because Gate 2 ran with `ODDS_DAILY_CREDITS=0` and `checks_due=0`);
   - the NFL titles (`Los Angeles C`/`R`, `New York G`/`J`), each after its
     game logs an `UNMATCHED name_mismatch` line; the Giants game on
     2026-10-25 is the first expected.

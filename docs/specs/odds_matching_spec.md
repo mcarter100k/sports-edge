@@ -315,99 +315,24 @@ Earlier rows keep `match_v2`; nothing is relabelled.
 - **The listing window:** a placeholder event 20 h past its `resolve_by`
   is still a candidate; a non-placeholder event is not.
 
-## Amendment 2026-10-22, revised 2026-10-23: alias batch 1, NBA shared-city teams (owner-delegated review 2026-10-23; independent re-review APPROVE)
+## Amendment 2026-10-22, revised 2026-10-23: alias batch 1, NBA shared-city teams (owner-approved 2026-10-24)
 
-**Revision 2026-10-23.** The independent review
-(`docs/reviews/2026-10-23_alias_batch_1.md`, REVISE) found that the four NFL
-aliases in the first draft had no `UNMATCHED name_mismatch` line behind
-them, which this spec requires before any alias is added (the
-`config/team_aliases.json` paragraph under the rules). They are removed from
-this batch and wait for that line. The batch is now the two NBA aliases. The
-review's other findings are answered below and in
-`tests/test_alias_config.py`.
+**The aliases** (`config/team_aliases.json`, Basketball tag only):
 
-**Match coverage before this batch** (OBSERVED,
-`python -m research.studies.match_coverage` on a copy of the live data,
-evening of 2026-10-22 PT; the exact minute was not recorded). The counts
-are games (distinct event tickers), for Kalshi series that had paired at
-least once, before rule version `match_v3`:
+| Kalshi title | Reference name | Row behind it |
+|---|---|---|
+| `Los Angeles C` | `Los Angeles Clippers` | `unmatched` row 2026-10-22T23:45:06Z (4:45 PM PT, Oct 22), KXNBAGAME-26OCT23LACLAL, name_mismatch, in_window=5 |
+| `Los Angeles L` | `Los Angeles Lakers` | the same game and row |
 
-| Series | Reference key | Matched games | Never matched | Rate | Reasons |
-|---|---|---|---|---|---|
-| KXEPLGAME | soccer_epl | 1 | 0 | 100% | |
-| KXLALIGAGAME | soccer_spain_la_liga | 1 | 0 | 100% | |
-| KXMLBGAME | baseball_mlb | 1 | 0 | 100% | |
-| KXNBAGAME | basketball_nba | 13 | 1 | 93% | name_mismatch 1 |
-| KXNCAAFGAME | americanfootball_ncaaf | 8 | 31 | 21% | name_mismatch 31 |
-| KXNFLGAME | americanfootball_nfl | 1 | 0 | 100% | |
-| KXNHLGAME | icehockey_nhl | 14 | 0 | 100% | |
-| **Total** | | **39** | **32** | **55%** | |
+Kalshi uses these titles in every Lakers and Clippers game, so without them
+no game of either team passes rule 5. Each alias maps one exact title to one
+exact name inside its sport tag; rules 2–6 still apply.
 
-There were also 280 Kalshi games in series that had never paired: 124
-soccer, 79 basketball, 75 hockey and 2 football. Most are leagues outside
-`config/slate_sports.json` (INFERRED from the series names; not counted).
+**Tags must not share a key.** `matching.py` merges a game's tag tables with
+`dict.update`, so a key shared by two tags with different targets would let
+the last tag win silently. `tests/test_alias_config.py` fails if that
+happens; a batch that needs a shared key (for example Football
+`Los Angeles C`) first changes `matching.py` under its own spec.
 
-**The college football misses were not alias problems.** They came from
-Kalshi placeholder times, and the amendment above (rule version
-`match_v3`, merged 2026-10-23) handles them. The NCAAF row shows the state
-before that change.
-
-**The shared-city abbreviations.** Kalshi shortens a team name to the city
-plus a letter when two teams share a city. Observed Kalshi titles
-(`yes_sub_title` in `markets`, game series only; OBSERVED 2026-10-23):
-
-| Sport tag | Kalshi title | Seen in | Reference name | In this batch |
-|---|---|---|---|---|
-| Basketball | `Los Angeles C` | KXNBAGAME-26OCT23LACLAL; `unmatched` row 2026-10-22T23:45:06Z, name_mismatch, in_window=5 | `Los Angeles Clippers` | yes |
-| Basketball | `Los Angeles L` | KXNBAGAME-26OCT23LACLAL (same game) | `Los Angeles Lakers` | yes |
-| Football | `Los Angeles C` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Chargers` | no: no UNMATCHED line yet |
-| Football | `Los Angeles R` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Rams` | no: no UNMATCHED line yet |
-| Football | `New York G` | KXNFLGAME-26OCT25NYGHOU | `New York Giants` | no: no UNMATCHED line yet |
-| Football | `New York J` | KXNFLGAME-26NOV01LVNYJ | `New York Jets` | no: no UNMATCHED line yet |
-
-- **The NBA reference names were observed,** not assumed, in The Odds API
-  `/v4/sports/basketball_nba/events` on 2026-10-22 (`x-requests-last: 0`,
-  no credits). OBSERVED; the listing itself was not saved, because
-  `reference_events` stores only matched games.
-- **Without these aliases, the game fails rule 5:** `los angeles clippers`
-  does not start with `los angeles c` followed by a space. No Lakers or
-  Clippers game could pair: Kalshi uses these titles in every game of the
-  two teams, not only when they meet (OBSERVED 2026-10-23 in `markets`:
-  KXNBAGAME-26OCT25LACOKC and KXNBAGAME-26OCT25LALUTA as well as the
-  derby), so the batch affects every Lakers and Clippers game.
-- **The sport tag scopes each alias,** so Basketball `Los Angeles C` can
-  never reach a Football team.
-- **Each alias still fails safe:** it maps one exact Kalshi title to one
-  exact reference name, so it can only add a pairing between those two
-  names. Rules 2–6 (sport, time, distinct teams, unique both ways) still
-  apply, and anything ambiguous is still refused and logged `UNMATCHED`.
-- **The NFL titles** are added in a later batch, each only after its game
-  logs an `UNMATCHED name_mismatch` line (the Giants game on 2026-10-25 is
-  the first expected). Until then those games are refused, never compared.
-
-**Overlapping keys between sport tags.** `matching.py` merges the alias
-tables of a game's tags with `dict.update`, so if two tag tables shared a
-key with different targets, the last tag would win silently. No two tag
-tables share a key in this batch. A test now fails if any two tag tables
-in `config/team_aliases.json` share a key with different targets, so a
-later batch that needs one (for example the Football `Los Angeles C`)
-must first change how `matching.py` resolves it, under its own spec.
-
-**Not in this batch:** the MLB shared-city titles (`Chicago C`,
-`Chicago WS`, `Los Angeles A`, `Los Angeles D`, `New York M`,
-`New York Y`). They wait for an `UNMATCHED name_mismatch` line, like the
-NFL titles.
-
-**Tests** (`tests/test_alias_config.py`):
-- the alias file equals the exact expected table, so a swapped or changed
-  entry fails;
-- each alias is needed (the pair does not match without it);
-- the Los Angeles NBA game pairs through the real `match()` path with the
-  real alias file, with each Kalshi title on the right reference team, in
-  both home/away orders;
-- a Basketball game titled `Los Angeles C` does not pair with a Football
-  reference game of the Chargers through `match()`;
-- no two sport tags share an alias key with different targets.
-
-**Rule version:** unchanged, `match_v3`. Aliases are configuration, as in
-the NHL amendment.
+**Rule version:** unchanged, `match_v3`. The history of this batch is in
+`docs/validation_log.md` (2026-10-23).
