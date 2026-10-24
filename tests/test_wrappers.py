@@ -12,6 +12,9 @@ REPO = Path(__file__).resolve().parent.parent
 
 STUB = """#!/bin/bash
 # Fake interpreter: health runs for real; jobs behave per FAKE_MODE.
+if [ "$2" = "sports_edge.jobguard" ]; then
+  echo "${*:3}" >> "$SPORTS_EDGE_LOG_DIR/guard_calls"; shift 2; set -- -m "$@"
+fi
 if [ "$2" = "sports_edge.health" ]; then exec "$REAL_PY" "$@"; fi
 if [ "$2" = "sports_edge.heartbeat" ]; then
   case "$FAKE_MODE" in
@@ -36,6 +39,7 @@ case "$FAKE_MODE" in
   fail) echo "partial"; echo "KalshiError: GET /events failed: boom" >&2; exit 1;;
   traceback) echo "out"; printf 'Traceback (most recent call last):\\n  File "x"\\nValueError: hidden\\n' >&2; exit 0;;
   empty) exit 0;;
+  timeout) printf 'Timeout (0:36:40)!\nThread 0x1 (most recent call first):\n  File "x", line 1 in read\n' >&2; exit 1;;
   forced) case "$KALSHI_BASE_URL" in *forced-failure*) echo "KalshiError: forced DNS failure" >&2; exit 1;;
           *) echo "SNAPSHOT OK"; exit 0;; esac;;
 esac
@@ -260,3 +264,34 @@ def test_morning_missing_env_file_is_a_failure(proj, tmp_path):
     r = run("run_morning.sh", proj, tmp_path, "ok", env_file=True)
     assert r.returncode == 1 and stub_calls() == []
     assert "MORNING FAILED | exit 1: .env missing at" in alerts()[0]
+
+
+# The job time limit and the stale-snapshot watch (amendment 2026-10-24) ---------------------
+
+def guard_calls():
+    p = Path(os.environ["SPORTS_EDGE_LOG_DIR"]) / "guard_calls"
+    return p.read_text().splitlines() if p.exists() else []
+
+
+def test_every_wrapper_starts_its_module_through_the_time_limit(proj, tmp_path):
+    for script, mode in [("run_snapshot.sh", "ok"), ("run_grader.sh", "ok"), ("run_backup.sh", "ok"),
+                         ("run_morning.sh", "ok"), ("weekly_heartbeat.sh", "hb_ok"), ("run_watch.sh", "ok")]:
+        run(script, proj, tmp_path, mode)
+    assert guard_calls() == ["sports_edge.snapshot", "sports_edge.slate alert", "sports_edge.grader",
+                             "sports_edge.backup run", "sports_edge.slate morning", "sports_edge.heartbeat",
+                             "sports_edge.health check-stale snapshot"]
+
+
+def test_a_run_stopped_at_the_limit_alerts_with_that_reason(proj, tmp_path):
+    assert run("run_snapshot.sh", proj, tmp_path, "timeout").returncode == 1
+    assert "snapshot failed: exit 1: stopped at the job time limit: Timeout (0:36:40)!" in alerts()[0]
+
+
+def test_the_watch_alerts_once_when_no_snapshot_has_finished_then_recovers(proj, tmp_path):
+    assert run("run_watch.sh", proj, tmp_path, "ok").returncode == 1        # nothing recorded yet
+    assert run("run_watch.sh", proj, tmp_path, "ok").returncode == 1        # still stale: not re-alerted
+    (line,) = alerts()
+    assert "snapshot_watch failed: exit 1: SNAPSHOT STALE: no finished run recorded" in line
+    assert run("run_snapshot.sh", proj, tmp_path, "fail").returncode == 1   # a failed run still finished
+    assert run("run_watch.sh", proj, tmp_path, "ok").returncode == 0
+    assert "RECOVERED logged-only: snapshot_watch ok again" in alerts()[-1]

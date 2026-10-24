@@ -10,14 +10,14 @@ ERR="$(mktemp)"
 if [ -n "$ENV_MISSING" ]; then
     OUT=""; RC=1; echo ".env missing at $PROJ/.env" > "$ERR"
 else
-    OUT="$("$PY" -m sports_edge.slate morning 2>"$ERR")"; RC=$?
+    OUT="$("$PY" -m sports_edge.jobguard sports_edge.slate morning 2>"$ERR")"; RC=$?
 fi
 { echo "===== morning $(stamp) ====="; echo "$OUT"
   if [ -s "$ERR" ]; then echo "----- stderr (exit $RC) -----"; cat "$ERR"; fi; } >> "$LOG"
 
 REASON=""
 if [ "$RC" -ne 0 ]; then
-    REASON="exit $RC: $(grep -v '^[[:space:]]' "$ERR" | grep -v '^Traceback' | tail -1 | cut -c1-160)"
+    REASON="exit $RC: $(err_line "$ERR" | cut -c1-160)"
 elif grep -q 'Traceback (most recent call last)' "$ERR"; then
     REASON="traceback with exit 0: $(tail -1 "$ERR" | cut -c1-160)"
 elif ! printf '%s\n' "$OUT" | grep -q '^SLATE MORNING OK'; then

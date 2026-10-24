@@ -10,19 +10,19 @@ ERR="$(mktemp)"
 if [ -n "$ENV_MISSING" ]; then
     OUT=""; RC=1; echo ".env missing at $PROJ/.env" > "$ERR"
 else
-    OUT="$("$PY" -m sports_edge.heartbeat 2>"$ERR")"; RC=$?
+    OUT="$("$PY" -m sports_edge.jobguard sports_edge.heartbeat 2>"$ERR")"; RC=$?
 fi
 { echo "===== heartbeat $(stamp) ====="; echo "$OUT"
   if [ -s "$ERR" ]; then echo "----- stderr (exit $RC) -----"; cat "$ERR"; fi; } >> "$LOG"
 
 if [ "$RC" -eq 0 ] || [ "$RC" -eq 1 ]; then
     if grep -q 'Traceback (most recent call last)' "$ERR" || [ -z "$OUT" ]; then
-        HEAD="NEEDS ATTENTION | heartbeat report failed: $(tail -1 "$ERR" | cut -c1-160)"; RC=1
+        HEAD="NEEDS ATTENTION | heartbeat report failed: $(err_line "$ERR" | cut -c1-160)"; RC=1
     else
         HEAD="$(printf '%s\n' "$OUT" | head -1)"
     fi
 else
-    HEAD="NEEDS ATTENTION | heartbeat report crashed (exit $RC): $(tail -1 "$ERR" | cut -c1-160)"; RC=1
+    HEAD="NEEDS ATTENTION | heartbeat report crashed (exit $RC): $(err_line "$ERR" | cut -c1-160)"; RC=1
 fi
 rm -f "$ERR"
 

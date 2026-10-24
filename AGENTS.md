@@ -153,4 +153,6 @@ new id.
 Snapshot cycle (every 15 min): `scripts/run_snapshot.sh`
 Nightly grader: `scripts/run_grader.sh`
 Weekly proof-of-life: `scripts/weekly_heartbeat.sh`
+Stale-snapshot watch (every 15 min, at :07/:22/:37/:52): `scripts/run_watch.sh`
+Every job module runs under a 2,200 s limit: `sports_edge/jobguard.py`
 launchd plists: `scripts/launchd/` (installed with `scripts/launchd/install.sh`)

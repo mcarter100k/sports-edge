@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.quis.sportsedge.watch</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/quis/sports-edge/scripts/run_watch.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/quis/sports-edge</string>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Minute</key><integer>7</integer></dict>
+        <dict><key>Minute</key><integer>22</integer></dict>
+        <dict><key>Minute</key><integer>37</integer></dict>
+        <dict><key>Minute</key><integer>52</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/quis/sports-edge/logs/launchd_watch.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/quis/sports-edge/logs/launchd_watch.err</string>
+</dict>
+</plist>
