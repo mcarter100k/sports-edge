@@ -275,3 +275,56 @@ def test_a_protected_market_without_its_normal_twin_is_not_taken(world):
         s.con.execute("DELETE FROM markets WHERE ticker = 'KXNBAPTS-26OCT23HOUSAS-HOUKDURANT7-20'")
     mybet.log_bet(BET + "protection on\n", NOW, lambda m: None)
     assert logged()[0]["leg_tickers"].split(" | ")[0] == ""
+
+
+def test_a_rematch_after_the_paired_game_refuses_it_and_says_why(world):
+    """The paired game resolves 6 h after logging; the same teams meet again 6 days after that (outside pairing)."""
+    with Store.open() as s:
+        s.upsert("markets", [market(f"KXNBAGAME-26OCT29CLEPHI-{c}", "KXNBAGAME-26OCT29CLEPHI", c, "CLE vs PHI", "KXNBAGAME")
+                             for c in ("CLE", "PHI")], "ticker")
+        s.con.execute("UPDATE markets SET resolve_by = ? WHERE event_ticker = 'KXNBAGAME-26OCT29CLEPHI'",
+                      [NOW + timedelta(hours=6, days=6)])
+    out = []
+    mybet.log_bet(BET, NOW, out.append)
+    assert logged()[0]["leg_tickers"].split(" | ")[2] == ""
+    assert out[2] == ("Refused KXNBAGAME-26OCT23CLEPHI: the same teams also play in KXNBAGAME-26OCT29CLEPHI "
+                      "within 7 days, and a slip has no date.")
+
+
+def test_open_bets_resolved_under_3_days_ago_are_not_past_due():
+    with Store.open() as s:
+        s.upsert("markets", [market(t, "KXNBAGAME-26OCT21XY", t, "X vs Y", "KXNBAGAME") for t in ("M", "N")], "ticker")
+        s.con.execute("UPDATE markets SET resolve_by = ? WHERE ticker = 'M'", [NOW - timedelta(days=4)])
+        s.con.execute("UPDATE markets SET resolve_by = ? WHERE ticker = 'N'", [NOW - timedelta(days=2)])
+    ledger.append_rows(config.my_bets_path(), mybet.MY_BETS_HEADER, [bet_row("recent", ["M", "N"])])
+    out = []
+    grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=out.append)
+    assert "past due" not in out[-1] and "open 1;" in out[-1]
+
+
+def test_a_torn_grade_row_never_stops_the_lines(world):
+    ledger.append_rows(config.my_bets_path(), mybet.MY_BETS_HEADER, [bet_row("x", ["A"]), bet_row("y", ["B"]),
+                                                                     bet_row("z", ["C"])])
+    config.my_bet_grades_path().write_text("bet_id,result,dollars,legs_settled,graded_utc\nx,won\ny,lost,NaN,1,t\n"
+                                           "z,lost,-10,1,t\n", encoding="utf-8")
+    assert slate.my_bets_line() == "Your own bets: 3, settled 3, -$10.00."        # torn and NaN dollars left out
+
+
+def test_an_error_in_the_own_bets_line_never_stops_the_morning(monkeypatch):
+    def boom():
+        raise TypeError("torn")
+    monkeypatch.setattr(grader, "my_bets_summary", boom)
+    text = slate.run_morning(parse_utc("2026-10-23T15:00:00Z"), lambda t: None, lambda *a, **k: None)
+    assert "Your own bets: can't be read (TypeError)" in text
+
+
+def test_a_failed_own_bets_step_shows_in_the_morning(monkeypatch):
+    def boom(store, now):
+        raise RuntimeError("x")
+    monkeypatch.setattr(grader, "settle_my_bets", boom)
+    out = []
+    grader.run_grader(FakeKalshi([], [], NOW), now_fn=lambda: NOW, out=out.append)
+    assert out[0].startswith("GRADER OK") and "my_bets_settled=error" in out[0]
+    assert out[-1] == "your own bets: step FAILED (RuntimeError: x)"
+    text = slate.run_morning(parse_utc("2026-10-23T15:00:00Z"), lambda t: None, lambda *a, **k: None)
+    assert "own bets step failed" in text

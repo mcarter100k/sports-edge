@@ -518,14 +518,24 @@ def settle_my_bets(store, now):
 def my_bets_summary():
     """(logged, won, lost, void, can't settle, net dollars over won and lost, unreadable)."""
     bets = _own_bets()
-    grades = {g["bet_id"]: g for g in ledger.read_rows(config.my_bet_grades_path())}
+    grades = {g["bet_id"]: g for g in ledger.read_rows(config.my_bet_grades_path()) if g.get("result")}
     won = sum(1 for g in grades.values() if g["result"] == "won")
     lost = sum(1 for g in grades.values() if g["result"] == "lost")
     void = sum(1 for g in grades.values() if g["result"] == "void_leg")
     unreadable = sum(1 for b in bets if not _readable(b))
     stuck = sum(1 for b in bets if _readable(b) and b["bet_id"] not in grades and not _identified(b))
-    net = sum((Decimal(g["dollars"]) for g in grades.values() if g["result"] in ("won", "lost")), Decimal(0))
+    net = sum((d for d in (_finite(g.get("dollars")) for g in grades.values() if g["result"] in ("won", "lost"))
+               if d is not None), Decimal(0))
     return len(bets), won, lost, void, stuck, net, unreadable
+
+
+def _finite(value):
+    """A finite Decimal, or None for a value that can't be read (a torn grade row)."""
+    try:
+        d = Decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return d if d.is_finite() else None
 
 
 def open_past_due(store, now):
@@ -567,9 +577,16 @@ def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
             n_sh, sh_skips = grade_shadow(store, now)
             n_mk, mk_postponed = grade_markouts(store, now, source)
             try:                  # own bets never stop the shadow grading (my_bets_spec.md, amendment 2026-10-24)
-                n_mine, mine_lines = settle_my_bets(store, now), my_bets_report(store, now)
+                n_mine = settle_my_bets(store, now)
             except Exception as exc:
-                n_mine, mine_lines = "error", [f"your own bets: step FAILED ({type(exc).__name__}: {exc})"]
+                n_mine = "error"
+                mine_lines = [f"your own bets: step FAILED ({type(exc).__name__}: {exc})"]
+            else:
+                try:              # rows already written stay counted if only the report fails
+                    mine_lines = my_bets_report(store, now)
+                except Exception as exc:
+                    n_mine = "error"
+                    mine_lines = [f"your own bets: report FAILED ({type(exc).__name__}: {exc})"]
             matched = store.con.execute(
                 "SELECT count(*) FROM odds_matches WHERE source = ?", [source]).fetchone()[0]
             summary.update({"calibration_graded": n_cal, "shadow_graded": n_sh, "markouts_measured": n_mk,

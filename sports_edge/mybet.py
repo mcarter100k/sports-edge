@@ -57,18 +57,19 @@ def event_of(game):
     return next(iter(game.values()))[0].rsplit("-", 1)[0]                      # KXNBAGAME-26OCT23HOUSAS
 
 
-def has_rematch(store, event):
-    """Another game event of the same series, between the same two team codes, resolving within 7 days."""
+def rematch_of(store, event):
+    """The event ticker of another game event of the same series, between the same two team codes, resolving
+    within 7 days, or None."""
     series, when, codes = store.con.execute("""
         SELECT any_value(series_ticker), max(resolve_by), list(DISTINCT regexp_extract(ticker, '-([^-]+)$', 1))
         FROM markets WHERE event_ticker = ?""", [event]).fetchone()
     if when is None:
-        return False
+        return None
     others = store.con.execute("""
-        SELECT list(DISTINCT regexp_extract(ticker, '-([^-]+)$', 1)) FROM markets
+        SELECT event_ticker, list(DISTINCT regexp_extract(ticker, '-([^-]+)$', 1)) FROM markets
         WHERE series_ticker = ? AND competition_scope = 'Game' AND event_ticker <> ? AND resolve_by BETWEEN ? AND ?
-        GROUP BY event_ticker""", [series, event, when - REMATCH, when + REMATCH]).fetchall()
-    return any(set(c) == set(codes) for (c,) in others)
+        GROUP BY event_ticker ORDER BY event_ticker""", [series, event, when - REMATCH, when + REMATCH]).fetchall()
+    return next((ev for ev, c in others if set(c) >= set(codes)), None)
 
 
 def identify(store, slip, now, protected=False):
@@ -78,7 +79,9 @@ def identify(store, slip, now, protected=False):
     sport_key = {label: key for key, label in checks.slate_sports().items()}.get(slip.league)
     series = rate.learned_series(store, sport_key) if sport_key else []
     paired = rate.pair_games(store, slip, series, now, before=LOOK_BACK, any_status=True) if series else {}
-    paired = {g: game for g, game in paired.items() if not has_rematch(store, event_of(game))}
+    refused = {g: (event_of(game), rematch_of(store, event_of(game))) for g, game in paired.items()}
+    refused = {g: pair for g, pair in refused.items() if pair[1]}
+    paired = {g: game for g, game in paired.items() if g not in refused}
     out = []
     for leg in slip.legs:
         game = paired.get(leg.game)
@@ -102,7 +105,7 @@ def identify(store, slip, now, protected=False):
                   ELSE m.series_ticker NOT LIKE '%PROT' END""",
             [f"%-{key}", f"%: {m['stat'].strip().lower()}", f"{m['player']}: {m['line']}+", protected, key]).fetchall()
         out.append(rows[0][0] if len(rows) == 1 else None)
-    return out, sorted(event_of(game) for game in paired.values())
+    return out, sorted(event_of(game) for game in paired.values()), sorted(refused.values())
 
 
 def log_bet(text, now=None, out=print):
@@ -111,7 +114,7 @@ def log_bet(text, now=None, out=print):
     slip = rate.parse(rest)
     now = now or utcnow()
     with Store.open(lock_wait_s=120, read_only=True) as store:
-        tickers, events = identify(store, slip, now, protected)
+        tickers, events, refused = identify(store, slip, now, protected)
     implied = cost / payout
     product = math.prod(leg.price for leg in slip.legs)
     more = implied / product - 1
@@ -127,6 +130,8 @@ def log_bet(text, now=None, out=print):
         f"payout's chance {implied * 100:.2f}% · legs multiply to {product * 100:.2f}% · "
         f"you pay about {abs(more) * 100:.0f}% {'more' if more >= 0 else 'less'} than the legs")
     out("Games paired: " + (", ".join(events) if events else "none"))
+    for event, rival in refused:
+        out(f"Refused {event}: the same teams also play in {rival} within 7 days, and a slip has no date.")
     if missing:
         out(f"Identified {len(slip.legs) - len(missing)} of {len(slip.legs)} legs; leg{'s' if len(missing) > 1 else ''} "
             f"{', '.join(missing)} not found, so this bet won't settle automatically.")

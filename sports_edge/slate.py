@@ -311,6 +311,10 @@ def problems(ctx):
     for job in ("snapshot", "grader"):
         if state.get(job, {}).get("consecutive_failures"):
             out.append(f"{job} failing")
+    last_grader = ctx.store.con.execute(
+        "SELECT summary FROM job_runs WHERE job = 'grader' AND phase = 'finish' ORDER BY ts_utc DESC LIMIT 1").fetchone()
+    if last_grader and json.loads(last_grader[0] or "{}").get("my_bets_settled") == "error":
+        out.append("own bets step failed")
     _, last = ctx.store.last_finish("snapshot")
     if last is None or ctx.now - last > NOT_RUNNING_AFTER:
         out.append("prices not updating" if last else "no price run yet")
@@ -385,7 +389,14 @@ def unchecked_line(ctx, y0, y1):
 
 
 def my_bets_line():
-    """The owner's own bets (docs/specs/my_bets_spec.md); never part of the stage line."""
+    """The owner's own bets (docs/specs/my_bets_spec.md); never part of the stage line, and never stops a run."""
+    try:
+        return _my_bets_line()
+    except Exception as exc:
+        return f"Your own bets: can't be read ({type(exc).__name__})"
+
+
+def _my_bets_line():
     logged, won, lost, void, stuck, net, _unreadable = grader.my_bets_summary()
     if not logged:
         return "Your own bets: none logged yet."
