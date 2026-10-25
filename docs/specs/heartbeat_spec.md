@@ -128,3 +128,21 @@ arguments. Every wrapper starts its module through `jobguard`. The two
 limits and the deadline are pinned. A trickling body gives up at the
 deadline (fake clock, and a real localhost socket), and the real
 `KalshiClient` gives up after its retries.
+
+## Amendment 2026-10-25: the snapshot and grader limit is 3,600 s (owner request)
+
+The 2,200 s limit (2x the 1,103 s catch-up run of 2026-10-24 9:30 AM PT) was
+too tight once Kalshi slowed down. Measured on 2026-10-24 (OBSERVED):
+
+- 11:00 PM PT: a daily run from empty folders was stopped at 2,200 s, still in
+  the settlement sweep;
+- 11:38 PM PT: the sweep alone took 572 s for 16 hours of settled markets
+  (74,731 markets, 75 pages of 1 to 13 s each).
+
+A daily run that is stopped is retried as a daily run with a longer sweep,
+so a limit set too low never lets it finish, and from 24 h 15 min after the
+last daily every run would be a failing daily. `sports_edge.snapshot` and
+`sports_edge.grader` now get 3,600 s; every other module keeps 120 s. The
+cost: a truly hung snapshot holds the lock up to an hour before it is stopped
+and alerts. Sweeping only the markets the system knows would shorten the
+sweep itself; that is a separate change.
