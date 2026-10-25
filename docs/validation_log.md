@@ -1398,3 +1398,10 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
 - **Merged** into `main` at `8a9f444`, 11:19 AM PT (lean review: MERGE). Suite on `main`: 668 passed. **VERIFIED, first live run:** launchd's 11:30 AM PT snapshot ran as `python -m sports_edge.jobguard sports_edge.snapshot`, `SNAPSHOT OK run=snapshot-20261024T183005Z-a654 tier=near`, slate alert OK, launchd exit 0.
 - **OBSERVED, unrelated:** the 11:00 AM PT live run (before the merge) failed on an Odds API `HTTP 429 CallerRateLimitExceeded` for `events americanfootball_ncaaf`, alerted, and recovered at 11:15. Cause NOT CHECKED.
 - **Lean review follow-ups, not done:** the backup's 120 s limit is unmeasured and shorter than its 600 s lock wait (time one real backup before installing it); the new error lines in `run_morning.sh` and `weekly_heartbeat.sh` have no test; `SPORTS_EDGE_JOB_LIMIT_S` would be read from `.env` without notice; `deadline_s`/`clock` in `net.https_get` exist only for tests.
+
+## 2026-10-25: snapshot and grader time limit 3,600 s (fix/snapshot-limit)
+
+- **Why:** on 2026-10-24 a daily run from empty folders was stopped at the 2,200 s limit (11:00 PM PT), and the settlement sweep alone took 572 s for a 16-hour window; a stopped daily is retried as a daily with a longer sweep.
+- **VERIFIED, Gate 1:** suite 668 passed; reverting the limit to 2,200 fails `test_the_two_limits` (pin).
+- **VERIFIED, Gate 2** (code `b457c28`, 12:03-12:48 AM PT, live snapshot job paused, `caffeinate -i`, empty folders, `ODDS_DAILY_CREDITS=0`, real APIs): `SNAPSHOT OK run=snapshot-20261025T070300Z-8974 tier=daily events=7854 markets=88530` in about 2,735 s, under 3,600 s; 0 of 28 live files changed; the job was restarted at 12:48:37 AM and launchd shows it loaded.
+- **PENDING:** the 3:00 AM live daily under the new limit, if merged before then.

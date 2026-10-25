@@ -59,5 +59,5 @@ def test_a_hung_job_through_the_real_wrapper_alerts_within_the_limit(tmp_path, m
 def test_the_two_limits():
     from sports_edge import jobguard
     assert "SPORTS_EDGE_JOB_LIMIT_S" not in os.environ
-    assert jobguard.limit_s("sports_edge.snapshot") == jobguard.limit_s("sports_edge.grader") == 2200
+    assert jobguard.limit_s("sports_edge.snapshot") == jobguard.limit_s("sports_edge.grader") == 3600
     assert {jobguard.limit_s(m) for m in ("sports_edge.slate", "sports_edge.heartbeat", "sports_edge.backup")} == {120}
