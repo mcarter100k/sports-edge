@@ -1405,3 +1405,12 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
 - **VERIFIED, Gate 1:** suite 668 passed; reverting the limit to 2,200 fails `test_the_two_limits` (pin).
 - **VERIFIED, Gate 2** (code `b457c28`, 12:03-12:48 AM PT, live snapshot job paused, `caffeinate -i`, empty folders, `ODDS_DAILY_CREDITS=0`, real APIs): `SNAPSHOT OK run=snapshot-20261025T070300Z-8974 tier=daily events=7854 markets=88530` in about 2,735 s, under 3,600 s; 0 of 28 live files changed; the job was restarted at 12:48:37 AM and launchd shows it loaded.
 - **PENDING:** the 3:00 AM live daily under the new limit, if merged before then.
+
+## 2026-10-25: Kalshi client retries a broken HTTP response (fix/kalshi-retry)
+
+- **Why:** the 2026-10-24 grader died on `http.client.IncompleteRead`, which the client's retry list missed (red team finding 6).
+- **Before / after, same broken local server** (a chunk header for 100 bytes, 12 sent, then closed): on `main`, `KalshiClient.get` raised `IncompleteRead` after 1 attempt. On the branch it made 6 attempts, waiting 1, 2, 4, 8 and 16 s, then raised `KalshiError: GET /series failed after 6 attempts: IncompleteRead`.
+- **VERIFIED, Gate 1:** suite 673 passed. Removing `HTTPException` from the retry list fails all 5 new tests (2 unit with `IncompleteRead` and `BadStatusLine`, 1 unit always broken, 2 on a real localhost socket); after the revert with no bytecode cache, 21 of 21 client tests pass.
+- **VERIFIED, Gate 2** (code `40e97c2`, real Kalshi API, copies of the live data): `run_grader.sh` 1:45-2:02 AM PT gave `GRADER OK … settlements_swept=26457 calibration_graded=132 my_bets_settled=2`. The live-data check flagged 5 changed files, all last written at 2:00:04 AM by the live 2:00 run (snapshot started 2:00:02, slate alert 2:00:04), not by the gate (OBSERVED: file times). `run_snapshot.sh` 2:02 AM: `SNAPSHOT OK … tier=hourly`, 0 of 28 live files changed.
+- **NOT CHECKED:** a real broken response from Kalshi; it can't be caused on demand, so the failure path is shown on a real local socket.
+- **Observed on the way:** the grader on today's data took about 17 minutes, under the 3,600 s limit.
