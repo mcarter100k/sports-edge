@@ -12,7 +12,7 @@ import os
 import runpy
 import sys
 
-LONG_LIMIT_S = 2200   # 2x the slowest snapshot run: the 1,103 s catch-up daily of 2026-10-24
+LONG_LIMIT_S = 3600   # a slow-Kalshi daily: 2,200 s stopped a daily run on 2026-10-24 (spec amendment 2026-10-25)
 LONG_JOBS = ("sports_edge.snapshot", "sports_edge.grader")   # the grader runs the snapshot's settlement sweep
 LIMIT_S = 120         # every other job
 
