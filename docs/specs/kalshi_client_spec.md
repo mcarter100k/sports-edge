@@ -63,3 +63,21 @@ when present. Both come from the API at run time.
 Observed 2026-10-21: 4,029 sports series, 8,325 open sports events and
 93,241 open sports markets. Combo (multivariate) events are excluded by
 `/events`.
+
+## Amendment 2026-10-25: a broken HTTP response is retried like a connection error
+
+The grader of 2026-10-24 (3:38 AM PT) died on `http.client.IncompleteRead`, a
+chunked response cut off part-way. Rule 4 retries connection and timeout
+errors, but the client caught only `URLError`, `TimeoutError`,
+`ConnectionError` and `OSError`. `IncompleteRead` is none of those: it is an
+`http.client.HTTPException`, so one broken response ended the whole run.
+Reproduced 2026-10-25 1:36 AM PT on `main`: a local server that sends a chunk
+header for 100 bytes, then 12 bytes, then closes, made `KalshiClient.get`
+raise `IncompleteRead` after 1 attempt.
+
+**Change:** rule 4 now covers every `http.client.HTTPException`
+(`IncompleteRead`, `BadStatusLine`, `RemoteDisconnected` and the rest of that
+class), with the same backoff. After the last retry the call fails with
+`KalshiError`, naming the last error. A certificate failure is still never
+retried. The odds client is unchanged: it has no retries, and any error there
+already fails the run loudly.
