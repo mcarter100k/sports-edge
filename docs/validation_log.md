@@ -1560,3 +1560,8 @@ review):
   Left for the owner; not touched.
 - **PENDING:** Gate 2 on the merge commit, re-run with `--keep` while the
   Mac is awake and between two live launchd runs.
+
+**Gate 2 on the merge commit `131cf32`** (2026-10-24, after `main` was merged in again; suite 673 passed):
+
+- **Cold start: NOT PASSED.** 11:00 PM PT, live snapshot job paused, `caffeinate -i`, empty folders: the run was stopped at the 2,200 s job limit inside the settlement sweep (a 26-hour first sweep; 74,731 settled markets took 572 s for a 16-hour window on its own, measured 11:38 PM). The job was restarted at 11:37 PM and launchd shows it loaded.
+- **VERIFIED, on a copy of the live data** (11:47 PM PT, between live runs, `ODDS_DAILY_CREDITS=0 ODDS_INTERVAL_MIN=0`, 0 of 26 live files changed each run): the branch paired `KXNBAGAME-26OCT25LACOKC` (`-LAC -> Los Angeles Clippers`, `-OKC -> Oklahoma City Thunder`) and `KXNBAGAME-26OCT25LALUTA` (`-LAL -> Los Angeles Lakers`, `-UTA -> Utah Jazz`): `matches_added=4 events_matched=29`. `main` on the same data: `matches_added=0 events_matched=27`.
