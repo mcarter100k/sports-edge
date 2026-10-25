@@ -3,6 +3,7 @@
 GET requests to public market-data endpoints only. There is no signing code
 and no method that sends anything other than GET.
 """
+import http.client
 import json
 import time
 import urllib.error
@@ -80,7 +81,8 @@ class KalshiClient:
             self.requests += 1
             try:
                 status, body = self.transport(url, TIMEOUT_S)
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError,
+                    http.client.HTTPException) as exc:          # a cut-off body: IncompleteRead
                 if net.is_permanent(exc):
                     raise KalshiError(f"GET {path} failed: {exc}") from exc
                 status, body, last_error = None, b"", f"{type(exc).__name__}: {exc}"
