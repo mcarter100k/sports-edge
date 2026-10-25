@@ -78,3 +78,53 @@ The report adds: matched markets by sport; sports with near or hourly
 since unmatched markets are now daily only. It also adds runs recorded as
 `exchange_closed` in 7 days (flagged above 12), and the fee table state:
 present or not, and how many series are unconfirmed.
+
+## Amendment 2026-10-24: a hard time limit on every job, and a deadline on every GET
+
+**Why.** On 2026-10-24 a snapshot run started at 3:38 AM PT was still
+reading one Kalshi response at 9:27 AM PT, when it was killed. A run that
+never finishes never reaches `record-failure`, so no alert fired, launchd
+started no snapshot for almost six hours, and the 8 AM morning job failed
+on the database lock the stuck run held.
+
+**1. Every job module runs under `sports_edge/jobguard.py`.** The wrappers
+start `python -m sports_edge.jobguard <module> [args]` in place of
+`python -m <module> [args]`. `jobguard` calls
+`faulthandler.dump_traceback_later(<limit>, exit=True)`, then runs the module
+as `__main__`. At the limit, every thread's stack goes to stderr (so into the
+day log) and the process exits 1; the wrapper alerts as for any failure,
+with the reason `stopped at the job time limit: Timeout (h:mm:ss)!`. Below
+the limit the module's own exit code passes through.
+
+- **Two limits (owner decision):** `sports_edge.snapshot` and
+  `sports_edge.grader` 2,200 s; every other module 120 s. 2,200 s is 2x the
+  slowest snapshot run on record, the 1,103 s daily run of 2026-10-24 that
+  caught up after the outage. The grader runs the snapshot's settlement
+  sweep against the same slow Kalshi listing: on 2026-10-24 its catch-up run
+  took 175 s, so 120 s stopped it before it graded anything.
+- **Trade-off:** the slate and heartbeat wait up to 120 s for the database
+  lock, so a long lock wait now ends at the time limit instead of with
+  `StoreLocked`. Either way the run fails and alerts.
+- `os._exit` skips buffered stdout, so a stopped run's stdout may be cut
+  short; stderr holds the stack. A run stopped mid-write leaves the
+  database to DuckDB's WAL recovery, as a crash would.
+
+**2. Every HTTPS GET has a deadline** (`sports_edge/net.py`, `https_get`,
+used by the Kalshi and odds clients). The stuck run was reading a chunked
+body that kept arriving (its `sample` alternated between chunk-size lines
+and chunk data), so the 30 s socket timeout, which restarts with every
+byte, never fired. `https_get` reads the body in pieces (`read1`) and
+raises `TimeoutError("response not complete within 120 s")` once the whole
+GET passes `DEADLINE_S` = 120 s. The slowest real GET seen was 42 s
+(`/series`, 6.4 MB, 2026-10-24). The message never carries the URL, since
+the odds key is in its query. `KalshiClient.get` retries it like any
+timeout, then fails with `KalshiError`. Connecting and the headers are still
+bounded only by the socket timeout and `http.client`'s header limits.
+
+**Tests.** A module that blocks forever exits 1 within the limit, through
+`jobguard` alone and through `run_job`, with its stack and the time-limit
+reason in the alert. A module that finishes keeps its exit code and
+arguments. Every wrapper starts its module through `jobguard`. The two
+limits and the deadline are pinned. A trickling body gives up at the
+deadline (fake clock, and a real localhost socket), and the real
+`KalshiClient` gives up after its retries.

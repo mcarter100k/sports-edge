@@ -1387,6 +1387,18 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
   - the first bet logged at placement;
   - the first void leg met in real data.
 
+## 2026-10-24: job time limits and a GET deadline (fix/job-timeout)
+
+- **Why:** a snapshot hung from 3:38 to 9:27 AM PT reading a slow chunked Kalshi body; the 30 s socket timeout restarts with every byte (`sample`/`lsof`), so no alert fired. It was killed; the 9:30 run recovered.
+- **Change:** jobs run under `jobguard` (snapshot and grader 2,200 s, others 120 s); `net.https_get` gives up after 120 s per GET. No launchd change.
+- **VERIFIED, Gate 1:** 668 passed; 15 of 15 mutants killed (11 by behaviour tests, 4 only by the pins on the limit and deadline values).
+- **VERIFIED, Gate 2** (code `a6445e6`, 10:35 AM PT, real APIs, 0 of 26 live files changed each step): snapshot `SNAPSHOT OK tier=near`; Kalshi `/series` with a 2 s deadline gave up after 2.10 s; a snapshot with a 2 s limit was stopped and alerted with the reason.
+- **VERIFIED, grader catch-up** (11:00 AM PT, code `bb56c88`, copy of the live data, 0 live files changed): `GRADER OK` in 173 s under the 2,200 s limit (owner decision; 120 s had stopped it in the settlement sweep); it graded what last night missed: 38 calibration markets, 51 skipped `no_reference`, 1 own bet settled.
+- **PENDING:** the first real run stopped at a limit; the first real GET deadline hit.
+- **Merged** into `main` at `8a9f444`, 11:19 AM PT (lean review: MERGE). Suite on `main`: 668 passed. **VERIFIED, first live run:** launchd's 11:30 AM PT snapshot ran as `python -m sports_edge.jobguard sports_edge.snapshot`, `SNAPSHOT OK run=snapshot-20261024T183005Z-a654 tier=near`, slate alert OK, launchd exit 0.
+- **OBSERVED, unrelated:** the 11:00 AM PT live run (before the merge) failed on an Odds API `HTTP 429 CallerRateLimitExceeded` for `events americanfootball_ncaaf`, alerted, and recovered at 11:15. Cause NOT CHECKED.
+- **Lean review follow-ups, not done:** the backup's 120 s limit is unmeasured and shorter than its 600 s lock wait (time one real backup before installing it); the new error lines in `run_morning.sh` and `weekly_heartbeat.sh` have no test; `SPORTS_EDGE_JOB_LIMIT_S` would be read from `.env` without notice; `deadline_s`/`clock` in `net.https_get` exist only for tests.
+
 ## 2026-10-23/24: alias batch 1, NBA shared-city teams (feat/alias-batch-1)
 
 Lakers and Clippers games now pair; nothing else changed.
