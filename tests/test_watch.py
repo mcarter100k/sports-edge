@@ -168,7 +168,7 @@ def test_the_lakers_night_start_one_message_per_change_no_repeats_then_ticket_lo
                                         "🟡 LA Lakers to win: leads 103-86",
                                         "🟡 Darius Garland: 15+ points: 14/15 · 26 min"]
     assert sent[2].splitlines()[1:] == [
-        "TICKET LOST ❌", "❌ Brook Lopez: 1+ threes: LOST · 0/1 · 22 min · final",
+        "TICKET LOST ❌", "FINAL: LAC 86 · LAL 103", "❌ Brook Lopez: 1+ threes: LOST · 0/1 · 22 min · final",
         "❌ Austin Reaves: 2+ threes: LOST · 1/2 · 31 min · final", "✅ LA Lakers to win: HIT · final 103-86",
         "❌ Darius Garland: 15+ points: LOST · 14/15 · 26 min · final", "✅ Austin Reaves: 20+ points: HIT · 20/20 · 31 min"]
     assert sent == [m for m in out if m.startswith("SLIP WATCH")]
@@ -338,10 +338,29 @@ def test_every_game_final_with_a_leg_still_waiting_stops_the_watch():
         c["score"] = score
     code, _, sent = run(slip(("LA Lakers vs LA Clippers", ["Austin Reaves: 20+ points"])), Feed({LAL: [PRE, ended_empty]}))
     assert code == 0 and sent[-1].splitlines()[1] == "WATCH STOPPED: every watched game final"
-    assert sent[-1].splitlines()[2] == "⏳ Austin Reaves: 20+ points: no box score yet"
+    assert sent[-1].splitlines()[3] == "⏳ Austin Reaves: 20+ points: no box score yet"
 
 
 def test_a_ticket_decided_on_the_last_poll_before_the_time_limit_still_sends_its_result():
     code, _, sent = run(LAKERS, Feed({LAL: [Q4, Q4, final(Q4)]}), max_hours=2 / 60, every=60)
     assert code == 0 and sent[-1].splitlines()[1] == "TICKET LOST ❌"
     assert not any("time limit" in m for m in sent)
+
+
+def test_a_hit_in_a_poll_that_fails_part_way_is_texted_on_the_next_good_poll():
+    """Second review, probe G: a later leg's unreadable value must not swallow an earlier leg's hit."""
+    text = slip(("LA Lakers vs LA Clippers", ["Austin Reaves: 20+ points", "Darius Garland: 15+ points"]))
+    hit = with_stat(Q4, "Austin Reaves", "PTS", "20")
+    code, out, sent = run(text, Feed({LAL: [Q4, with_stat(hit, "Darius Garland", "PTS", "--"), hit, final(hit)]}))
+    assert "POLL FAILED (1 in a row): ValueError: invalid literal for int() with base 10: '--'" in out
+    assert sent[1].splitlines()[1] == "✅ Austin Reaves: 20+ points: HIT · 20/20 · 31 min"
+
+
+def test_a_poll_that_ends_the_watch_sends_one_message_with_its_final_line():
+    """Second review, probe H: FINAL and the stop come in one text."""
+    ended_empty = final(PRE)
+    for c, score in zip(ended_empty["header"]["competitions"][0]["competitors"], ("98", "104")):
+        c["score"] = score
+    code, _, sent = run(slip(("LA Lakers vs LA Clippers", ["Austin Reaves: 20+ points"])), Feed({LAL: [PRE, ended_empty]}))
+    assert len(sent) == 2 and sent[1].splitlines()[1:3] == ["WATCH STOPPED: every watched game final",
+                                                            "FINAL: LAC 98 · LAL 104"]

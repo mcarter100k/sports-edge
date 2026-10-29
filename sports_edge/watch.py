@@ -170,12 +170,11 @@ def evaluate(leg, game):
 
 
 def update(legs, games):
-    """Move each open leg to its state now; return the legs that just became done or not watched."""
+    """Move each open leg to its state now; return the legs that just became done or not watched.
+    Every leg is read before any is saved, so a poll that fails part-way leaves nothing half-applied."""
+    read = [(leg, *evaluate(leg, games[leg.game])) for leg in legs if leg.watched and leg.state not in DONE]
     changes = []
-    for leg in legs:
-        if not leg.watched or leg.state in DONE:
-            continue
-        state, detail = evaluate(leg, games[leg.game])
+    for leg, state, detail in read:
         if state != leg.state and (state in DONE or state == "not watched"):
             changes.append(leg)
         leg.watched = state != "not watched"
@@ -253,19 +252,19 @@ def watch(text, every=30, max_hours=6, day=None, texting=True, once=False,
         return 0
     final = {g for g, gm in games.items() if gm["state"] == "post"}
 
-    def settle():
-        """An exit code once the watch must end (result sent, no leg left, every game final), else None."""
+    def settle(finals=()):
+        """Send the one ending message and return its exit code once the watch must end, else None."""
         result = ticket(legs)
         if result:
-            tell([RESULT[result]] + board(legs))
-            return 0
-        if not any(leg.watched for leg in legs):
-            tell(["WATCH FAILED: no leg can be watched"] + board(legs))
-            return 1
-        if final >= set(paired):
-            tell(["WATCH STOPPED: every watched game final"] + board(legs))
-            return 0
-        return None
+            head, code = RESULT[result], 0
+        elif not any(leg.watched for leg in legs):
+            head, code = "WATCH FAILED: no leg can be watched", 1
+        elif final >= set(paired):
+            head, code = "WATCH STOPPED: every watched game final", 0
+        else:
+            return None
+        tell([head, *finals] + board(legs))
+        return code
 
     fails, code = 0, settle()
     while code is None and clock() - started < timedelta(hours=max_hours):
@@ -286,11 +285,11 @@ def watch(text, every=30, max_hours=6, day=None, texting=True, once=False,
         fails = 0
         ended = [g for g, gm in games.items() if gm["state"] == "post" and g not in final]
         final.update(ended)
-        if (changes or ended) and not ticket(legs) and any(leg.watched for leg in legs):
-            tell([f"FINAL: {' · '.join(f'{a} {s}' for a, _, s in games[g]['teams'])}" for g in ended]
-                 + [leg_line(leg) for leg in changes]
+        finals = [f"FINAL: {' · '.join(f'{a} {s}' for a, _, s in games[g]['teams'])}" for g in ended]
+        code = settle(finals)                                      # an ending poll sends only its ending message
+        if code is None and (changes or ended):
+            tell(finals + [leg_line(leg) for leg in changes]
                  + ["OPEN:"] + [leg_line(leg) for leg in legs if leg.state in OPEN] + unwatched_note(legs))
-        code = settle()
     if code is not None:
         return code
     tell([f"WATCH STOPPED: time limit ({max_hours:g} h)"] + board(legs))
