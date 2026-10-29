@@ -892,6 +892,131 @@ Spec `c25c87d`, code `6025d55`.
 - **Merged** into `main` with a merge commit. Every validation-log entry
   from both sides is kept.
 
+## 2026-10-23: owner approval of the harness, and the calibration study pre-registration
+
+- **Owner approval (2026-10-22):** `research/harness.py` on
+  `feat/harness-study` at commit `334c293`. It is to be merged to `main`
+  after the study result is reviewed. The file is unchanged since (`git diff
+  334c293 -- research/harness.py` is empty, checked 2026-10-23).
+- **The dataset:** the backfill finished with `BACKFILL FETCH OK
+  requests=27406`. It was normalized to markets 36,034 and candles
+  2,684,145, and frozen as `kalshi-backfill` id `34babdc762e232b0`
+  (manifest sha256 `db0b979f…`).
+- **The pre-registration:** revision 1 (`492fe50`) drew a review verdict of
+  REVISE, with 6 major and 8 minor findings
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg.md`).
+  Revision 2 answers each one. Every number added comes from timing fields
+  and candles, on a connection with no outcomes table. The study has not
+  run.
+- **Second review (REVISE)** and **revision 3** (`be61302`).
+- **Third review: APPROVE** (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg_r3.md`).
+  Its five minor findings are answered in revision 4. The script changed
+  (`586ca79`) only to print the registered claim power and the follow-up
+  caveat.
+- **VERIFIED by direct checks** (the reviewer had no access):
+  - `98f8b3a` precedes `be61302`;
+  - `git diff 334c293 98f8b3a -- research/harness.py` is empty;
+  - `python -m research.datasets verify` on `34babdc762e232b0` prints
+    `DATASET OK … manifest_sha256=db0b979f…`;
+  - the committed `dataset_manifest.json` is byte-identical to the frozen
+    manifest.
+- **Short re-check review of the post-approval script change: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_prereg_r4.md`).
+  Its two minor findings, both wording or record only, are answered in
+  `prereg.md`.
+- **VERIFIED for the run commit (2026-10-23):**
+  - `586ca79` (script) precedes `a7ca1ab` (revision 4) in `git log`;
+  - `git diff 334c293 586ca79 -- research/harness.py` is empty.
+
+## 2026-10-23: the calibration study's registered run (held for owner review)
+
+- **Code and data:** script `586ca79`, unchanged before the run. `git diff
+  --stat 586ca79 HEAD` touches only `research/registry/` and `docs/`
+  (shown below). Dataset `34babdc762e232b0`.
+- **OBSERVED, run 1** (2026-10-23 01:50–02:00 PT): `STUDY OK … sha256=b8f8cd29c21c6ec0233fb3dab9029efd3369f89fe364a2517da62e9e3766a1eb`,
+  written to `research/registry/2026-10-kalshi-calibration/result.md`.
+- **VERIFIED, run 2** (02:00–02:10 PT), to a separate file: the same
+  sha256, and `cmp` reports the files byte-identical.
+- **Leakage check (registered, no sampling):** all 46,071 tested prices
+  (scored, rule-4-excluded and exploratory) were identical on the
+  isolation connection.
+- **Result** (held for owner review, not merged):
+  - **Pooled sports:** Δ +0.0112, rejected by the z test, not claimed
+    (widened by B = 0.0089). The follow-up is not met.
+  - **Weather:** Δ −0.0124, claimed. By the registered rule this is a
+    clear but untradeable miscalibration of the mid. Measured against the
+    bid it nearly vanishes (−0.0018 per bracket, post-result and
+    descriptive). See `result_note.md`.
+- **The result review:** REVISE, with 1 major finding (the weather claim
+  printed no consequence) and 6 minor. Answered by `result_note.md`, with
+  `result.md` unchanged.
+- `git log --oneline` at the time of this entry:
+
+```
+1e2e506 Result: Kalshi calibration study, registered run on dataset 34babdc762e232b0 (written by the study script; byte-identical on a second run)
+f81c74c Pre-registration: MLB wording fixes from the re-check (approved); run-commit checks logged
+a7ca1ab Pre-registration revision 4: answers the third review (approved); claim-power reading, MLB timing evidence, zero-count exclusion listed
+586ca79 Study: the result prints the registered claim power and the follow-up caveat (third review, findings 1-2)
+```
+
+`git diff --stat 586ca79 HEAD`:
+
+```
+...6-10-23_2026-10-kalshi-calibration_prereg_r3.md | 136 ++++++++++++++++
+ ...6-10-23_2026-10-kalshi-calibration_prereg_r4.md |  82 ++++++++++
+ docs/validation_log.md                             |  19 +++
+ .../registry/2026-10-kalshi-calibration/prereg.md  |  45 +++++-
+ .../registry/2026-10-kalshi-calibration/result.md  | 176 +++++++++++++++++++++
+ 5 files changed, 451 insertions(+), 7 deletions(-)
+```
+
+- **Correction (2026-10-23)** to the run record above. "Measured against
+  the bid it nearly vanishes (−0.0018 per bracket)" compared two figures
+  averaged differently: Δ is per city-day, while −0.0018 is per bracket.
+  Like for like, per bracket, it is −0.0110 at the mid and −0.0018 at the
+  bid. After the fee at multiplier 1, a seller at the bid loses 0.56 cents
+  per bracket. These figures are OBSERVED from
+  `research/studies/kalshi_calibration_postresult.py`.
+- **The second result review: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_result_r2.md`). Its
+  six minor findings are answered in `result_note.md` and by the committed
+  post-result script.
+
+- **Correction to the line above:** the second result review listed
+  **nine** minor findings, not six.
+  - Findings 1–6 were answered at `8ee60c7`.
+  - Findings 7 and 9 (interval reading and labels) are answered in
+    `result_note.md` in the next commit, together with the re-check's
+    finding 4 (point-estimate wording).
+  - Finding 8 is answered by the clean rerun below.
+- **The re-check review: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_result_r3.md`).
+- **VERIFIED, clean rerun (2026-10-23):** the study was run from a fresh
+  detached worktree at `586ca79`, with 0 uncommitted files (`git status
+  --short` empty). It printed `sha256=b8f8cd29c21c6ec0233fb3dab9029efd3369f89fe364a2517da62e9e3766a1eb`,
+  identical to the committed `result.md`. `git diff --stat 1e2e506 HEAD --
+  research/registry/2026-10-kalshi-calibration/result.md` is empty.
+- **OBSERVED, the post-result script's output** (command `python -m
+  research.studies.kalshi_calibration_postresult --dataset
+  ~/sports-edge-research/datasets/kalshi-backfill/34babdc762e232b0`, script
+  as committed at `8ee60c7`; report only, computed after the result was
+  read):
+
+```
+rule-5 sports exclusions 88; market closed > 14 d after t: 6 {'Baseball': 5, 'Football': 1}
+rule-5 sports exclusions 88; market closed > 14 d - 6 h after t: 6 {'Baseball': 5, 'Football': 1}
+weather brackets under 0.50: 13471; per bracket: mean (y - mid) -0.0110, mean (y - bid) -0.0018
+bucket | n | sum(y - mid) | sum(y - bid) | median half-spread | share bid 0.01 | seller at bid after fee, per bracket
+0.00-0.05 | 4770 | -66.6 | -36.9 | 0.0050 | 0.46 | +0.0064
+0.05-0.10 | 1934 | -48.6 | -28.4 | 0.0050 | 0.01 | +0.0108
+0.10-0.20 | 2183 | -59.2 | -36.4 | 0.0050 | 0.00 | +0.0086
+0.20-0.30 | 1785 | -30.8 | -11.0 | 0.0050 | 0.00 | -0.0064
+0.30-0.40 | 1598 | +17.3 | +35.3 | 0.0050 | 0.00 | -0.0377
+0.40-0.50 | 1201 | +39.5 | +53.5 | 0.0050 | 0.00 | -0.0616
+seller at the bid, all under 0.50: +0.0018 per bracket before fees, -0.0056 after the fee at multiplier 1 (13471 brackets)
+seller at the bid, under 0.30 (post-hoc slice): +0.0106 per bracket before fees, +0.0055 after the fee at multiplier 1 (10672 brackets)
+```
+
 ## 2026-10-22: Milestone 1, editor enforcement (feat/enforcement, merged)
 
 Spec `9983358`, code `ec93b28`. No protected file changed.
@@ -1216,6 +1341,62 @@ combo taker fee key), code `b07fdf3`. Touches protected files
   live files hashed, 0 changed, no failure markers.
 - **PENDING:** the first live snapshot run on `main` with this code, and the
   first real combo line.
+
+## 2026-10-23: calibration study result accepted; harness merged (feat/harness-study)
+
+**Owner delegation** (2026-10-23): the owner asked for the result's
+acceptance to be handled ("handle these 3 items"). The owner had already
+approved the harness itself, to merge after the result was reviewed.
+
+- **Fourth look by the independent reviewer: APPROVE**
+  (`docs/reviews/2026-10-23_2026-10-kalshi-calibration_result_r4.md`, at
+  `6e318f7`). Five of the third look's six findings were answered in full;
+  the sixth (the git and rerun evidence) only partly. Three new minor
+  findings, answered here:
+  1. **The rerun record lacked the runner, command and git evidence.** The
+     rerun was repeated, see below. It was run by the author, not by the
+     owner or the reviewer.
+  2. **The positive post-hoc figure lacked the caveat the negative one
+     had.** `result_note.md` now says it is a point estimate with no
+     interval and dependent brackets, and that the gain is in the buckets
+     under 0.20 while the 0.20–0.30 bucket loses 0.64 cents per bracket
+     after the fee.
+  3. **The log briefly held conflict markers during the review.** A merge
+     from `main` was started in this worktree while the reviewer was
+     reading, then aborted within seconds. The later merge
+     (`f388577`) keeps both sides; `grep -nE '^(<<<<<<<|=======|>>>>>>>)'
+     docs/validation_log.md` prints nothing.
+- **VERIFIED, clean rerun repeated** (2026-10-23 1:53–2:04 PM PT, by the
+  author):
+  - a fresh detached worktree at `586ca7917a976a07d1b975670352bf206d8f53bb`,
+    `git status --short` empty before and after;
+  - command, from that worktree: `/Users/quis/sports-edge/venv/bin/python
+    -m research.studies.kalshi_calibration --dataset
+    ~/sports-edge-research/datasets/kalshi-backfill/34babdc762e232b0 --out
+    <temporary file>`;
+  - output: `STUDY OK 2026-10-kalshi-calibration … sha256=b8f8cd29c21c6ec0233fb3dab9029efd3369f89fe364a2517da62e9e3766a1eb`,
+    exit 0;
+  - the committed `result.md` at `6e318f7` has the same sha256.
+- **Git order** (`git log --oneline 586ca79^..6e318f7`, oldest last):
+  ```
+  6e318f7 Result note: remaining review wording; clean-checkout rerun verified identical; post-result output recorded
+  8ee60c7 Result note: reproducible post-result figures (report-only script), signed after-fee reading, weather rule-7 bound, three zero-count rules; answers the second result review (approved)
+  e690dfb Result reading note (answers the result review), run record in the validation log
+  1e2e506 Result: Kalshi calibration study, registered run on dataset 34babdc762e232b0 (written by the study script; byte-identical on a second run)
+  f81c74c Pre-registration: MLB wording fixes from the re-check (approved); run-commit checks logged
+  a7ca1ab Pre-registration revision 4: answers the third review (approved); claim-power reading, MLB timing evidence, zero-count exclusion listed
+  586ca79 Study: the result prints the registered claim power and the follow-up caveat (third review, findings 1-2)
+  ```
+  `git diff --stat 1e2e506 6e318f7 -- research/registry/2026-10-kalshi-calibration/result.md`
+  prints nothing.
+- **Accepted** under the owner's delegation, on this evidence. The accepted
+  reading is unchanged:
+  - pooled sports: not claimed (Δ +0.0112);
+  - weather: claimed, but untradeable at the bid after fees;
+  - the sub-0.30 weather slice is a post-hoc hypothesis that needs its own
+    pre-registration on later data.
+
+  No edge is claimed.
 
 ## 2026-10-22: logging your own bets (`sports_edge/mybet.py`), record-only
 
