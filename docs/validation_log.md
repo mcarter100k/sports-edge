@@ -1410,7 +1410,7 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
 
 - **Correction first:** the first version passed the Gate 1 and Gate 2 below but still had five silent failures, found by an independent review. They were fixed before merge; see "Correction, after an independent review" below.
 - **Why:**
-  - On 2026-10-28 the owner's Lakers–Clippers combo lost because the legs were tied to one game. "Lakers to win" came in as an 18-point blowout, so both teams' starters sat the 4th quarter, and Garland finished one point short.
+  - On 2026-10-28 the owner's Lakers–Clippers combo lost. The Lakers won by 18, both teams' starters sat the 4th quarter, and Garland finished one point short. One game shows what happened, not a rule.
   - The first hand-made live watcher that night failed silently on a certificate error.
 - **Specs** (`8ff3948`): `rate_slip_spec.md` amendment and the new `slip_watch_spec.md`.
 - **VERIFIED, Gate 1:**

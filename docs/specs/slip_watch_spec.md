@@ -134,6 +134,14 @@ sent:
    - the time limit, exit 0;
    - a failure.
 
+**One poll sends at most one message.** A poll that ends the watch sends
+only the ending message (result, stop or failure), which includes that
+poll's `FINAL:` lines.
+
+**A poll is applied whole or not at all.** Every leg is read first, and
+states are saved only if nothing failed. A failed poll leaves no
+half-saved hit behind, so no hit goes untexted.
+
 Nothing else is texted. The same state never produces a second message.
 With `--no-text`, or `SPORTS_EDGE_NOTIFY=log` (tests, reality runs), the
 messages are printed and logged but not sent.
