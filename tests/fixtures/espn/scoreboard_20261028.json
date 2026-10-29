@@ -1,0 +1,508 @@
+{
+ "events": [
+  {
+   "id": "401909881",
+   "date": "2026-10-28T23:00Z",
+   "shortName": "MIA @ ATL",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "ATL",
+        "name": "Hawks",
+        "location": "Atlanta",
+        "displayName": "Atlanta Hawks"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "MIA",
+        "name": "Heat",
+        "location": "Miami",
+        "displayName": "Miami Heat"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 7:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909882",
+   "date": "2026-10-28T23:00Z",
+   "shortName": "WSH @ CLE",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "CLE",
+        "name": "Cavaliers",
+        "location": "Cleveland",
+        "displayName": "Cleveland Cavaliers"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "WSH",
+        "name": "Wizards",
+        "location": "Washington",
+        "displayName": "Washington Wizards"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 7:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909883",
+   "date": "2026-10-28T23:00Z",
+   "shortName": "CHA @ DET",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "DET",
+        "name": "Pistons",
+        "location": "Detroit",
+        "displayName": "Detroit Pistons"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "CHA",
+        "name": "Hornets",
+        "location": "Charlotte",
+        "displayName": "Charlotte Hornets"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 7:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909884",
+   "date": "2026-10-28T23:00Z",
+   "shortName": "PHI @ IND",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "IND",
+        "name": "Pacers",
+        "location": "Indiana",
+        "displayName": "Indiana Pacers"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "PHI",
+        "name": "76ers",
+        "location": "Philadelphia",
+        "displayName": "Philadelphia 76ers"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 7:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909885",
+   "date": "2026-10-28T23:30Z",
+   "shortName": "ORL @ TOR",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "TOR",
+        "name": "Raptors",
+        "location": "Toronto",
+        "displayName": "Toronto Raptors"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "ORL",
+        "name": "Magic",
+        "location": "Orlando",
+        "displayName": "Orlando Magic"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 7:30 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909886",
+   "date": "2026-10-29T00:00Z",
+   "shortName": "NY @ CHI",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "CHI",
+        "name": "Bulls",
+        "location": "Chicago",
+        "displayName": "Chicago Bulls"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "NY",
+        "name": "Knicks",
+        "location": "New York",
+        "displayName": "New York Knicks"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 8:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909887",
+   "date": "2026-10-29T00:00Z",
+   "shortName": "HOU @ MIL",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "MIL",
+        "name": "Bucks",
+        "location": "Milwaukee",
+        "displayName": "Milwaukee Bucks"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "HOU",
+        "name": "Rockets",
+        "location": "Houston",
+        "displayName": "Houston Rockets"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 8:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909888",
+   "date": "2026-10-29T00:00Z",
+   "shortName": "GS @ MIN",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "MIN",
+        "name": "Timberwolves",
+        "location": "Minnesota",
+        "displayName": "Minnesota Timberwolves"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "GS",
+        "name": "Warriors",
+        "location": "Golden State",
+        "displayName": "Golden State Warriors"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 8:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909889",
+   "date": "2026-10-29T00:00Z",
+   "shortName": "DEN @ NO",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "NO",
+        "name": "Pelicans",
+        "location": "New Orleans",
+        "displayName": "New Orleans Pelicans"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "DEN",
+        "name": "Nuggets",
+        "location": "Denver",
+        "displayName": "Denver Nuggets"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 8:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909890",
+   "date": "2026-10-29T01:00Z",
+   "shortName": "SA @ UTAH",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "UTAH",
+        "name": "Jazz",
+        "location": "Utah",
+        "displayName": "Utah Jazz"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "SA",
+        "name": "Spurs",
+        "location": "San Antonio",
+        "displayName": "San Antonio Spurs"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 9:00 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909891",
+   "date": "2026-10-29T01:30Z",
+   "shortName": "OKC @ DAL",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "DAL",
+        "name": "Mavericks",
+        "location": "Dallas",
+        "displayName": "Dallas Mavericks"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "OKC",
+        "name": "Thunder",
+        "location": "Oklahoma City",
+        "displayName": "Oklahoma City Thunder"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 9:30 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401909892",
+   "date": "2026-10-29T02:30Z",
+   "shortName": "LAL @ LAC",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "LAC",
+        "name": "Clippers",
+        "location": "LA",
+        "displayName": "LA Clippers"
+       }
+      },
+      {
+       "homeAway": "away",
+       "winner": null,
+       "score": "0",
+       "team": {
+        "abbreviation": "LAL",
+        "name": "Lakers",
+        "location": "Los Angeles",
+        "displayName": "Los Angeles Lakers"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "completed": false,
+       "shortDetail": "10/28 - 10:30 PM EDT"
+      },
+      "period": 0,
+      "displayClock": "0.0"
+     }
+    }
+   ]
+  }
+ ]
+}
