@@ -1446,3 +1446,11 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
   - `rate` printed the two reworded warnings.
 - **Owner decisions 2026-10-28:** `feat/one-advice-path` closed unmerged, so `watch.py` may text. Remaining for review:
   - the 75% threshold is a starting value. Calls go in the judgment log under `same_game_blowout`.
+- **Second review (same independent reviewer, 2026-10-28 ~10:50 PM PT): MERGE.**
+  - All seven first-round probes were re-run on `0129f94` and now behave as specified. Exactly the 8 new tests failed on the pre-fix `watch.py`.
+  - Three non-blocking findings, all fixed before merge:
+    - a hit could go untexted when a later leg's value was unreadable in the same poll. Polls are now applied whole or not at all.
+    - one poll could send two texts. The ending message now carries the `FINAL:` lines.
+    - this entry stated a cause from one game as fact. It now states only what happened.
+  - **VERIFIED:** two new tests, which fail on the previous `watch.py` (2 of 2) and pass now. Suite 710 passed.
+- **VERIFIED, Gate 2 on the final code** (`06c5cc7`, 10:42 PM PT, real ESPN feed): the Lakers slip loop sent start, then `TICKET LOST ❌`; exit 0; 0 of 44 live files changed; no failure markers.
