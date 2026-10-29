@@ -269,3 +269,91 @@ def test_rate_pairs_only_open_games_still_to_resolve_by_default():
         assert rate.pair_games(s, slip, ["KXNBAGAME"], now) == {}                 # finalized: refused
         s.con.execute("UPDATE markets SET status = 'active', resolve_by = ?", [now - timedelta(hours=6)])
         assert rate.pair_games(s, slip, ["KXNBAGAME"], now) == {}                 # already resolved: refused
+
+
+# Same-game warnings (amendment 2026-10-28) ------------------------------------------------------------
+
+# The owner's Lakers-Clippers combo of 2026-10-28 (leg prices illustrative; the legs and games are the real ones)
+LAKERS_SLIP = ("NBA\nLA Lakers vs LA Clippers\nBrook Lopez: 1+ threes  55%\nAustin Reaves: 2+ threes  70%\n"
+               "LA Lakers to win  76%\nDarius Garland: 15+ points  80%\nAustin Reaves: 20+ points  78%\n"
+               "SA Spurs vs UTA Jazz\nWalker Kessler: 6+ rebounds  80%\n6 MARKET COMBO\n$26.99 pays $129.06\n")
+
+
+def rated(text, now=NOW):
+    out = []
+    rate.rate(text, now, lambda st: None, out.append)
+    return out
+
+
+def test_the_lakers_slip_warns_of_the_blowout_conflict():
+    out = rated(LAKERS_SLIP)
+    assert out[-3:] == [
+        'Warning: LA Lakers vs LA Clippers: "LA Lakers to win" pulls against 4 player legs in the same game. '
+        "A win is likeliest as a blowout, and in a blowout the starters often rest late.",
+        "Warning: LA Lakers vs LA Clippers: LA Lakers is about 76% to win (slip price). If it turns into a blowout, "
+        "the starters often rest late — 4 player legs here.",
+        "Note: SA Spurs vs UTA Jazz: blowout risk not checked (game not paired)."]
+    assert out[-4].startswith("Combo: not fair-priced")                 # warnings come after the combo line
+
+
+def test_the_owners_fixture_slip_gets_a_stack_warning_and_no_lopsided_warning_at_74():
+    out, _ = run()
+    assert out[10].startswith("Markup: ") and out[11].startswith("Combo: ")     # unchanged positions
+    assert out[12:] == [
+        "Warning: HOU Rockets vs SA Spurs: 2 player legs share one game. A blowout would cut all their minutes at once.",
+        "Note: HOU Rockets vs SA Spurs: blowout risk not checked (game not paired).",
+        'Warning: DEN Nuggets vs OKC Thunder: "OKC Thunder to win" pulls against 2 player legs in the same game. '
+        "A win is likeliest as a blowout, and in a blowout the starters often rest late."]
+    assert not any(w in " ".join(out[12:]).lower() for w in JARGON)
+
+
+@pytest.mark.parametrize("pct,lopsided", [("74", False), ("75", True), ("25", True), ("26", False)])
+def test_the_lopsided_threshold_is_75_percent_for_either_side(pct, lopsided):
+    out = rated(f"NBA\nCLE Cavaliers vs PHI 76ers\nPHI 76ers to win  {pct}%\nJoel Embiid: 20+ points  60%\n"
+                "2 MARKET COMBO\n$10 pays $25\n")
+    lops = [ln for ln in out if "% to win (slip price)" in ln]
+    assert bool(lops) == lopsided
+    if lopsided:
+        fav = "PHI 76ers" if int(pct) >= 50 else "CLE Cavaliers"
+        assert lops[0].startswith(f"Warning: CLE Cavaliers vs PHI 76ers: {fav} is about 75% to win")
+
+
+def snapshots(ts, prices):
+    with Store.open() as s:
+        s.append("price_snapshots", [{"run_id": "r", "ts_utc": ts, "tier": "hourly", "ticker": t, "status": "active",
+                                      "yes_bid": D(b), "yes_ask": D(a)} for t, (b, a) in prices.items()])
+
+
+HOU_SAS_PLAYERS = ("NBA\nHOU Rockets vs SA Spurs\nKevin Durant: 20+ points  74%\nVictor Wembanyama: 20+ points  70%\n"
+                   "2 MARKET COMBO\n$10 pays $19\n")
+
+
+def test_without_a_moneyline_leg_the_stored_kalshi_price_is_used():
+    world()
+    snapshots(NOW - timedelta(minutes=30), {"KXNBAGAME-26OCT23HOUSAS-HOU": ("0.20", "0.22"),
+                                            "KXNBAGAME-26OCT23HOUSAS-SAS": ("0.78", "0.80")})
+    out = rated(HOU_SAS_PLAYERS)
+    assert out[-1] == ("Warning: HOU Rockets vs SA Spurs: SA Spurs is about 79% to win (Kalshi price). "
+                       "If it turns into a blowout, the starters often rest late — 2 player legs here.")
+
+
+def test_a_kalshi_price_older_than_two_hours_is_not_used():
+    world()
+    snapshots(NOW - timedelta(hours=2, minutes=1), {"KXNBAGAME-26OCT23HOUSAS-HOU": ("0.20", "0.22"),
+                                                    "KXNBAGAME-26OCT23HOUSAS-SAS": ("0.78", "0.80")})
+    assert rated(HOU_SAS_PLAYERS)[-1] == "Note: HOU Rockets vs SA Spurs: blowout risk not checked (no recent Kalshi price)."
+
+
+def test_a_close_game_by_kalshi_price_gives_only_the_stack_warning():
+    world()
+    snapshots(NOW - timedelta(minutes=30), {"KXNBAGAME-26OCT23HOUSAS-HOU": ("0.40", "0.42"),
+                                            "KXNBAGAME-26OCT23HOUSAS-SAS": ("0.58", "0.60")})
+    out = rated(HOU_SAS_PLAYERS)
+    assert [ln for ln in out if ln.startswith(("Warning", "Note"))] == [
+        "Warning: HOU Rockets vs SA Spurs: 2 player legs share one game. A blowout would cut all their minutes at once."]
+
+
+def test_one_moneyline_leg_per_game_prints_no_warning():
+    out = rated("NBA\nCLE Cavaliers vs PHI 76ers\nPHI 76ers to win  80%\nMIN Timberwolves vs ORL Magic\n"
+                "MIN Timberwolves to win  55%\n2 MARKET COMBO\n$10 pays $25\n")
+    assert not [ln for ln in out if ln.startswith(("Warning", "Note"))]

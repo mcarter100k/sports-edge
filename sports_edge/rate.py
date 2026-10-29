@@ -27,6 +27,8 @@ FRESH = timedelta(minutes=15)
 PAIR_WINDOW = timedelta(hours=36)
 STAKE = Decimal("10")
 NO_CREDITS = "Can't rate: no odds credits left today"
+LOPSIDED = Decimal("0.75")         # about a 7-point NBA favourite; a starting value, not tested evidence
+PRICE_AGE = timedelta(hours=2)     # oldest stored Kalshi price used for the lopsided check
 
 LEG = re.compile(r"(?P<text>.+?)\s+(?P<pct>\d{1,2}(?:\.\d+)?)%")
 GAME = re.compile(r"(?P<a>.+?) vs (?P<b>.+)")
@@ -291,6 +293,7 @@ def rate_lines(store, slip, now, source_factory=build_odds_source):
                      f"fair after fee · {grade(d)}")
     lines.append(markup_line(slip))
     lines.append(combo_line(slip, fair))
+    lines.extend(warning_lines(store, slip, paired, now))
     if no_credits:
         lines.append(NO_CREDITS)
     return lines
@@ -310,6 +313,61 @@ def combo_line(slip, fair):
     payout_chance = Decimal(slip.stake.replace(",", "")) / Decimal(slip.payout.replace(",", ""))
     return (f"Combo: the legs' fair chances multiply to {pct(joint, 2)} against the payout's "
             f"{pct(payout_chance, 2)}, before fee (combo fee unconfirmed, so no grade).")
+
+
+# Same-game warnings (amendment 2026-10-28). Display only: grades and combo lines never change. --------
+
+def kalshi_chances(store, tickers, now):
+    """{ticker: mid} from each market's latest snapshot at most PRICE_AGE old, or None if any is missing."""
+    out = {}
+    for ticker in tickers:
+        row = store.con.execute("""
+            SELECT yes_bid, yes_ask FROM price_snapshots WHERE ticker = ? AND ts_utc >= ?
+            ORDER BY ts_utc DESC LIMIT 1""", [ticker, to_db_ts(now - PRICE_AGE)]).fetchone()
+        if not row or row[0] is None or row[1] is None:
+            return None
+        out[ticker] = (Decimal(row[0]) + Decimal(row[1])) / 2
+    return out
+
+
+def favourite(store, slip, g, paired, now):
+    """(team, chance, source) for game g, or (None, None, why the check can't run)."""
+    for leg in slip.legs:
+        if leg.game == g and leg.team is not None:
+            other = next(t for t in slip.games[g] if t != leg.team)
+            team, chance = max(((leg.team, leg.price), (other, 1 - leg.price)), key=lambda x: x[1])
+            return team, chance, "slip price"
+    if g not in paired:
+        return None, None, "game not paired"
+    got = kalshi_chances(store, [paired[g][t][0] for t in slip.games[g]], now)
+    if got is None:
+        return None, None, "no recent Kalshi price"
+    team = max(slip.games[g], key=lambda t: got[paired[g][t][0]])
+    return team, got[paired[g][team][0]], "Kalshi price"
+
+
+def warning_lines(store, slip, paired, now):
+    lines = []
+    for g, (a, b) in enumerate(slip.games):
+        legs = [leg for leg in slip.legs if leg.game == g]
+        backed = [leg.team for leg in legs if leg.team is not None]
+        players = len(legs) - len(backed)
+        if not players:
+            continue
+        game, these = f"{a} vs {b}", f"{players} player leg{'s' if players != 1 else ''}"
+        if backed:
+            lines.append(f'Warning: {game}: "{backed[0]} to win" pulls against {these} in the same game. '
+                         "A win is likeliest as a blowout, and in a blowout the starters often rest late.")
+        elif players > 1:
+            lines.append(f"Warning: {game}: {players} player legs share one game. "
+                         "A blowout would cut all their minutes at once.")
+        team, chance, source = favourite(store, slip, g, paired, now)
+        if team is None:
+            lines.append(f"Note: {game}: blowout risk not checked ({source}).")
+        elif chance >= LOPSIDED:
+            lines.append(f"Warning: {game}: {team} is about {chance * 100:.0f}% to win ({source}). "
+                         f"If it turns into a blowout, the starters often rest late — {these} here.")
+    return lines
 
 
 def rate(text, now=None, source_factory=build_odds_source, out=print):
