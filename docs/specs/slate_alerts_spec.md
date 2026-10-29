@@ -966,3 +966,10 @@ the quote.
 - No leg added that is not a pick.
 - No combo line when the cap is reached.
 - The board line appears only with 2 or more current games.
+
+---
+
+## Amendment 2026-10-22: the morning message adds your own bets
+
+One line, before the system line: `Your own bets: N, settled N, +/−$X.`,
+as defined in `my_bets_spec.md`. It is never part of the stage line.

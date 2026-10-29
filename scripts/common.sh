@@ -26,8 +26,19 @@ stamp() { TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M:%S %Z'; }
 
 . "$PROJ/scripts/notify.sh"
 
+# err_line <stderr file>: the line that names a failure. A run stopped by the
+# job time limit (sports_edge/jobguard.py) says so: its stack ends on a thread line.
+err_line() {
+    if grep -q '^Timeout (' "$1"; then
+        echo "stopped at the job time limit: $(grep -m1 '^Timeout (' "$1")"
+    else
+        grep -v '^[[:space:]]' "$1" | grep -v '^Traceback' | grep -v '^UNMATCHED' \
+            | grep -v '^MATCH CONFLICT' | grep -v '^DEVIG REJECTED' | tail -1
+    fi
+}
+
 # run_job <job> <python module> [args...]
-# Runs the job, appends its output to the day log, records health, delivers
+# Runs the job under the time limit, appends its output to the day log, records health, delivers
 # any alert, and returns nonzero on failure. A failed run never returns 0.
 run_job() {
     _job="$1"; _module="$2"; shift 2
@@ -38,7 +49,7 @@ run_job() {
         _rc=1
         echo ".env missing at $PROJ/.env" > "$_err"
     else
-        "$PY" -m "$_module" "$@" > "$_out" 2> "$_err"
+        "$PY" -m sports_edge.jobguard "$_module" "$@" > "$_out" 2> "$_err"
         _rc=$?
     fi
     cat "$_out" >> "$_log"
@@ -49,8 +60,7 @@ run_job() {
 
     _reason=""
     if [ "$_rc" -ne 0 ] || grep -q 'Traceback (most recent call last)' "$_err"; then
-        _last="$(grep -v '^[[:space:]]' "$_err" | grep -v '^Traceback' | grep -v '^UNMATCHED' \
-                 | grep -v '^MATCH CONFLICT' | grep -v '^DEVIG REJECTED' | tail -1 | cut -c1-200)"
+        _last="$(err_line "$_err" | cut -c1-200)"
         _reason="exit $_rc: ${_last:-no error output}"
     elif [ ! -s "$_out" ]; then
         _reason="no output"

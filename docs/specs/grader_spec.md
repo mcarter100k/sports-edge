@@ -204,3 +204,31 @@ unchanged and never read the markout file.
   `data/shadow_markouts.csv`. A row measured before its game was postponed
   is never counted as postponed. The code already did this; a test now
   fixes it.
+
+## Amendment 2026-10-22: settling the owner's own bets (record-only; see `my_bets_spec.md`)
+
+- **Every run** settles the logged bets in `data/my_bets.csv` from the
+  `settlements` table, by each leg's recorded Kalshi market. The outcomes
+  are lost, won and void leg, as in the spec.
+- **Results** go once per bet to `data/my_bet_grades.csv`, through
+  `ledger.append_rows`.
+- **The report** adds one line: your own bets logged, settled (won, lost,
+  void), net dollars, open, and can't settle.
+- **Kept separate:** these never touch the shadow ledger, the shadow
+  grades, the markouts or the stage line.
+
+## Amendment 2026-10-23: own-bet settlement rules revised (see `my_bets_spec.md`, amendment 2026-10-23)
+
+- **Graded:** only bets with every leg identified.
+- **Void:** only once every leg has settled.
+- **Unreadable rows** are skipped and counted, never stopping the run.
+- **Unchanged:** the shadow grading, markouts and stage are untouched by
+  these rules.
+
+## Amendment 2026-10-24: own bets graded only once every leg settles (see `my_bets_spec.md`, amendment 2026-10-24)
+
+- **Any non-yes/no leg** makes the bet `void_leg`, out of the net.
+- **The line** counts `open past due` and shows no dollars when nothing has
+  settled.
+- **The own-bets step runs in its own error guard,** so the shadow grading
+  always completes.

@@ -1397,3 +1397,192 @@ approved the harness itself, to merge after the result was reviewed.
     pre-registration on later data.
 
   No edge is claimed.
+
+## 2026-10-22: logging your own bets (`sports_edge/mybet.py`), record-only
+
+- **Spec `251e475`.**
+  - Covers `my_bets_spec.md`, plus amendments to the grader spec and the
+    slate spec.
+  - **Kept separate:** never written to the shadow ledger, the pick bet log
+    or the stage line.
+- **VERIFIED (Gate 1):** 412 passed, 1 skipped. Twelve new tests cover:
+  - **Strict reading:** the `placed` line must appear exactly once, with
+    the cause named.
+  - **Identification:** every leg of the owner's real slip is identified,
+    including "Jokić" and SA pairing with SAS by name. "Total Points" is
+    never taken for "Points", and an ambiguous or missing market is not
+    identified.
+  - **Settling:** won, lost (even with a leg unidentified), void leg, open,
+    and can't settle. Each bet is settled once.
+  - **The morning line,** and nothing written to the shadow ledger or the
+    stage line.
+- **Mutants: 13 of 13 killed**, from clean caches, each restored
+  byte-identical.
+  - **First pass: 12 of 13.** A second `placed` line was still refused
+    downstream, but with a less useful message. The test now pins the
+    message, and the mutant is killed.
+- **VERIFIED (Gate 2):** `reality_run.py --with-live-data` on a copy of the
+  live database (taken at 15:35, between launchd runs). 0 live files
+  changed, no failure markers.
+  - **The real slip logged as a bet:** 5 of 9 legs were identified (the 5
+    moneylines).
+  - **The grader** printed the my-bets line, and the morning showed "Your
+    own bets: 1, settled 0, +$0.00. (1 can't settle)".
+- **OBSERVED (live Kalshi, 2026-10-22), why 4 legs were not identified:**
+  1. **HOU–SA:** that game has no sharp-book match yet (it is beyond the
+     24-hour listing), so the slip's `SA` can't pair with Kalshi's `SAS` by
+     name.
+  2. **Every NBA player market is listed twice,** with identical event and
+     market titles, under different contract terms:
+     - `KXNBAPTS` "NBA Player Points" (`BASKETBALLENTITYSTAT.pdf`);
+     - `KXNBAPTSPROT` "NBA Player Points Protected"
+       (`NBAENTITYSTATCOVERED.pdf`).
+
+     Two markets fit, so the rule refuses to choose (never guess). The
+     standard series matched the slip's price (Jokić 20+ at 74–75¢). The
+     protected one was thin (17¢ bid against 77¢ ask). **Owner decision
+     pending:** which series an unmarked slip leg means.
+- **NOT CHECKED:** a real settlement. No logged bet's games had finished.
+
+## 2026-10-23/24: own bets after two independent reviews (feat/mybet, held for owner review)
+
+Specs: `5e6e364` and `f1b9718` (amendments 2026-10-23 and 2026-10-24).
+Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
+
+- **Reviews, saved verbatim:**
+  - **First: REVISE** (`docs/reviews/2026-10-23_my_bets.md`). Two major
+    findings: a void leg was graded before the other legs settled, and the
+    record leaned toward losses.
+  - **Re-review: REVISE** (`docs/reviews/2026-10-23_my_bets_r2.md`). Two
+    major findings: a dateless slip could pair with a rematch of the same
+    teams, and void legs entered the net only when the bet lost.
+  - Both answered by the two amendments. The owner decided the Protected
+    rule on 2026-10-23: normal markets unless the slip says
+    `protection on`.
+- **The live gate found a gap the tests missed** (on `0eea781`, 23:31 PT):
+  - tonight's real slip, logged after its games, identified 0 of 6 legs;
+  - every NBA player leg was ambiguous, because Kalshi lists a normal and
+    a Protected twin.
+- **VERIFIED, Gate 1** (`44c68db`):
+  - suite 651 passed;
+  - mutants 9 of 9 killed after the first review, and 9 of 9 after the
+    re-review (each listed in the session report).
+- **VERIFIED, Gate 2** (`44c68db`, 2026-10-24 00:02–00:04 PT;
+  `scripts/reality_run.py --code <worktree>`). Each step: exit 0, 23 live
+  files hashed, 0 changed, no failure markers.
+  1. **Tonight's real 6-leg slip, logged after its games** (copy of the
+     live data): "Identified all 6 legs". It paired KXNBAGAME-26OCT23
+     DETMIA, HOUSAS, MINORL, NYKBOS, PORSAC and TORWAS, all normal-series
+     tickers (previously 0 of 6).
+  2. **A test NHL slip on open markets** (made up, never placed; 48 h
+     pairing copy): both legs identified, KXNHLGAME-26OCT24ANAPHI-PHI and
+     KXNHLGAME-26OCT24BUFWSH-WSH.
+  3. **The real grader on step 1's copy:** `my_bet_grades.csv` has
+     `lost,-20,6`. The line reads "your own bets: 1 logged; settled 1
+     (won 0, lost 1), -$20.00; void leg 0; open 0; can't settle 0".
+     Kalshi's results: White no, Edwards yes, Murray-Boyles no, Adebayo
+     no, Wembanyama yes, Kings no.
+- **PENDING:**
+  - the first bet logged at placement on `main`, and settled by the 03:30
+    nightly grader;
+  - the first void leg met in real data. `scalar` is the only non-yes/no
+    value the store keeps; a void reported any other way would show as
+    "open past due".
+
+## 2026-10-24: own bets after the third review (feat/mybet, held for owner review)
+
+- **Third review: APPROVE** (`docs/reviews/2026-10-24_my_bets_r3.md`). Its
+  eight minor findings are answered by spec `645d3d1` and code `59c4427`:
+  - the logging limit stated;
+  - the own-bets lines never stop another run;
+  - torn grade rows left out of the net;
+  - a failed step shown in the morning;
+  - separate guards for settling and for the report;
+  - the refusal names the rival game;
+  - codes compared as a superset;
+  - the missing tests.
+- **Correction to the entry above:** its step 3 quote was shortened. The
+  exact line ends `can't settle 0 (legs not identified)`, as quoted below.
+- **VERIFIED, Gate 1** (`59c4427`):
+  - suite 656 passed;
+  - 7 of 7 new mutants killed. One survived at first (NaN grade dollars),
+    so a test was added and it is now killed.
+- **VERIFIED, Gate 2** (`59c4427`, 2026-10-24 00:16–00:22 PT), output as
+  printed:
+  1. **Tonight's real slip, logged after its games,** with
+     `--with-live-data` and production settings:
+     ```
+     exit: 0
+     Logged your bet 2cf9a95f89bd: 6 legs · $20.00 pays $3,174.00 · payout's chance 0.63% · legs multiply to 0.58% · you pay about 9% more than the legs
+     Games paired: KXNBAGAME-26OCT23DETMIA, KXNBAGAME-26OCT23HOUSAS, KXNBAGAME-26OCT23MINORL, KXNBAGAME-26OCT23NYKBOS, KXNBAGAME-26OCT23PORSAC, KXNBAGAME-26OCT23TORWAS
+     Identified all 6 legs; it will settle from Kalshi results.
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     ```
+  2. **A test NHL slip on open markets** (made up, never placed):
+     - **Why a different copy:** tomorrow's NHL games are beyond the
+       production 24 h listing. So the copy used was one paired by the
+       snapshot wrapper with `ODDS_HORIZON_H=48` and `ODDS_DAILY_CREDITS=0`
+       (no priced check, 0 credits).
+     - **What ran unchanged:** `mybet` itself ran with production settings.
+     ```
+     exit: 0
+     Logged your bet 2da9d98ade90: 2 legs · $10.00 pays $35.00 · payout's chance 28.57% · legs multiply to 28.60% · you pay about 0% less than the legs
+     Games paired: KXNHLGAME-26OCT24ANAPHI, KXNHLGAME-26OCT24BUFWSH
+     Identified all 2 legs; it will settle from Kalshi results.
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     ```
+  3. **The real grader** (`run_grader.sh`) on step 1's copy:
+     ```
+     exit: 0
+     live files hashed: 23 before, 23 after; changed: 0
+     failure markers found: none
+     my_bet_grades.csv: 2cf9a95f89bd,lost,-20,6,2026-10-24T07:16:30.831Z
+     your own bets: 1 logged; settled 1 (won 0, lost 1), -$20.00; void leg 0; open 0; can't settle 0 (legs not identified)
+     ```
+- **PENDING:** as in the entry above.
+
+## 2026-10-24: own bets merged; the first own bet logged
+
+- **Owner approval** (2026-10-24, "approved"), after three independent
+  reviews (REVISE, REVISE, APPROVE).
+- **Merged** into `main` at `d94a414` at 00:24 PT, between live runs.
+- **VERIFIED, suite on `main` after the merge:** 656 passed.
+- **OBSERVED, Gate 2 after the merge** (the live checkout, copy of the live
+  data, 00:25 PT): `mybet` on the owner's real slip printed "Identified all
+  6 legs" and the same six paired games as on the branch. Exit 0, 23 live
+  files hashed, 0 changed, no failure markers.
+- **The first own bet in the live record:** `data/my_bets.csv`, bet
+  `5c964ba233ec`. It is the owner's 2026-10-23 6-leg NBA combo: $20 pays
+  $3,174, all 6 legs identified.
+  - **Logged after its games** (00:25 PT on 2026-10-24). It is recorded here
+    so that no reader takes it for a bet logged at placement. The third
+    review noted that late logging lets the person choose what to log;
+    this bet lost, and it was logged anyway.
+- **PENDING:**
+  - the 03:30 grader settling bet `5c964ba233ec`. Expected `lost, -20`,
+    from Kalshi's final results: White no, Edwards yes, Murray-Boyles no,
+    Adebayo no, Wembanyama yes, Kings no;
+  - the 08:00 morning line showing it;
+  - the first bet logged at placement;
+  - the first void leg met in real data.
+
+## 2026-10-24: job time limits and a GET deadline (fix/job-timeout)
+
+- **Why:** a snapshot hung from 3:38 to 9:27 AM PT reading a slow chunked Kalshi body; the 30 s socket timeout restarts with every byte (`sample`/`lsof`), so no alert fired. It was killed; the 9:30 run recovered.
+- **Change:** jobs run under `jobguard` (snapshot and grader 2,200 s, others 120 s); `net.https_get` gives up after 120 s per GET. No launchd change.
+- **VERIFIED, Gate 1:** 668 passed; 15 of 15 mutants killed (11 by behaviour tests, 4 only by the pins on the limit and deadline values).
+- **VERIFIED, Gate 2** (code `a6445e6`, 10:35 AM PT, real APIs, 0 of 26 live files changed each step): snapshot `SNAPSHOT OK tier=near`; Kalshi `/series` with a 2 s deadline gave up after 2.10 s; a snapshot with a 2 s limit was stopped and alerted with the reason.
+- **VERIFIED, grader catch-up** (11:00 AM PT, code `bb56c88`, copy of the live data, 0 live files changed): `GRADER OK` in 173 s under the 2,200 s limit (owner decision; 120 s had stopped it in the settlement sweep); it graded what last night missed: 38 calibration markets, 51 skipped `no_reference`, 1 own bet settled.
+- **PENDING:** the first real run stopped at a limit; the first real GET deadline hit.
+- **Merged** into `main` at `8a9f444`, 11:19 AM PT (lean review: MERGE). Suite on `main`: 668 passed. **VERIFIED, first live run:** launchd's 11:30 AM PT snapshot ran as `python -m sports_edge.jobguard sports_edge.snapshot`, `SNAPSHOT OK run=snapshot-20261024T183005Z-a654 tier=near`, slate alert OK, launchd exit 0.
+- **OBSERVED, unrelated:** the 11:00 AM PT live run (before the merge) failed on an Odds API `HTTP 429 CallerRateLimitExceeded` for `events americanfootball_ncaaf`, alerted, and recovered at 11:15. Cause NOT CHECKED.
+- **Lean review follow-ups, not done:** the backup's 120 s limit is unmeasured and shorter than its 600 s lock wait (time one real backup before installing it); the new error lines in `run_morning.sh` and `weekly_heartbeat.sh` have no test; `SPORTS_EDGE_JOB_LIMIT_S` would be read from `.env` without notice; `deadline_s`/`clock` in `net.https_get` exist only for tests.
+
+## 2026-10-25: snapshot and grader time limit 3,600 s (fix/snapshot-limit)
+
+- **Why:** on 2026-10-24 a daily run from empty folders was stopped at the 2,200 s limit (11:00 PM PT), and the settlement sweep alone took 572 s for a 16-hour window; a stopped daily is retried as a daily with a longer sweep.
+- **VERIFIED, Gate 1:** suite 668 passed; reverting the limit to 2,200 fails `test_the_two_limits` (pin).
+- **VERIFIED, Gate 2** (code `b457c28`, 12:03-12:48 AM PT, live snapshot job paused, `caffeinate -i`, empty folders, `ODDS_DAILY_CREDITS=0`, real APIs): `SNAPSHOT OK run=snapshot-20261025T070300Z-8974 tier=daily events=7854 markets=88530` in about 2,735 s, under 3,600 s; 0 of 28 live files changed; the job was restarted at 12:48:37 AM and launchd shows it loaded.
+- **PENDING:** the 3:00 AM live daily under the new limit, if merged before then.

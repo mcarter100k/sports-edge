@@ -132,16 +132,17 @@ def learned_series(store, sport_key):
         WHERE o.source = ? AND o.sport_key = ? ORDER BY 1""", [SOURCE, sport_key]).fetchall()]
 
 
-def pair_games(store, slip, series, now):
+def pair_games(store, slip, series, now, before=timedelta(0), any_status=False):
     """{game index: {team: (market ticker, source_event_id or None, ref_outcome or None)}},
-    only for games that pair with exactly one Kalshi game event of the given series."""
+    only for games that pair with exactly one Kalshi game event of the given series. before and any_status
+    widen the events considered (logging own bets after the games; docs/specs/my_bets_spec.md)."""
     rows = store.con.execute("""
         SELECT m.event_ticker, m.ticker, m.yes_sub_title, m.status, o.source_event_id, o.ref_outcome
         FROM markets m
         LEFT JOIN odds_matches o ON o.market_ticker = m.ticker AND o.source = ?
         WHERE m.competition_scope = 'Game' AND m.series_ticker IN (SELECT unnest(?))
           AND m.event_ticker IN (SELECT event_ticker FROM markets WHERE resolve_by > ? AND resolve_by <= ?)
-        ORDER BY m.ticker""", [SOURCE, series, to_db_ts(now), to_db_ts(now + PAIR_WINDOW)]).fetchall()
+        ORDER BY m.ticker""", [SOURCE, series, to_db_ts(now - before), to_db_ts(now + PAIR_WINDOW)]).fetchall()
     events = {}
     for ev, ticker, title, status, eid, outcome in rows:
         events.setdefault(ev, []).append((ticker, title, status, eid, outcome))
@@ -150,7 +151,7 @@ def pair_games(store, slip, series, now):
         found = []
         for ev, markets in events.items():
             teams = [m for m in markets if m[1] != "Tie"]
-            if len(teams) != 2 or len(markets) != 2 or any(m[2] != "active" for m in markets):
+            if len(teams) != 2 or len(markets) != 2 or (not any_status and any(m[2] != "active" for m in markets)):
                 continue
             for x, y in ((teams[0], teams[1]), (teams[1], teams[0])):
                 if team_fits(a, x[0], x[4]) and team_fits(b, y[0], y[4]) and \

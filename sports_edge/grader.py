@@ -6,7 +6,7 @@ import math
 import statistics
 import sys
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from . import bets, checks, config, ledger
 from .fees import fee_for_order
@@ -451,6 +451,119 @@ def paper_results(store, picks):
     return won, lost, void, open_, money, staked
 
 
+# The owner's own bets (docs/specs/my_bets_spec.md): record-only, never the shadow ledger or stage ---
+
+MY_BET_GRADE_HEADER = ["bet_id", "result", "dollars", "legs_settled", "graded_utc"]
+
+
+def _own_bets():
+    """Logged own bets, one per bet_id (the first row); a row without a bet_id stays on its own."""
+    out = {}
+    for n, b in enumerate(ledger.read_rows(config.my_bets_path())):
+        out.setdefault(b.get("bet_id") or f"row {n}", b)
+    return list(out.values())
+
+
+def _identified(b):
+    return all(b["leg_tickers"].split(" | "))
+
+
+def _money(b):
+    """(cost, payout) or None when the row can't be read."""
+    try:
+        return Decimal(b["cost"]), Decimal(b["payout"])
+    except (InvalidOperation, TypeError, ValueError, KeyError):
+        return None
+
+
+def _readable(b):
+    """Every needed field present, and both amounts finite numbers (my_bets_spec.md, amendment 2026-10-24)."""
+    if not all(isinstance(b.get(k), str) for k in ("bet_id", "leg_tickers", "cost", "payout")) or not b["bet_id"]:
+        return False
+    money = _money(b)
+    return bool(money) and all(x.is_finite() for x in money)
+
+
+OPEN_PAST_DUE = timedelta(days=3)
+
+
+def settle_my_bets(store, now):
+    """Settle each fully identified bet once, only when every leg has settled (my_bets_spec.md, amendment
+    2026-10-24): won when all yes; void_leg when any leg settled other than yes or no; otherwise lost. A bet with a
+    leg not identified is never graded; an unreadable row is skipped. Returns rows written."""
+    done = {r["bet_id"] for r in ledger.read_rows(config.my_bet_grades_path())}
+    pending = [b for b in _own_bets() if b["bet_id"] not in done and _readable(b) and _identified(b)]
+    tickers = sorted({t for b in pending for t in b["leg_tickers"].split(" | ")})
+    results = dict(store.con.execute(
+        "SELECT ticker, result FROM settlements WHERE ticker IN (SELECT unnest(?))", [tickers]).fetchall()) \
+        if tickers else {}
+    out = []
+    for b in pending:
+        got = [results.get(t) for t in b["leg_tickers"].split(" | ")]
+        cost, payout = _money(b)
+        if None in got:
+            continue                                   # open: a leg hasn't settled
+        if all(g == "yes" for g in got):
+            result, dollars = "won", payout - cost
+        elif any(g not in ("yes", "no") for g in got):
+            result, dollars = "void_leg", ""           # out of the net, whatever the other legs did
+        else:
+            result, dollars = "lost", -cost
+        out.append({"bet_id": b["bet_id"], "result": result, "dollars": dollars,
+                    "legs_settled": sum(1 for g in got if g is not None), "graded_utc": iso_z(now)})
+    ledger.append_rows(config.my_bet_grades_path(), MY_BET_GRADE_HEADER, out)
+    return len(out)
+
+
+def my_bets_summary():
+    """(logged, won, lost, void, can't settle, net dollars over won and lost, unreadable)."""
+    bets = _own_bets()
+    grades = {g["bet_id"]: g for g in ledger.read_rows(config.my_bet_grades_path()) if g.get("result")}
+    won = sum(1 for g in grades.values() if g["result"] == "won")
+    lost = sum(1 for g in grades.values() if g["result"] == "lost")
+    void = sum(1 for g in grades.values() if g["result"] == "void_leg")
+    unreadable = sum(1 for b in bets if not _readable(b))
+    stuck = sum(1 for b in bets if _readable(b) and b["bet_id"] not in grades and not _identified(b))
+    net = sum((d for d in (_finite(g.get("dollars")) for g in grades.values() if g["result"] in ("won", "lost"))
+               if d is not None), Decimal(0))
+    return len(bets), won, lost, void, stuck, net, unreadable
+
+
+def _finite(value):
+    """A finite Decimal, or None for a value that can't be read (a torn grade row)."""
+    try:
+        d = Decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return d if d.is_finite() else None
+
+
+def open_past_due(store, now):
+    """Open, fully identified bets whose markets all resolved more than 3 days ago."""
+    grades = {g["bet_id"] for g in ledger.read_rows(config.my_bet_grades_path())}
+    open_bets = [b for b in _own_bets() if _readable(b) and _identified(b) and b["bet_id"] not in grades]
+    n = 0
+    for b in open_bets:
+        legs = b["leg_tickers"].split(" | ")
+        due = store.con.execute("SELECT count(*), max(resolve_by) FROM markets WHERE ticker IN (SELECT unnest(?))",
+                                [legs]).fetchone()
+        if due[0] == len(set(legs)) and due[1] is not None and from_db_ts(due[1]) < now - OPEN_PAST_DUE:
+            n += 1
+    return n
+
+
+def my_bets_report(store=None, now=None):
+    logged, won, lost, void, stuck, net, unreadable = my_bets_summary()
+    if not logged:
+        return ["your own bets: none logged yet"]
+    money = f", {_dollars(net)}" if won + lost else ""         # no dollar figure from nothing settled (rule 8)
+    late = open_past_due(store, now) if store is not None else 0
+    return [f"your own bets: {logged} logged; settled {won + lost} (won {won}, lost {lost}){money}; "
+            f"void leg {void}; open {logged - won - lost - void - stuck - unreadable}"
+            + (f" ({late} past due)" if late else "") + f"; can't settle {stuck} (legs not identified)"
+            + (f"; unreadable {unreadable}" if unreadable else "")]
+
+
 def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
     client = client or KalshiClient()
     now = now_fn()
@@ -463,9 +576,21 @@ def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
             n_cal, cal_skips, settled_matched = calibrate(store, source, now)
             n_sh, sh_skips = grade_shadow(store, now)
             n_mk, mk_postponed = grade_markouts(store, now, source)
+            try:                  # own bets never stop the shadow grading (my_bets_spec.md, amendment 2026-10-24)
+                n_mine = settle_my_bets(store, now)
+            except Exception as exc:
+                n_mine = "error"
+                mine_lines = [f"your own bets: step FAILED ({type(exc).__name__}: {exc})"]
+            else:
+                try:              # rows already written stay counted if only the report fails
+                    mine_lines = my_bets_report(store, now)
+                except Exception as exc:
+                    n_mine = "error"
+                    mine_lines = [f"your own bets: report FAILED ({type(exc).__name__}: {exc})"]
             matched = store.con.execute(
                 "SELECT count(*) FROM odds_matches WHERE source = ?", [source]).fetchone()[0]
             summary.update({"calibration_graded": n_cal, "shadow_graded": n_sh, "markouts_measured": n_mk,
+                            "my_bets_settled": n_mine,
                             "matched_markets": matched, "matched_and_settled": settled_matched,
                             **{f"cal_skip_{k}": v for k, v in cal_skips.items()},
                             **{f"shadow_skip_{k}": v for k, v in sh_skips.items()}})
@@ -474,6 +599,7 @@ def run_grader(client=None, source="the-odds-api", now_fn=utcnow, out=print):
             lines += shadow_report()
             lines += markout_report(store, mk_postponed)
             lines += bets_report(store)
+            lines += mine_lines
         except BaseException as exc:
             summary["error"] = f"{type(exc).__name__}: {exc}"
             record_failure(store, run_id, JOB, now_fn(), summary)
