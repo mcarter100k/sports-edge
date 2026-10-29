@@ -1823,3 +1823,46 @@ review):
   - a failed run now records the count in its `job_runs` summary, and the empty-scan failure test asserts it;
   - the duplicate localhost test is folded into the existing one.
 - **VERIFIED, Gate 1:** suite passed (count in the commit message). **Mutation check:** removing both summary fields and the failure count fails 3 snapshot tests; restored, all pass.
+
+## 2026-10-28: everything merged into main (owner request)
+
+- **Correction first:** the 2026-10-23 entry "calibration study result accepted; harness merged (feat/harness-study)" said "merged".
+  - The branch was not merged into `main` until today (`c97ba4a`).
+  - On 2026-10-23 the result was accepted under the owner's delegation. The owner approved the merge directly today.
+- **Owner decisions** (Marquis Carter, in session, 2026-10-28 ~10:30 PM PT):
+  - `feat/alias-batch-1` (PROTECTED `config/team_aliases.json`): approve and merge.
+  - `feat/harness-study` (PROTECTED `research/harness.py`, registered `result.md`): approve and merge. This is the registry approval of study `2026-10-kalshi-calibration`.
+  - `feat/one-advice-path`: closed unmerged (tip `bf3bece`).
+  - `feat/plain-texts`: closed (tip `2e48c75`). Its uncommitted work is saved as `~/sports-edge-research/archive/plain-texts_uncommitted_2026-10-28.patch`.
+  - `proposal/college-scope`: closed locally (tip `3175593`). A copy remains on `origin`.
+- **Merged** (merge commits, all between live runs):
+
+  | Branch | Merge commit | Time (PT) |
+  |---|---|---|
+  | `feat/alias-batch-1` | `c395d8e` | 10:39 PM |
+  | `feat/slip-guard` | `2591643` | 10:42 PM |
+  | `docs/gap-plan` | `9b0095a` | 10:43 PM |
+  | `fix/kalshi-retry` | `b10488e` | 10:47 PM |
+  | `feat/harness-study` | `c97ba4a` | 11:15 PM |
+
+- **Reviews:** the owner's `/lean-review` command can only be started by the owner. For the two unprotected branches, an independent reviewer ran the same checklist read-only:
+  - `feat/slip-guard`: FIX FIRST, then MERGE. The fixes are in its entry.
+  - `fix/kalshi-retry`: FIX FIRST twice. It was merged after the second round's test-only blocker was fixed and the suite passed, the reviewer's stated condition.
+  - The protected branches carry their auditor reviews (alias r2 APPROVE; study r2–r4 APPROVE).
+- **VERIFIED, suites:** 719 passed on `main` after the first four merges; 757 passed after the last.
+- **VERIFIED, Gate 2 on `main`** (10:47 PM, real APIs, `ODDS_DAILY_CREDITS=0`, 0 of 44 live files changed):
+  - snapshot `kalshi_requests=2 kalshi_retries=0`, exit 0;
+  - `watch --once` on the owner's 6-leg slip, exit 0.
+- **VERIFIED, live:** the 11:00 PM launchd run was the first on the merged code. It printed `SNAPSHOT OK … kalshi_requests=2 kalshi_retries=0`, and so did the 11:15 run.
+- **VERIFIED, study:** rerun on the merged code (`25e602f`), 11:00–11:10 PM between live runs, 0 live files changed. The result was byte-identical (sha256 `b8f8cd29…`); `main` holds the same file.
+  - An earlier rerun (10:29–10:41) overlapped two live runs. Five live files changed: exactly the snapshot job's outputs, so the cause is INFERRED to be those runs. It is not counted.
+- **Aliases:** no Lakers or Clippers game was in tonight's 24-hour pairing window. The gate showed no regression (the same output as `main`). The pairing itself was verified on 2026-10-24.
+- **Process slips, recorded:**
+  - A merge commit on `feat/harness-study` (`ce39fb0`) briefly held conflict markers: the resolver refused, but the shell committed anyway. It was replaced by `25e602f` before any push.
+  - A first batch mutation check on the 74% threshold was beaten by a stale `.pyc`; see the slip-guard entry.
+- **PENDING:**
+  - the first live pairing of a Lakers or Clippers game (`KXNBAGAME-26OCT30LALGSW`, `-26OCT30LACMIN`);
+  - the first live `kalshi_retries>0` run that ends OK;
+  - the first live watch through a game, with a text on the owner's phone from `watch.py`;
+  - the grader's summary line showing retries (needs a change to protected `grader.py`, for owner review).
+- **Not done:** `origin/proposal/college-scope` still exists on GitHub.
