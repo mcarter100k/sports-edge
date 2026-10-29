@@ -81,6 +81,17 @@ fit the event's two teams, and **exactly one** event does.
   - **Once the box score exists but has no single such athlete:** the leg is
     `UNMATCHED player` and is not watched.
 
+**A value that can't be read is never a zero (rules 7–8).** The feed is
+unofficial, and its format can change. **The poll fails instead**
+(`POLL FAILED`, counted as below) when:
+- a box-score block lacks any of `MIN`, `PTS`, `3PT`, `REB` or `AST`;
+- an athlete's stat list has a different length from the column names;
+- a started or final game lacks a team's score;
+- any value is not a number.
+
+**A stat counts as zero only when** ESPN lists the player with an empty
+stat list. That means the player has not played yet, or did not play.
+
 ## States
 
 | State | Player leg | Moneyline leg |
@@ -105,14 +116,23 @@ price when the player never takes the court.
 
 **Every message starts with `SLIP WATCH · <h:mm AM/PM> PT`.** A message is
 sent:
-1. **At the start:** every leg with its state.
-2. **On a change:** each poll that moves any leg into HIT, LOST or DID NOT
-   PLAY, or any game into final. One message lists all the poll's changes
-   and the open legs.
+1. **At the start:** `Watching <k> of <n> legs`, then every leg with its
+   state.
+   - If no leg can be watched at the start, the run sends `WATCH FAILED:
+     no leg could be watched` and exits 1.
+2. **On a change:** each poll that moves any leg into HIT, LOST, DID NOT
+   PLAY or not watched (for example an `UNMATCHED player` found once the box
+   score exists), or any game into final. One message lists all the poll's
+   changes and the open legs.
 3. **When the ticket is decided:** the result and every leg. Then the
-   watch stops.
-4. **When it stops for any other reason:** the time limit, every watched
-   game final, or a failure.
+   watch stops. This applies even on the last poll before the time limit.
+4. **When it stops for any other reason:**
+   - `WATCH STOPPED: every watched game final`, exit 0. For example, a leg
+     whose game ended with no box score;
+   - `WATCH FAILED: no leg can be watched`, exit 1, once every leg has
+     become not watched;
+   - the time limit, exit 0;
+   - a failure.
 
 Nothing else is texted. The same state never produces a second message.
 With `--no-text`, or `SPORTS_EDGE_NOTIFY=log` (tests, reality runs), the
@@ -140,11 +160,9 @@ messages are printed and logged but not sent.
 
 ## Relation to the one-advice-path branch
 
-`feat/one-advice-path` (not merged) lets only `slate.py` call
-`imessage.send`. These messages report the owner's own open positions and
-never recommend anything. If that branch merges, its allow-list must add
-`watch.py`, or this tool's texts are refused. That is the owner's call at
-review.
+`feat/one-advice-path` would have let only `slate.py` call `imessage.send`.
+The owner closed it unmerged on 2026-10-28, so this tool's texts are
+allowed. They stay facts only.
 
 ## Tests (Gate 1)
 
@@ -179,6 +197,17 @@ The tests cover:
   - a certificate error stops it at once;
   - a text failure does not stop the watch;
   - the time limit.
+- **Unreadable data** (added after review, 2026-10-28):
+  - a missing `PTS` column, a missing score, or a value of `--` fails the
+    poll;
+  - it never yields `0/N` or a false `TICKET LOST`;
+  - five in a row stop the watch loudly.
+- **Silent endings** (added after review):
+  - a leg found UNMATCHED mid-watch is texted;
+  - losing the last watched leg fails loudly;
+  - every game final with a leg still waiting stops the watch;
+  - a ticket decided on the last poll before the time limit still sends
+    its result.
 - **Isolation:**
   - `--once` prints the board and sends nothing;
   - no file under `data/` is written.

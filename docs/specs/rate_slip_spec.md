@@ -151,22 +151,31 @@ or the combo line, and nothing is stored.
 **Where:** after the combo line and before the "Can't rate" line, in the
 slip's game order. Each game gets at most one line per warning kind.
 
+**What is fact and what is not:**
+- **Fact:** same-game legs are not independent.
+- **Not tested:** that starters rest late in a lopsided game, and so cost
+  player legs. It rests on one slip (N = 1). The line says so and does not
+  state it as fact. Same-team legs can just as well rise together with a
+  win.
+
 | Kind | When | Line |
 |---|---|---|
-| Win against players | the game has a moneyline leg and at least one player leg | `Warning: <A> vs <B>: "<team> to win" pulls against <k> player leg(s) in the same game. A win is likeliest as a blowout, and in a blowout the starters often rest late.` |
-| Player stack | the game has two or more player legs and no moneyline leg | `Warning: <A> vs <B>: <k> player legs share one game. A blowout would cut all their minutes at once.` |
-| Lopsided game | the game has at least one player leg, and the favourite's chance is 75% or more | `Warning: <A> vs <B>: <team> is about <p>% to win (<source>). If it turns into a blowout, the starters often rest late — <k> player leg(s) here.` |
+| Same game | the game has two or more legs | `Warning: <A> vs <B>: <k> legs ride on one game. The combo price treats them as independent; they are not.` |
+| Lopsided game | the game has at least one player leg, and the favourite's chance is 75% or more | `Warning: <A> vs <B>: <team> is about <p>% to win (<source>). In a lopsided game the starters may rest late, a pattern not yet tested.` |
 
 **The favourite's chance, first that applies:**
 1. **A moneyline leg on the slip for that game.** Its price backs its team.
    The other team gets 100 − price.
    - Source text: `slip price`.
 2. **The latest stored Kalshi price** of the paired game (pairing as above).
-   - Each team gets the mid of its market's latest `price_snapshots` row,
-     at most 2 hours old.
+   - Each team gets the mid of its market's latest two-sided
+     `price_snapshots` row, at most 2 hours old.
+   - Two-sided means `yes_bid > 0`, `yes_ask < 1` and `yes_bid ≤ yes_ask`,
+     as in `shadow.py`. A one-sided quote such as bid 0 / ask 0.30 would read
+     as a false 15% / 85%.
    - Source text: `Kalshi price`.
 3. **Otherwise the check is not run,** and the line says so (rule 8):
-   `Note: <A> vs <B>: blowout risk not checked (<reason>).`
+   `Note: <A> vs <B>: lopsided-game check not run (<reason>).`
    - Reasons: `game not paired`, or `no recent Kalshi price`.
 
 **The 75% threshold** is roughly a 7-point NBA favourite. It is a starting
@@ -175,13 +184,19 @@ log under the tag `same_game_blowout` until 20 or more games say whether
 it holds.
 
 **Tests (Gate 1):**
-- the owner's 2026-10-28 Lakers–Clippers slip gives the "win against
-  players" warning and the "lopsided game" warning, with the source
-  `slip price`;
-- a two-player-leg game gives the "player stack" warning;
-- a lopsided game with no moneyline leg uses the stored Kalshi price, or
-  prints the "not checked" note when the price is older than 2 hours or the
-  game is not paired;
+- the owner's 2026-10-28 Lakers–Clippers slip gives the "same game" warning
+  and the "lopsided game" warning, with the source `slip price`;
+- a lopsided game with no moneyline leg uses the stored Kalshi price;
+- it prints the "not run" note when:
+  - the price is older than 2 hours;
+  - the quote is one-sided;
+  - the game is not paired;
 - a 74% favourite gives no lopsided warning; 75% does;
-- a slip whose games each have one leg prints no warning;
-- grades, the markup line and the combo line are unchanged by warnings.
+- a slip whose legs are all moneylines in different games prints no warning;
+- every grade, the markup line and the combo line read the same as with no
+  warnings.
+
+**Revised 2026-10-28 after review, before merge:**
+- the first draft said "a win is likeliest as a blowout" as fact, and
+  printed two near-identical lines for one game;
+- it also read one-sided quotes.
