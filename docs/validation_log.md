@@ -1565,3 +1565,10 @@ review):
 
 - **Cold start: NOT PASSED.** 11:00 PM PT, live snapshot job paused, `caffeinate -i`, empty folders: the run was stopped at the 2,200 s job limit inside the settlement sweep (a 26-hour first sweep; 74,731 settled markets took 572 s for a 16-hour window on its own, measured 11:38 PM). The job was restarted at 11:37 PM and launchd shows it loaded.
 - **VERIFIED, on a copy of the live data** (11:47 PM PT, between live runs, `ODDS_DAILY_CREDITS=0 ODDS_INTERVAL_MIN=0`, 0 of 26 live files changed each run): the branch paired `KXNBAGAME-26OCT25LACOKC` (`-LAC -> Los Angeles Clippers`, `-OKC -> Oklahoma City Thunder`) and `KXNBAGAME-26OCT25LALUTA` (`-LAL -> Los Angeles Lakers`, `-UTA -> Utah Jazz`): `matches_added=4 events_matched=29`. `main` on the same data: `matches_added=0 events_matched=27`.
+
+## 2026-10-25: snapshot and grader time limit 3,600 s (fix/snapshot-limit)
+
+- **Why:** on 2026-10-24 a daily run from empty folders was stopped at the 2,200 s limit (11:00 PM PT), and the settlement sweep alone took 572 s for a 16-hour window; a stopped daily is retried as a daily with a longer sweep.
+- **VERIFIED, Gate 1:** suite 668 passed; reverting the limit to 2,200 fails `test_the_two_limits` (pin).
+- **VERIFIED, Gate 2** (code `b457c28`, 12:03-12:48 AM PT, live snapshot job paused, `caffeinate -i`, empty folders, `ODDS_DAILY_CREDITS=0`, real APIs): `SNAPSHOT OK run=snapshot-20261025T070300Z-8974 tier=daily events=7854 markets=88530` in about 2,735 s, under 3,600 s; 0 of 28 live files changed; the job was restarted at 12:48:37 AM and launchd shows it loaded.
+- **PENDING:** the 3:00 AM live daily under the new limit, if merged before then.
