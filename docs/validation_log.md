@@ -1418,6 +1418,11 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
 - **VERIFIED, Gate 1** (code `d529843`): suite 673 passed in 70 s; 21 of 21 client tests pass without the `integration` markers. New test `test_a_cut_off_response_retried_once_ends_ok_and_counts_one_retry` (real localhost socket, broken once: OK, `retries == 1`, `requests == 2`). Replacing `self.retries += 1` with `pass` fails it and the always-broken localhost test (now pinned at `retries == 5`); counting the last attempt too fails the always-broken test (`assert 6 == 5`). Restored, 21 of 21 pass.
 - **VERIFIED, Gate 2** (code `454d58b`, 10:38 PM PT 2026-10-28, between live runs, copy of the live data, `ODDS_DAILY_CREDITS=0 ODDS_INTERVAL_MIN=0`, real Kalshi API): `SNAPSHOT OK run=snapshot-20261029T053856Z-674b` printed `kalshi_requests=2 kalshi_retries=0`; exit 0; 0 of 44 live files changed; no failure markers.
 - **Follow-up for owner review:** the `GRADER OK` line does not show retries yet, because `grader.py` is protected.
-- **PENDING:** first live run with kalshi_retries>0 that ends OK.
+- **PENDING:** first live run with kalshi_retries>0 that ends OK. Found by `grep -E 'SNAPSHOT OK.*kalshi_retries=[1-9]' logs/snapshot_*.log` (snapshot only: the grader does not print it yet).
 - **NOT CHECKED:** a real broken response from Kalshi; it can't be caused on demand, so the failure path is shown on a real local socket.
 - **Observed on the way:** the grader on today's data took about 17 minutes, under the 3,600 s limit.
+- **Second review (same independent reviewer, 2026-10-28 ~10:50 PM PT): FIX FIRST.** One blocker: no test failed when the snapshot's `kalshi_retries` field was removed, and that field is the only way to clear the PENDING item above. Fixed (`c932300` spec, then code and tests):
+  - the daily and exchange-closed snapshot tests set the fake client's count to 3 and assert it in the output;
+  - a failed run now records the count in its `job_runs` summary, and the empty-scan failure test asserts it;
+  - the duplicate localhost test is folded into the existing one.
+- **VERIFIED, Gate 1:** suite passed (count in the commit message). **Mutation check:** removing both summary fields and the failure count fails 3 snapshot tests; restored, all pass.

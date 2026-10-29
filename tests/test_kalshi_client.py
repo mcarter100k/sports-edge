@@ -234,7 +234,7 @@ def test_a_real_cut_off_response_is_retried_and_recovers():
     try:
         c = KalshiClient(base_url=f"http://127.0.0.1:{server.server_address[1]}", max_rps=1000, sleep=lambda s: None)
         assert c.get("/series") == {"series": []}
-        assert server.hits == 2
+        assert server.hits == 2 and c.retries == 1 and c.requests == 2
     finally:
         server.shutdown()
         server.server_close()
@@ -252,14 +252,3 @@ def test_a_real_cut_off_response_every_time_ends_in_kalshi_error():
         server.shutdown()
         server.server_close()
 
-
-def test_a_cut_off_response_retried_once_ends_ok_and_counts_one_retry():
-    server = cut_off_server(broken=1)
-    try:
-        c = KalshiClient(base_url=f"http://127.0.0.1:{server.server_address[1]}", max_rps=1000, sleep=lambda s: None)
-        assert c.retries == 0
-        assert c.get("/series") == {"series": []}
-        assert c.retries == 1 and c.requests == 2
-    finally:
-        server.shutdown()
-        server.server_close()

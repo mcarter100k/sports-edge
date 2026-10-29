@@ -285,6 +285,7 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
             summary["kalshi_retries"] = client.retries
         except BaseException as exc:
             summary["error"] = f"{type(exc).__name__}: {exc}"
+            summary.setdefault("kalshi_retries", client.retries)     # a run that recovered, then died
             record_failure(store, run_id, JOB, now_fn(), summary)
             raise
         store.job_event(run_id, JOB, "finish", now_fn(), "ok", summary)
