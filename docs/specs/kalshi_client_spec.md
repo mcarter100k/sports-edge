@@ -100,6 +100,10 @@ retryable exception (connection, timeout or broken response) was caught and
 a retry followed. It does not count a 429 or 5xx status, and it does not
 count the exception on the last attempt, after which no retry follows. The
 snapshot prints it as `kalshi_retries`, next to `kalshi_requests`, in its
-summary line. The grader's summary does not show it yet: `grader.py` is
-protected, so that change waits for owner review. The odds client is unchanged: it has no retries, and any error there
-already fails the run loudly.
+summary line, and a failed run records it in its `job_runs` summary too
+(the run that recovered some retries and then died is the one that matters
+most). The grader's summary does not show it yet: `grader.py` is protected,
+so that change waits for owner review.
+
+The odds client is unchanged: it has no retries, and any error there already
+fails the run loudly.
