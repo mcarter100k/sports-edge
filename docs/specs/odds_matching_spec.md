@@ -218,7 +218,7 @@ followed leagues failed rule 5 on names alone:
 - **`UNMATCHED-REFERENCE` lines** (in-scope reference games with no Kalshi
   game) are unchanged.
 
-## Amendment 2026-10-22: Kalshi placeholder times (rule version `match_v3`, PROPOSED, owner review)
+## Amendment 2026-10-22: Kalshi placeholder times (rule version `match_v3`, owner-approved, merged 2026-10-23)
 
 **The problem (observed 2026-10-22).** Kalshi lists many Saturday college
 games with a placeholder time. For example, KXNCAAFGAME-26OCT23AKRKENT has
@@ -314,3 +314,25 @@ Earlier rows keep `match_v2`; nothing is relabelled.
   not detected.
 - **The listing window:** a placeholder event 20 h past its `resolve_by`
   is still a candidate; a non-placeholder event is not.
+
+## Amendment 2026-10-22, revised 2026-10-23: alias batch 1, NBA shared-city teams (owner-approved 2026-10-24)
+
+**The aliases** (`config/team_aliases.json`, Basketball tag only):
+
+| Kalshi title | Reference name | Row behind it |
+|---|---|---|
+| `Los Angeles C` | `Los Angeles Clippers` | `unmatched` row 2026-10-22T23:45:06Z (4:45 PM PT, Oct 22), KXNBAGAME-26OCT23LACLAL, name_mismatch, in_window=5 |
+| `Los Angeles L` | `Los Angeles Lakers` | the same game and row |
+
+Kalshi uses these titles in every Lakers and Clippers game, so without them
+no game of either team passes rule 5. Each alias maps one exact title to one
+exact name inside its sport tag; rules 2–6 still apply.
+
+**Tags must not share a key.** `matching.py` merges a game's tag tables with
+`dict.update`, so a key shared by two tags with different targets would let
+the last tag win silently. `tests/test_alias_config.py` fails if that
+happens; a batch that needs a shared key (for example Football
+`Los Angeles C`) first changes `matching.py` under its own spec.
+
+**Rule version:** unchanged, `match_v3`. The history of this batch is in
+`docs/validation_log.md` (2026-10-23).
