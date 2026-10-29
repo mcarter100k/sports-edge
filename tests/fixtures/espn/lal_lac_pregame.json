@@ -1,0 +1,45 @@
+{
+ "header": {
+  "id": "401909892",
+  "competitions": [
+   {
+    "competitors": [
+     {
+      "homeAway": "home",
+      "winner": null,
+      "score": null,
+      "team": {
+       "abbreviation": "LAC",
+       "name": "Clippers",
+       "location": "LA",
+       "displayName": "LA Clippers"
+      }
+     },
+     {
+      "homeAway": "away",
+      "winner": null,
+      "score": null,
+      "team": {
+       "abbreviation": "LAL",
+       "name": "Lakers",
+       "location": "Los Angeles",
+       "displayName": "Los Angeles Lakers"
+      }
+     }
+    ],
+    "status": {
+     "type": {
+      "state": "pre",
+      "completed": false,
+      "shortDetail": "10/28 - 10:30 PM EDT"
+     },
+     "period": null,
+     "displayClock": null
+    }
+   }
+  ]
+ },
+ "boxscore": {
+  "players": []
+ }
+}
