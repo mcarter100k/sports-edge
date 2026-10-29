@@ -1408,6 +1408,7 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
 
 ## 2026-10-28: same-game warnings and a live slip watcher (feat/slip-guard)
 
+- **Correction first:** the first version passed the Gate 1 and Gate 2 below but still had five silent failures, found by an independent review. They were fixed before merge; see "Correction, after an independent review" below.
 - **Why:**
   - On 2026-10-28 the owner's Lakers–Clippers combo lost because the legs were tied to one game. "Lakers to win" came in as an 18-point blowout, so both teams' starters sat the 4th quarter, and Garland finished one point short.
   - The first hand-made live watcher that night failed silently on a certificate error.
@@ -1427,6 +1428,21 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
 - **PENDING:**
   - the first watch through a live game: a leg moving from live to HIT on the real feed, and a text reaching the owner's phone from `watch.py`;
   - the first lopsided warning from a stored Kalshi price on a real slip.
-- **For owner review:**
-  - `feat/one-advice-path` (not merged) would refuse `watch.py`'s texts unless its allow-list adds `watch.py`; see `slip_watch_spec.md`;
+- **Correction, after an independent review using the lean-review checklist (2026-10-28, ~10:30 PM PT): FIX FIRST.**
+  - The Gate 1 above did not test failures that don't raise. The first version had five such failures:
+    - a missing value read as zero. Probes: a renamed `PTS` column gave a false `TICKET LOST`; a missing score gave `final 0-0`.
+    - an unreadable value crashed the loop, and nothing was texted.
+    - a leg dropping to UNMATCHED mid-watch went untexted, and a watch with no legs left ran silently for 6 hours.
+    - the spec's "every watched game final" stop was missing.
+    - a result decided on the last poll before the time limit was never sent.
+  - The rater stated "a win is likeliest as a blowout" as fact (N = 1) and read one-sided quotes.
+  - **Fixed:** spec `e15ad4c`, code `47febfc`. The warnings now state only the known fact (same-game legs are not independent) and label the blowout pattern as untested.
+- **VERIFIED, Gate 1 after the fixes:**
+  - suite 708 passed;
+  - 8 new tests, one per review probe, **all 8 fail on the pre-fix `watch.py` (`369dec7`) and pass on `47febfc`**.
+- **VERIFIED, Gate 2 after the fixes** (code `47febfc`, 10:36 PM PT, real ESPN feed; each run had 0 of 44 live files changed and no failure markers):
+  - the 6-leg and Lakers slips read as before (Klay LOST 1/3; Garland LOST 14/15; Kessler HIT 9/6);
+  - the loop sent start, then `TICKET LOST ❌`, then exited 0;
+  - `rate` printed the two reworded warnings.
+- **Owner decisions 2026-10-28:** `feat/one-advice-path` closed unmerged, so `watch.py` may text. Remaining for review:
   - the 75% threshold is a starting value. Calls go in the judgment log under `same_game_blowout`.
