@@ -1399,6 +1399,173 @@ Code: `521244d` and `44c68db`. Main merged in at `0eea781`.
 - **OBSERVED, unrelated:** the 11:00 AM PT live run (before the merge) failed on an Odds API `HTTP 429 CallerRateLimitExceeded` for `events americanfootball_ncaaf`, alerted, and recovered at 11:15. Cause NOT CHECKED.
 - **Lean review follow-ups, not done:** the backup's 120 s limit is unmeasured and shorter than its 600 s lock wait (time one real backup before installing it); the new error lines in `run_morning.sh` and `weekly_heartbeat.sh` have no test; `SPORTS_EDGE_JOB_LIMIT_S` would be read from `.env` without notice; `deadline_s`/`clock` in `net.https_get` exist only for tests.
 
+## 2026-10-23/24: alias batch 1, NBA shared-city teams (feat/alias-batch-1)
+
+Lakers and Clippers games now pair; nothing else changed.
+
+- **The change:** two aliases in `config/team_aliases.json`, Basketball
+  only: `Los Angeles C` → `Los Angeles Clippers`, `Los Angeles L` →
+  `Los Angeles Lakers`. No Python file changed; the rule version stays
+  `match_v3`. Spec: the alias batch 1 amendment in
+  `docs/specs/odds_matching_spec.md`.
+
+2026-10-24 — Owner approval (Marquis Carter): reviewed the two aliases in config/team_aliases.json (Los Angeles C → Clippers, Los Angeles L → Lakers, NBA only). Approved.
+
+- **Owner delegation** (2026-10-23): the owner asked for this item to be
+  handled ("handle these 3 items"). That was not an owner review; the
+  approval above is. The review was done by the independent read-only
+  reviewer in fresh sessions:
+  - **First review: REVISE** (`docs/reviews/2026-10-23_alias_batch_1.md`).
+    Three major findings: the tests could not catch a swapped NFL alias;
+    the spec was out of date against `main` (`match_v3`); and the four NFL
+    aliases had no `UNMATCHED name_mismatch` line behind them, which the
+    spec requires before an alias is added.
+  - **Revision:** the NFL aliases were dropped and wait for that line;
+    `main` was merged in; the tests now pin the table and run the real
+    `match()` path in both home/away orders.
+  - **Re-review: APPROVE** (`docs/reviews/2026-10-23_alias_batch_1_r2.md`).
+    Its five minor findings were answered in `d779be2`. The most
+    important: Kalshi uses `Los Angeles C` / `Los Angeles L` in **every**
+    Clippers and Lakers game (OBSERVED: KXNBAGAME-26OCT25LACOKC,
+    KXNBAGAME-26OCT25LALUTA), so before this batch no Lakers or Clippers
+    game could pair.
+- **A process slip, recorded:** both first-round reviewers briefly saw
+  merge-conflict markers in their worktrees. A merge from `main` was
+  started while they were reading, then aborted within seconds. Each
+  review says its line numbers come from the clean branch state.
+
+**History moved from the spec amendment** (2026-10-24, after the lean
+review):
+
+- **Revision 2026-10-23.** The first draft also had four NFL aliases. They
+  had no `UNMATCHED name_mismatch` line behind them, which the spec
+  requires before any alias is added, so they were removed and wait for
+  that line.
+- **Match coverage before this batch** (OBSERVED,
+  `python -m research.studies.match_coverage` on a copy of the live data,
+  evening of 2026-10-22 PT; the exact minute was not recorded). Games
+  (distinct event tickers), for Kalshi series that had paired at least
+  once, before rule version `match_v3`:
+
+  | Series | Reference key | Matched games | Never matched | Rate | Reasons |
+  |---|---|---|---|---|---|
+  | KXEPLGAME | soccer_epl | 1 | 0 | 100% | |
+  | KXLALIGAGAME | soccer_spain_la_liga | 1 | 0 | 100% | |
+  | KXMLBGAME | baseball_mlb | 1 | 0 | 100% | |
+  | KXNBAGAME | basketball_nba | 13 | 1 | 93% | name_mismatch 1 |
+  | KXNCAAFGAME | americanfootball_ncaaf | 8 | 31 | 21% | name_mismatch 31 |
+  | KXNFLGAME | americanfootball_nfl | 1 | 0 | 100% | |
+  | KXNHLGAME | icehockey_nhl | 14 | 0 | 100% | |
+  | **Total** | | **39** | **32** | **55%** | |
+
+  There were also 280 Kalshi games in series that had never paired: 124
+  soccer, 79 basketball, 75 hockey and 2 football. Most are leagues
+  outside `config/slate_sports.json` (INFERRED from the series names; not
+  counted). The college football misses were not alias problems: they came
+  from Kalshi placeholder times, which `match_v3` (merged 2026-10-23)
+  handles.
+- **Shared-city titles observed** (`yes_sub_title` in `markets`, game
+  series only; OBSERVED 2026-10-23):
+
+  | Sport tag | Kalshi title | Seen in | Reference name | In this batch |
+  |---|---|---|---|---|
+  | Basketball | `Los Angeles C` | KXNBAGAME-26OCT23LACLAL | `Los Angeles Clippers` | yes |
+  | Basketball | `Los Angeles L` | KXNBAGAME-26OCT23LACLAL | `Los Angeles Lakers` | yes |
+  | Football | `Los Angeles C` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Chargers` | no: no UNMATCHED line yet |
+  | Football | `Los Angeles R` | KXNFLGAME-26NOV01LACLAR | `Los Angeles Rams` | no: no UNMATCHED line yet |
+  | Football | `New York G` | KXNFLGAME-26OCT25NYGHOU | `New York Giants` | no: no UNMATCHED line yet |
+  | Football | `New York J` | KXNFLGAME-26NOV01LVNYJ | `New York Jets` | no: no UNMATCHED line yet |
+
+- **The NBA reference names were observed,** not assumed, in The Odds API
+  `/v4/sports/basketball_nba/events` on 2026-10-22 (`x-requests-last: 0`,
+  no credits). OBSERVED; the listing itself was not saved, because
+  `reference_events` stores only matched games.
+- **Not in this batch:** the NFL titles above and the MLB shared-city
+  titles (`Chicago C`, `Chicago WS`, `Los Angeles A`, `Los Angeles D`,
+  `New York M`, `New York Y`). Each waits for an `UNMATCHED name_mismatch`
+  line. Until then those games are refused, never compared.
+
+**Gates before the lean review** (on the branch before `main` moved on):
+
+- **VERIFIED, Gate 1:**
+  - 6 alias tests.
+  - 5 of 5 mutants of the alias file killed, each by at least two tests:
+    C/L swapped, an alias removed, a Football `Los Angeles C` added, the
+    Basketball `Los Angeles C` retargeted to the Chargers, an unnecessary
+    alias added. (The lean review noted that the table pin catches every
+    edit, so this count mostly measures the pin; the recount below
+    separates the two.)
+  - Suite on the branch with `main` merged: 628 passed.
+- **VERIFIED, Gate 2** (`run_snapshot.sh` through `scripts/reality_run.py`
+  on empty folders, production horizon, `ODDS_DAILY_CREDITS=0`,
+  2:03–2:10 PM PT, 2026-10-23):
+  - **Branch:** `SNAPSHOT OK tier=daily matches_added=111
+    match_conflicts=0 events_matched=53`. KXNBAGAME-26OCT23LACLAL paired:
+    `-LAC -> Los Angeles Clippers`, `-LAL -> Los Angeles Lakers`.
+  - **`main` (the control):** `events_matched=52`, with
+    KXNBAGAME-26OCT23LACLAL refused as `name_mismatch` (in_window=11).
+  - Both: 0 ambiguous, 0 match conflicts, `match_v3`, odds calls `events`
+    8 and `sports` 1 for 0 credits, `checks_due=0`, 21 live files hashed
+    and 0 changed, no failure markers.
+
+**Lean review: FIX FIRST** (2026-10-24). Findings answered on the branch:
+the owner approval above; `main` merged in with both log entries kept; the
+spec amendment cut to the aliases, the shared-key rule and the rule
+version, with its history moved here; the cross-sport test deleted (its
+cases were covered by the table pin, the LA game test and
+`test_unpolled_sport_is_not_reported_unmatched`); `tests/test_alias_config.py`
+loads the alias file through `real_aliases()`, which reads it the way
+`odds_step.py` does; the Pacific time added to the cited row; this entry
+opened with what changed.
+
+- **PENDING:**
+  - the first live run on `main` pairing a Lakers or Clippers game
+    (Clippers at Oklahoma City and Lakers at Utah, 2026-10-25);
+  - odds credits: compare credits used on 2026-10-25 with a comparable
+    day. Newly paired games join the check-slot clusters
+    (`sports_edge/checks.py`, `clusters`); a Lakers or Clippers game alone
+    in its 30-minute slot adds a slot, up to +1 credit a day on the free
+    plan (budget 15) or +2 on the paid plan (INFERRED; not measured,
+    because Gate 2 ran with `ODDS_DAILY_CREDITS=0` and `checks_due=0`);
+  - the NFL titles (`Los Angeles C`/`R`, `New York G`/`J`), each after its
+    game logs an `UNMATCHED name_mismatch` line; the Giants game on
+    2026-10-25 is the first expected.
+
+**Gates on the merge commit `6622eff`** (2026-10-24, after the lean
+review):
+
+- **VERIFIED, Gate 1:** suite 661 passed. That is the 662 the lean review
+  expected, less the one deleted cross-sport test.
+- **Mutants recounted** (the alias file, in a scratch copy, 2026-10-24):
+  each was caught by the table pin and by one behaviour test besides it.
+  - C/L swapped, `Los Angeles L` removed, Basketball `Los Angeles C`
+    retargeted to the Chargers: the LA game `match()` test.
+  - A Football `Los Angeles C` added: the shared-key test.
+  - An unnecessary alias added: the each-alias-is-needed test.
+- **Gate 2: NOT PASSED.** `scripts/reality_run.py --code <worktree> --
+  env ODDS_DAILY_CREDITS=0 scripts/run_snapshot.sh`, started 12:55 AM PT:
+  - the command exited 1 with no stdout or stderr. Its temporary folder
+    was removed, so the cause is NOT CHECKED;
+  - the live data check reported 5 changed files (`sports_edge.duckdb`,
+    the snapshot and slate alert day logs, `state/health.json`, the iCloud
+    `sheet.txt`). All five were last written at 1:15:14 AM PT, the time of
+    the live launchd run `snapshot-20261024T081506Z-3ed5` (OBSERVED). That
+    run wrote them, not the gate (INFERRED);
+  - the Mac went into idle sleep at 1:21:11 AM PT, during the run, and the
+    run ended at 1:26 AM PT in a maintenance wake (OBSERVED in
+    `pmset -g log`). That sleep cut the run short (INFERRED).
+- **Also seen:** the live snapshot launched at 3:38:54 AM PT, during a
+  maintenance wake, was still running at 9:21 AM PT. It had used 1.6 s of
+  CPU and was idle, and launchd had started no later snapshot (OBSERVED).
+  Left for the owner; not touched.
+- **PENDING:** Gate 2 on the merge commit, re-run with `--keep` while the
+  Mac is awake and between two live launchd runs.
+
+**Gate 2 on the merge commit `131cf32`** (2026-10-24, after `main` was merged in again; suite 673 passed):
+
+- **Cold start: NOT PASSED.** 11:00 PM PT, live snapshot job paused, `caffeinate -i`, empty folders: the run was stopped at the 2,200 s job limit inside the settlement sweep (a 26-hour first sweep; 74,731 settled markets took 572 s for a 16-hour window on its own, measured 11:38 PM). The job was restarted at 11:37 PM and launchd shows it loaded.
+- **VERIFIED, on a copy of the live data** (11:47 PM PT, between live runs, `ODDS_DAILY_CREDITS=0 ODDS_INTERVAL_MIN=0`, 0 of 26 live files changed each run): the branch paired `KXNBAGAME-26OCT25LACOKC` (`-LAC -> Los Angeles Clippers`, `-OKC -> Oklahoma City Thunder`) and `KXNBAGAME-26OCT25LALUTA` (`-LAL -> Los Angeles Lakers`, `-UTA -> Utah Jazz`): `matches_added=4 events_matched=29`. `main` on the same data: `matches_added=0 events_matched=27`.
+
 ## 2026-10-25: snapshot and grader time limit 3,600 s (fix/snapshot-limit)
 
 - **Why:** on 2026-10-24 a daily run from empty folders was stopped at the 2,200 s limit (11:00 PM PT), and the settlement sweep alone took 572 s for a 16-hour window; a stopped daily is retried as a daily with a longer sweep.
