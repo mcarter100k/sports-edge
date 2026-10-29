@@ -212,7 +212,8 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
         summary = {}
         try:
             if not client.exchange_active():
-                summary = {"tier": "exchange_closed", "kalshi_requests": client.requests}
+                summary = {"tier": "exchange_closed", "kalshi_requests": client.requests,
+                           "kalshi_retries": client.retries}
                 store.job_event(run_id, JOB, "finish", now_fn(), "exchange_closed", summary)
                 out(f"EXCHANGE CLOSED run={run_id}: Kalshi reports exchange_active=false "
                     f"(scheduled maintenance); nothing fetched, no alert")
@@ -281,8 +282,10 @@ def run_cycle(client=None, odds_source_factory=build_odds_source, now_fn=utcnow,
                                           set(checked), client.orderbook))
             summary["matched_by_sport"] = matched_by_sport(store, started)
             summary["kalshi_requests"] = client.requests
+            summary["kalshi_retries"] = client.retries
         except BaseException as exc:
             summary["error"] = f"{type(exc).__name__}: {exc}"
+            summary.setdefault("kalshi_retries", client.retries)     # a run that recovered, then died
             record_failure(store, run_id, JOB, now_fn(), summary)
             raise
         store.job_event(run_id, JOB, "finish", now_fn(), "ok", summary)

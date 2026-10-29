@@ -52,6 +52,7 @@ class FakeKalshi:
                 self.by_ticker.setdefault(ev["event_ticker"], ev)
         self.by_series = dict(by_series or {})
         self.requests = 0
+        self.retries = 0
         self.settled_since, self.ticker_requests, self.series_requests = [], [], []
         self.scanned = False
 

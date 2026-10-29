@@ -134,3 +134,69 @@ overround, edge or value).
 | 0 | a rating was printed, including "can't rate" |
 | 2 | the slip can't be read |
 | 1 | any other error |
+
+## Amendment 2026-10-28: same-game warnings (owner request)
+
+**Why:** on 2026-10-28 a combo with `LA Lakers to win` beside Reaves,
+Garland and Lopez legs from the same game lost the way such slips lose.
+The Lakers won by 18, both teams' starters sat the 4th quarter, and
+Garland finished one point short. The combo price treats legs as
+independent; same-game legs are not.
+
+**Display only.** A warning never changes a leg's grade, the markup line
+or the combo line, and nothing is stored.
+
+**Player leg:** any leg that is not a moneyline leg.
+
+**Where:** after the combo line and before the "Can't rate" line, in the
+slip's game order. Each game gets at most one line per warning kind.
+
+**What is fact and what is not:**
+- **Fact:** same-game legs are not independent.
+- **Not tested:** that starters rest late in a lopsided game, and so cost
+  player legs. It rests on one slip (N = 1). The line says so and does not
+  state it as fact. Same-team legs can just as well rise together with a
+  win.
+
+| Kind | When | Line |
+|---|---|---|
+| Same game | the game has two or more legs | `Warning: <A> vs <B>: <k> legs ride on one game. The combo price treats them as independent; they are not.` |
+| Lopsided game | the game has at least one player leg, and the favourite's chance is 75% or more | `Warning: <A> vs <B>: <team> is about <p>% to win (<source>). In a lopsided game the starters may rest late, a pattern not yet tested.` |
+
+**The favourite's chance, first that applies:**
+1. **A moneyline leg on the slip for that game.** Its price backs its team.
+   The other team gets 100 − price.
+   - Source text: `slip price`.
+2. **The latest stored Kalshi price** of the paired game (pairing as above).
+   - Each team gets the mid of its market's latest two-sided
+     `price_snapshots` row, at most 2 hours old.
+   - Two-sided means `yes_bid > 0`, `yes_ask < 1` and `yes_bid ≤ yes_ask`,
+     as in `shadow.py`. A one-sided quote such as bid 0 / ask 0.30 would read
+     as a false 15% / 85%.
+   - Source text: `Kalshi price`.
+3. **Otherwise the check is not run,** and the line says so (rule 8):
+   `Note: <A> vs <B>: lopsided-game check not run (<reason>).`
+   - Reasons: `game not paired`, or `no recent Kalshi price`.
+
+**The 75% threshold** is roughly a 7-point NBA favourite. It is a starting
+value, not tested evidence. Calls made with it go in the owner's judgment
+log under the tag `same_game_blowout` until 20 or more games say whether
+it holds.
+
+**Tests (Gate 1):**
+- the owner's 2026-10-28 Lakers–Clippers slip gives the "same game" warning
+  and the "lopsided game" warning, with the source `slip price`;
+- a lopsided game with no moneyline leg uses the stored Kalshi price;
+- it prints the "not run" note when:
+  - the price is older than 2 hours;
+  - the quote is one-sided;
+  - the game is not paired;
+- a 74% favourite gives no lopsided warning; 75% does;
+- a slip whose legs are all moneylines in different games prints no warning;
+- every grade, the markup line and the combo line read the same as with no
+  warnings.
+
+**Revised 2026-10-28 after review, before merge:**
+- the first draft said "a win is likeliest as a blowout" as fact, and
+  printed two near-identical lines for one game;
+- it also read one-sided quotes.
