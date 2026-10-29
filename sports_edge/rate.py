@@ -318,13 +318,15 @@ def combo_line(slip, fair):
 # Same-game warnings (amendment 2026-10-28). Display only: grades and combo lines never change. --------
 
 def kalshi_chances(store, tickers, now):
-    """{ticker: mid} from each market's latest snapshot at most PRICE_AGE old, or None if any is missing."""
+    """{ticker: mid} from each market's latest two-sided snapshot at most PRICE_AGE old (as in shadow.py),
+    or None if any is missing."""
     out = {}
     for ticker in tickers:
         row = store.con.execute("""
-            SELECT yes_bid, yes_ask FROM price_snapshots WHERE ticker = ? AND ts_utc >= ?
+            SELECT yes_bid, yes_ask FROM price_snapshots
+            WHERE ticker = ? AND ts_utc >= ? AND yes_bid > 0 AND yes_ask < 1 AND yes_bid <= yes_ask
             ORDER BY ts_utc DESC LIMIT 1""", [ticker, to_db_ts(now - PRICE_AGE)]).fetchone()
-        if not row or row[0] is None or row[1] is None:
+        if not row:
             return None
         out[ticker] = (Decimal(row[0]) + Decimal(row[1])) / 2
     return out
@@ -350,23 +352,18 @@ def warning_lines(store, slip, paired, now):
     lines = []
     for g, (a, b) in enumerate(slip.games):
         legs = [leg for leg in slip.legs if leg.game == g]
-        backed = [leg.team for leg in legs if leg.team is not None]
-        players = len(legs) - len(backed)
-        if not players:
+        game = f"{a} vs {b}"
+        if len(legs) > 1:
+            lines.append(f"Warning: {game}: {len(legs)} legs ride on one game. "
+                         "The combo price treats them as independent; they are not.")
+        if all(leg.team is not None for leg in legs):
             continue
-        game, these = f"{a} vs {b}", f"{players} player leg{'s' if players != 1 else ''}"
-        if backed:
-            lines.append(f'Warning: {game}: "{backed[0]} to win" pulls against {these} in the same game. '
-                         "A win is likeliest as a blowout, and in a blowout the starters often rest late.")
-        elif players > 1:
-            lines.append(f"Warning: {game}: {players} player legs share one game. "
-                         "A blowout would cut all their minutes at once.")
         team, chance, source = favourite(store, slip, g, paired, now)
         if team is None:
-            lines.append(f"Note: {game}: blowout risk not checked ({source}).")
+            lines.append(f"Note: {game}: lopsided-game check not run ({source}).")
         elif chance >= LOPSIDED:
             lines.append(f"Warning: {game}: {team} is about {chance * 100:.0f}% to win ({source}). "
-                         f"If it turns into a blowout, the starters often rest late — {these} here.")
+                         "In a lopsided game the starters may rest late, a pattern not yet tested.")
     return lines
 
 

@@ -280,3 +280,68 @@ def test_the_real_scoreboard_parses():
     board = watch.espn_get(f"{watch.LEAGUES['NBA']}/scoreboard?dates=20261028")
     s = parse(slip(("LA Lakers vs LA Clippers", ["LA Lakers to win"])))
     assert watch.pair(s, board)[0] == {0: LAL}
+
+
+# Added after review (2026-10-28): unreadable data is a failed poll, never a zero; no silent endings ------------
+
+def without_column(summary, key):
+    s = copy.deepcopy(summary)
+    for group in s["boxscore"]["players"]:
+        block = group["statistics"][0]
+        i = block["names"].index(key)
+        block["names"] = block["names"][:i] + ["XX"] + block["names"][i + 1:]
+    return s
+
+
+def without_scores(summary):
+    s = copy.deepcopy(summary)
+    for c in s["header"]["competitions"][0]["competitors"]:
+        c.pop("score", None)
+    return s
+
+
+REAVES_10 = slip(("LA Lakers vs LA Clippers", ["Austin Reaves: 10+ points", "Darius Garland: 15+ points"]))
+
+
+@pytest.mark.parametrize("broken", [
+    lambda: final(without_column(Q4, "PTS")),                     # a renamed column must not read as 0 points
+    lambda: final(without_scores(Q4)),                            # a missing score must not read as 0-0
+    lambda: final(with_stat(Q4, "Darius Garland", "PTS", "--")),  # a non-number must not crash or read as 0
+])
+def test_unreadable_data_fails_the_poll_and_never_texts_a_false_result(broken):
+    code, out, sent = run(REAVES_10, Feed({LAL: [Q4] + [broken()] * 6}))
+    assert code == 1 and len([ln for ln in out if ln.startswith("POLL FAILED")]) == 5
+    assert sent[-1].splitlines()[1].startswith("WATCH FAILED: 5 polls in a row failed; stopped (")
+    assert not any("LOST" in m or "0/10" in m for m in sent)
+
+
+def test_unreadable_data_on_the_first_poll_fails_loudly():
+    code, out, sent = run(REAVES_10, Feed({LAL: [without_column(Q4, "REB")]}))
+    assert code == 1 and sent[-1].splitlines()[1] == "WATCH FAILED: first poll: PollFailed: box score lacks REB"
+
+
+def test_a_player_found_unmatched_once_the_box_score_exists_is_texted():
+    text = slip(("LA Lakers vs LA Clippers", ["Austin Reaves: 20+ points", "Nobody Atall: 10+ points"]))
+    code, _, sent = run(text, Feed({LAL: [PRE, Q4, final(Q4)]}))
+    assert sent[1].splitlines()[1] == "➖ Nobody Atall: 10+ points: not watched · UNMATCHED player"
+    assert sent[-1].splitlines()[1] == "TICKET LOST ❌"
+
+
+def test_losing_the_last_watched_leg_fails_loudly_instead_of_running_silently():
+    code, _, sent = run(slip(("LA Lakers vs LA Clippers", ["Nobody Atall: 10+ points"])), Feed({LAL: [PRE, Q4]}))
+    assert code == 1 and sent[-1].splitlines()[1] == "WATCH FAILED: no leg can be watched"
+
+
+def test_every_game_final_with_a_leg_still_waiting_stops_the_watch():
+    ended_empty = final(PRE)
+    for c, score in zip(ended_empty["header"]["competitions"][0]["competitors"], ("98", "104")):
+        c["score"] = score
+    code, _, sent = run(slip(("LA Lakers vs LA Clippers", ["Austin Reaves: 20+ points"])), Feed({LAL: [PRE, ended_empty]}))
+    assert code == 0 and sent[-1].splitlines()[1] == "WATCH STOPPED: every watched game final"
+    assert sent[-1].splitlines()[2] == "⏳ Austin Reaves: 20+ points: no box score yet"
+
+
+def test_a_ticket_decided_on_the_last_poll_before_the_time_limit_still_sends_its_result():
+    code, _, sent = run(LAKERS, Feed({LAL: [Q4, Q4, final(Q4)]}), max_hours=2 / 60, every=60)
+    assert code == 0 and sent[-1].splitlines()[1] == "TICKET LOST ❌"
+    assert not any("time limit" in m for m in sent)

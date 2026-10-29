@@ -23,6 +23,7 @@ from .timeutil import display_clock, display_date, utcnow
 LEAGUES = {"NBA": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"}
 PROP = re.compile(r"(?P<name>.+?):\s+(?P<need>\d+)\+\s+(?P<stat>points|threes|rebounds|assists)")
 STATS = {"points": "PTS", "threes": "3PT", "rebounds": "REB", "assists": "AST"}
+NEEDED = ("MIN",) + tuple(STATS.values())
 SOCKET_S = 30
 FAIL_LIMIT = 5
 MIN_EVERY = 15
@@ -73,16 +74,27 @@ def pair(slip, scoreboard):
 
 
 def read_game(summary):
+    """The game as read now. Anything that can't be read fails the poll; it is never taken as a zero."""
     comp = summary["header"]["competitions"][0]
+    state = comp["status"]["type"]["state"]
+    teams = []
+    for (abbr, name), c in zip(teams_of(comp), comp["competitors"]):
+        if c.get("score") in (None, "") and state != "pre":
+            raise PollFailed(f"no score for {abbr}")
+        teams.append((abbr, name, int(c.get("score") or 0)))
     players = {}
     for group in (summary.get("boxscore") or {}).get("players") or []:
         block = group["statistics"][0]
+        missing = [k for k in NEEDED if k not in block["names"]]
+        if missing:
+            raise PollFailed(f"box score lacks {', '.join(missing)}")
         for a in block["athletes"]:
+            stats = a.get("stats") or []
+            if stats and len(stats) != len(block["names"]):
+                raise PollFailed(f"stat line of {a['athlete']['displayName']} does not fit the columns")
             players.setdefault(normalize(a["athlete"]["displayName"]), []).append(
-                (dict(zip(block["names"], a.get("stats") or [])), bool(a.get("didNotPlay"))))
-    return {"state": comp["status"]["type"]["state"], "detail": comp["status"]["type"].get("shortDetail") or "",
-            "teams": [(abbr, name, int(c["score"]) if c.get("score") not in (None, "") else 0)
-                      for (abbr, name), c in zip(teams_of(comp), comp["competitors"])],
+                (dict(zip(block["names"], stats)), bool(a.get("didNotPlay"))))
+    return {"state": state, "detail": comp["status"]["type"].get("shortDetail") or "", "teams": teams,
             "players": players}
 
 
@@ -121,8 +133,10 @@ def legs_of(slip, unmatched):
 
 
 def stat_value(stats, key):
-    raw = stats.get(key) or "0"
-    return int(raw.split("-")[0]) if key == "3PT" else int(raw)
+    """Zero only for an empty stat line (not played yet, or did not play); a non-number raises ValueError."""
+    if not stats:
+        return 0
+    return int(stats[key].split("-")[0]) if key == "3PT" else int(stats[key])
 
 
 def evaluate(leg, game):
@@ -153,6 +167,20 @@ def evaluate(leg, game):
     if game["state"] == "post":
         return "LOST", detail + " · final"
     return "live", detail
+
+
+def update(legs, games):
+    """Move each open leg to its state now; return the legs that just became done or not watched."""
+    changes = []
+    for leg in legs:
+        if not leg.watched or leg.state in DONE:
+            continue
+        state, detail = evaluate(leg, games[leg.game])
+        if state != leg.state and (state in DONE or state == "not watched"):
+            changes.append(leg)
+        leg.watched = state != "not watched"
+        leg.state, leg.detail = state, detail
+    return changes
 
 
 def ticket(legs):
@@ -211,26 +239,12 @@ def watch(text, every=30, max_hours=6, day=None, texting=True, once=False,
         paired, unmatched = pair(slip, fetch(f"{base}/scoreboard?dates={ymd}"))
         legs = legs_of(slip, unmatched)
         games = {g: read_game(fetch(f"{base}/summary?event={eid}")) for g, eid in paired.items()}
+        update(legs, games)
     except Exception as exc:                                       # never a quiet failure (rules 7–8)
         tell([f"WATCH FAILED: first poll: {type(exc).__name__}: {exc}"])
         return 1
     for g, why in unmatched.items():
         out(f"UNMATCHED game {' vs '.join(slip.games[g])}: {why}")
-
-    def update():
-        changes = []
-        for leg in legs:
-            if not leg.watched or leg.state in DONE:
-                continue
-            state, detail = evaluate(leg, games[leg.game])
-            if state == "not watched":
-                leg.watched = False
-            if state != leg.state and state in DONE:
-                changes.append(leg)
-            leg.state, leg.detail = state, detail
-        return changes
-
-    update()
     if not any(leg.watched for leg in legs):
         tell(["WATCH FAILED: no leg could be watched"] + board(legs))
         return 1
@@ -238,18 +252,30 @@ def watch(text, every=30, max_hours=6, day=None, texting=True, once=False,
     if once:
         return 0
     final = {g for g, gm in games.items() if gm["state"] == "post"}
-    fails = 0
-    while clock() - started < timedelta(hours=max_hours):
+
+    def settle():
+        """An exit code once the watch must end (result sent, no leg left, every game final), else None."""
         result = ticket(legs)
         if result:
             tell([RESULT[result]] + board(legs))
             return 0
+        if not any(leg.watched for leg in legs):
+            tell(["WATCH FAILED: no leg can be watched"] + board(legs))
+            return 1
+        if final >= set(paired):
+            tell(["WATCH STOPPED: every watched game final"] + board(legs))
+            return 0
+        return None
+
+    fails, code = 0, settle()
+    while code is None and clock() - started < timedelta(hours=max_hours):
         sleep(every)
         try:
             for g, eid in paired.items():
                 if g not in final:
                     games[g] = read_game(fetch(f"{base}/summary?event={eid}"))
-        except Exception as exc:
+            changes = update(legs, games)
+        except Exception as exc:                                   # unreadable data is a failed poll, never a zero
             fails += 1
             out(f"POLL FAILED ({fails} in a row): {type(exc).__name__}: {exc}")
             if net.is_permanent(exc) or fails >= FAIL_LIMIT:
@@ -258,15 +284,15 @@ def watch(text, every=30, max_hours=6, day=None, texting=True, once=False,
                 return 1
             continue
         fails = 0
-        changes = update()
         ended = [g for g, gm in games.items() if gm["state"] == "post" and g not in final]
         final.update(ended)
-        if changes or ended:
-            if ticket(legs):
-                continue                                           # the result message says it all
+        if (changes or ended) and not ticket(legs) and any(leg.watched for leg in legs):
             tell([f"FINAL: {' · '.join(f'{a} {s}' for a, _, s in games[g]['teams'])}" for g in ended]
                  + [leg_line(leg) for leg in changes]
                  + ["OPEN:"] + [leg_line(leg) for leg in legs if leg.state in OPEN] + unwatched_note(legs))
+        code = settle()
+    if code is not None:
+        return code
     tell([f"WATCH STOPPED: time limit ({max_hours:g} h)"] + board(legs))
     return 0
 
