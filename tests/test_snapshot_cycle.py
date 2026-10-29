@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from decimal import Decimal as D
 
@@ -73,8 +74,11 @@ def daily_with_odds(client, **kw):
 def test_first_run_is_daily_and_records_every_sports_market_but_prices_only_matched():
     sers, pages = world()
     out, err, o, e = lines()
-    summary = run_cycle(FakeKalshi(sers, pages, NEAR_AT), lambda st: None, lambda: NEAR_AT, o, e)
+    fake = FakeKalshi(sers, pages, NEAR_AT)
+    fake.retries = 3                                       # the count a recovered run must show
+    summary = run_cycle(fake, lambda st: None, lambda: NEAR_AT, o, e)
     assert summary["tier"] == "daily"
+    assert any(m.startswith("SNAPSHOT OK") and " kalshi_retries=3 " in m + " " for m in out)
     with Store.open() as s:
         markets = {t for (t,) in s.con.execute("SELECT ticker FROM markets").fetchall()}
         assert "POL-1-A" not in markets and len(markets) == 2 + 2 + 3 + 1 + 2
@@ -88,9 +92,10 @@ def test_first_run_is_daily_and_records_every_sports_market_but_prices_only_matc
 def test_exchange_closed_writes_nothing_and_is_not_a_failure():
     sers, pages = world()
     fake = FakeKalshi(sers, pages, DAILY_AT, active=False)
+    fake.retries = 3
     out, err, o, e = lines()
     summary = run_cycle(fake, lambda st: None, lambda: DAILY_AT, o, e)
-    assert summary["tier"] == "exchange_closed" and not fake.scanned
+    assert summary["tier"] == "exchange_closed" and not fake.scanned and summary["kalshi_retries"] == 3
     assert out[0].startswith("EXCHANGE CLOSED")
     with Store.open() as s:
         assert counts(s, "SELECT count(*) FROM price_snapshots") == 0
@@ -111,10 +116,14 @@ def test_daily_catch_up_when_last_daily_is_old():
 
 def test_empty_scan_fails_and_is_recorded():
     sers, _ = world()
+    fake = FakeKalshi(sers, [[]], DAILY_AT)
+    fake.retries = 2
     with pytest.raises(ScanEmpty):
-        run_cycle(FakeKalshi(sers, [[]], DAILY_AT), lambda st: None, lambda: DAILY_AT, quiet, quiet)
+        run_cycle(fake, lambda st: None, lambda: DAILY_AT, quiet, quiet)
     with Store.open() as s:
         assert s.con.execute("SELECT status FROM job_runs WHERE phase='finish'").fetchall() == [("failed",)]
+        (summary,) = s.con.execute("SELECT summary FROM job_runs WHERE phase='finish'").fetchone()
+        assert json.loads(summary)["kalshi_retries"] == 2       # the failed run keeps its count
 
 
 def test_failure_mid_pagination_writes_no_snapshots():

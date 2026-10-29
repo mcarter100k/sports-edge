@@ -1,6 +1,9 @@
+import http.client
 import json
 import re
+import threading
 from decimal import Decimal
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -177,3 +180,75 @@ def test_orderbook_without_its_field_raises():
     c, _, _ = client([(200, {"orderbook": {}})])
     with pytest.raises(KalshiSchemaError):
         c.orderbook("T")
+
+
+# A broken HTTP response is retried (kalshi_client_spec.md, amendment 2026-10-25) --------------
+
+@pytest.mark.parametrize("error", [http.client.IncompleteRead(b'{"ser', 88), http.client.BadStatusLine("")])
+def test_a_broken_response_is_retried_then_succeeds(error):
+    calls = []
+
+    def broken_once(url, timeout):
+        calls.append(url)
+        if len(calls) == 1:
+            raise error
+        return 200, b'{"a": 1}'
+
+    sleeps = []
+    c = KalshiClient(base_url="https://e.test", max_rps=1000, transport=broken_once, sleep=sleeps.append)
+    assert c.get("/x") == {"a": 1} and len(calls) == 2 and 1 in sleeps
+
+
+class _CutOff(BaseHTTPRequestHandler):
+    """Sends a chunk header for 100 bytes, 12 bytes of it, then closes: the 2026-10-24 grader failure.
+    Requests after the first `broken` get a whole body."""
+    protocol_version = "HTTP/1.1"
+
+    def do_GET(self):
+        self.server.hits += 1
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        if self.server.hits <= self.server.broken:
+            self.wfile.write(b'64\r\n{"series": [')
+            self.wfile.flush()
+            self.close_connection = True
+            return
+        body = b'{"series": []}'
+        self.wfile.write(f"{len(body):x}\r\n".encode() + body + b"\r\n0\r\n\r\n")
+
+    def log_message(self, *args):
+        pass
+
+
+def cut_off_server(broken):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _CutOff)
+    server.hits, server.broken = 0, broken
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_a_real_cut_off_response_is_retried_and_recovers():
+    server = cut_off_server(broken=1)
+    try:
+        c = KalshiClient(base_url=f"http://127.0.0.1:{server.server_address[1]}", max_rps=1000, sleep=lambda s: None)
+        assert c.get("/series") == {"series": []}
+        assert server.hits == 2 and c.retries == 1 and c.requests == 2
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_real_cut_off_response_every_time_ends_in_kalshi_error():
+    server = cut_off_server(broken=99)
+    try:
+        c = KalshiClient(base_url=f"http://127.0.0.1:{server.server_address[1]}", max_rps=1000, sleep=lambda s: None)
+        with pytest.raises(KalshiError, match="after 6 attempts: IncompleteRead"):
+            c.get("/series")
+        assert server.hits == 6
+        assert c.retries == 5           # the sixth failure has no retry after it
+    finally:
+        server.shutdown()
+        server.server_close()
+
