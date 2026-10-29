@@ -62,6 +62,7 @@ class KalshiClient:
         self.clock = clock
         self._last = None
         self.requests = 0
+        self.retries = 0      # retryable exceptions caught with a retry to follow
 
     def _throttle(self):
         if self._last is not None:
@@ -86,6 +87,8 @@ class KalshiClient:
                 if net.is_permanent(exc):
                     raise KalshiError(f"GET {path} failed: {exc}") from exc
                 status, body, last_error = None, b"", f"{type(exc).__name__}: {exc}"
+                if attempt < len(RETRY_DELAYS):
+                    self.retries += 1
             if status == 200:
                 try:
                     return json.loads(body)

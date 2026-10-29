@@ -199,19 +199,9 @@ def test_a_broken_response_is_retried_then_succeeds(error):
     assert c.get("/x") == {"a": 1} and len(calls) == 2 and 1 in sleeps
 
 
-def test_a_response_broken_every_time_ends_in_kalshi_error_not_a_crash():
-    def always_broken(url, timeout):
-        raise http.client.IncompleteRead(b"", 100)
-
-    c = KalshiClient(base_url="https://e.test", max_rps=1000, transport=always_broken, sleep=lambda s: None)
-    with pytest.raises(KalshiError, match=r"after 6 attempts: IncompleteRead"):
-        c.get("/x")
-    assert c.requests == 6
-
-
 class _CutOff(BaseHTTPRequestHandler):
     """Sends a chunk header for 100 bytes, 12 bytes of it, then closes: the 2026-10-24 grader failure.
-    With `heal_after`, later requests get a whole body."""
+    Requests after the first `broken` get a whole body."""
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
@@ -239,7 +229,6 @@ def cut_off_server(broken):
     return server
 
 
-@pytest.mark.integration   # localhost only; the marker lets the test open a socket
 def test_a_real_cut_off_response_is_retried_and_recovers():
     server = cut_off_server(broken=1)
     try:
@@ -251,7 +240,6 @@ def test_a_real_cut_off_response_is_retried_and_recovers():
         server.server_close()
 
 
-@pytest.mark.integration
 def test_a_real_cut_off_response_every_time_ends_in_kalshi_error():
     server = cut_off_server(broken=99)
     try:
@@ -259,6 +247,19 @@ def test_a_real_cut_off_response_every_time_ends_in_kalshi_error():
         with pytest.raises(KalshiError, match="after 6 attempts: IncompleteRead"):
             c.get("/series")
         assert server.hits == 6
+        assert c.retries == 5           # the sixth failure has no retry after it
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_cut_off_response_retried_once_ends_ok_and_counts_one_retry():
+    server = cut_off_server(broken=1)
+    try:
+        c = KalshiClient(base_url=f"http://127.0.0.1:{server.server_address[1]}", max_rps=1000, sleep=lambda s: None)
+        assert c.retries == 0
+        assert c.get("/series") == {"series": []}
+        assert c.retries == 1 and c.requests == 2
     finally:
         server.shutdown()
         server.server_close()
