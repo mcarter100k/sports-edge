@@ -240,13 +240,16 @@ def test_missed_check_on_a_failing_system_says_dont_bet(tmp_path):
     assert alert(CHECK_AT + timedelta(minutes=4)) == []
 
 
-def test_checked_without_gaps_sends_no_text(tmp_path):
+def test_checked_without_gaps_sends_no_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("ODDS_API_KEY", "k")
     fee_table(tmp_path)
     sers, pages = world(cheap=False)
     run_at(DAILY_AT, sers, pages)
     run_at(CHECK_AT, sers, pages)
     health.record_success("snapshot", CHECK_AT)
     assert alert(CHECK_AT + timedelta(minutes=1)) == []
+    assert len(slate.load_sent()) == 1                     # the check group was processed, not skipped
+    assert "none (checked, no price gaps of 3¢ or more)" in (config.sheet_dir() / "sheet.txt").read_text()
     assert alert(CHECK_AT + timedelta(minutes=3)) == []
 
 

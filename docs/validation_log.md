@@ -1866,3 +1866,20 @@ review):
   - the first live watch through a game, with a text on the owner's phone from `watch.py`;
   - the grader's summary line showing retries (needs a change to protected `grader.py`, for owner review).
 - **Not done:** `origin/proposal/college-scope` still exists on GitHub.
+
+## 2026-10-31 — `feat/quiet-no-gaps`: stop texting "checked, no price gaps"
+
+- **Owner request (9:58 AM PT):** stop the per-check text "<slot>: checked, no price gaps · prices N min old"; he found it had no value.
+- **Change:** `sports_edge/slate.py` no longer adds that text (and drops the unused `age`). The spec row and rule 6 in `docs/specs/slate_alerts_spec.md` are updated. Pick texts, every "Don't bet now" text, missed-check texts, the sheet and the morning brief are unchanged.
+- **Rule 8 trade-off, owner decision on record:** a scheduler that stops firing is now silent until the next morning brief ("prices not updating") or the weekly heartbeat shortfall. No wrong bet can follow from this (no pick text means no bet), only a missed day of data.
+- **Review:** independent read-only reviewer, `/lean-review` checklist: FIX FIRST (a false spec line about the sheet; the test asserted only silence). Both fixed:
+  - spec rule 6 now makes no sheet claim;
+  - the test also asserts the sent-state key was written and the sheet shows `none (checked, no price gaps of 3¢ or more)`.
+  - The reviewer's skip-all-groups mutant is equivalent for that one scenario (both paths record the key and send nothing). The rest of `test_slate.py` catches it: 15 failed.
+  - Deferred to a separate branch (existing bug, not from this change): the sheet's board says "checked" even for a game that was fetched but not compared.
+- **VERIFIED, Gate 1:** 757 passed. Mutation: putting the text back makes `test_checked_without_gaps_sends_no_text` fail; reverted, `__pycache__` cleared, and it passes.
+- **VERIFIED, Gate 2** (9:35 AM PT, copy of live data, `SPORTS_EDGE_NOTIFY=log`, 0 of 56 live files changed in each run):
+  - `main` code: `SLATE ALERT OK messages=1 groups=2`, logged `9:55 AM PT · College football 2, NHL 2: checked, no price gaps · prices 4 min old`;
+  - branch code: `SLATE ALERT OK messages=0 groups=2`, nothing logged.
+- **PENDING:** the first live launchd cycle on the merged code with a compared slot and no text sent.
+- **Cleared PENDING (2026-10-28 list):** "the first live watch through a game, with a text on the owner's phone from `watch.py`". `logs/imessage.log` shows `watch.py` texts on 2026-10-30 at 3:28, 5:10, 5:15, 6:02 and 6:40 PM PT, the last being `TICKET LOST ❌` after the final.

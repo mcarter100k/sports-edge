@@ -182,7 +182,7 @@ Practice · 0 of 100 games
 | Odds not configured | Once per day: `Don't bet today: prices not checked (odds not set up).` |
 | `no_credits` | Once per day, at the first such cluster: `Out of odds credits today: N later time slots not checked — don't bet them.` |
 | `no_price` | `<games>: no sharp price available, not checked.` |
-| Checked, no rows | No text (owner, 2026-10-31: the per-check "no price gaps" text had no value to him). The sheet and the morning brief still show the check; failures still text. |
+| Checked, no rows | No text (owner, 2026-10-31: the per-check "no price gaps" text had no value to him). The sheet and the morning brief still show the check; failures still text. A stopped scheduler is now silent until the next morning brief ("prices not updating") or the weekly heartbeat shortfall. |
 | Daily cap reached | Picks are not listed: `Daily cap reached — no more bets today. (N price gaps logged for the record.)` |
 
 - **Never show old picks.** A message only lists rows from the run that
@@ -471,7 +471,7 @@ Each is recorded in `docs/validation_log.md` with its date and evidence.
    numbered 3, whether that number was assigned on the reply's Pacific day
    or the day before. So a pick sent at 11:50 PM can be answered after
    midnight.
-6. **"Checked, no price gaps"** (on the sheet; no longer texted since 2026-10-31) is said only for games the shadow step
+6. **"Checked, no price gaps"** (no longer texted since 2026-10-31; a game fetched but not compared still texts "could not compare" below) is said only for games the shadow step
    actually compared, meaning at least one market reached the rule with no
    skip. The run summary records them as `compared_events`. A game that
    was fetched but not compared reads
