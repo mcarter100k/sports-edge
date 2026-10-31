@@ -235,7 +235,6 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
         else:
             picks = bets.picks_in_run(ctx.ledger, run_id, ctx.result_of, checked, now)
             compared = set(summary.get("compared_events", [])) & checked
-            age = minutes(now - min((parse_utc(p[2]["snapshot_utc"]) for p in picks), default=run_end))
             several = len(bets.shown_in_run(ctx.ledger, run_id, ctx.result_of)) > 1
             if picks and ctx.cap_reached:
                 texts.append(f"Daily cap reached — no more bets today. ({len(picks)} price gaps logged "
@@ -252,9 +251,7 @@ def cluster_messages(ctx, cstart, offset, rows, sent):
                 combo = combo_line([(n, r) for n, _, r in picks], ctx.table)
                 if combo:
                     texts.append(combo)
-            if not picks and compared:
-                texts.append(f"{slot(ctx, cstart, keys_of('checked', lambda r: r['source_event_id'] in compared))}"
-                             f": checked, no price gaps · prices {age} min old")
+            # Checked with no gaps sends no text (owner, 2026-10-31); the sheet and morning brief still show it.
             if checked - compared:
                 texts.append(f"Don't bet now: prices not checked (could not compare). "
                              f"{slot(ctx, cstart, keys_of('checked', lambda r: r['source_event_id'] not in compared))}")

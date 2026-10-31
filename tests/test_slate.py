@@ -240,14 +240,14 @@ def test_missed_check_on_a_failing_system_says_dont_bet(tmp_path):
     assert alert(CHECK_AT + timedelta(minutes=4)) == []
 
 
-def test_checked_without_gaps_says_so(tmp_path):
+def test_checked_without_gaps_sends_no_text(tmp_path):
     fee_table(tmp_path)
     sers, pages = world(cheap=False)
     run_at(DAILY_AT, sers, pages)
     run_at(CHECK_AT, sers, pages)
     health.record_success("snapshot", CHECK_AT)
-    assert alert(CHECK_AT + timedelta(minutes=1))[0].startswith(
-        "8:00 AM PT · NBA 1: checked, no price gaps · prices 1 min old")
+    assert alert(CHECK_AT + timedelta(minutes=1)) == []
+    assert alert(CHECK_AT + timedelta(minutes=3)) == []
 
 
 def test_no_fee_table_is_said_once_a_day():
